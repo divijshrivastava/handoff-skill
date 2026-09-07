@@ -9,13 +9,13 @@ TODAY="$(date +%Y-%m-%d)"
 
 sleep 0.7
 echo '# agent A picks up the task'
-sleep 0.9
+sleep 1.0
 cat HANDOFF.md
-sleep 1.5
+sleep 3.5
 
 echo
 echo '# agent A implements the open step'
-sleep 0.8
+sleep 1.2
 
 cat > search.py <<'PY'
 """Item search for the catalogue."""
@@ -59,32 +59,32 @@ python3 -m unittest discover -q
 git add search.py test_search.py
 git commit -q -m "Handle empty queries and the no-result case"
 A_SHA="$(git rev-parse --short HEAD)"
-sleep 1.0
+sleep 2.0
 
 echo
 echo "# A's session ends here. mid-task."
-sleep 0.9
-git --no-pager log --oneline -1
 sleep 1.2
+git --no-pager log --oneline -1
+sleep 2.5
 
 printf '\033[2J\033[H'
 echo '# new session. no memory of anything above.'
-sleep 1.4
+sleep 2.0
 
 echo
 echo '# agent B audits and finishes'
-sleep 0.8
+sleep 1.2
 
 python3 -m unittest discover -q
-sleep 0.6
+sleep 1.0
 git --no-pager log --oneline -2
-sleep 0.8
+sleep 1.5
 
 echo
 echo "Open: Verify empty queries (owner: agent-a)."
 echo "Already implemented in ${A_SHA} — running tests, not redoing that commit."
 echo "Remaining: record verification and close the ledger entry."
-sleep 1.2
+sleep 3.0
 
 python3 "$GUARD" read --root . >/tmp/handoff-read.json
 VERSION="$(python3 -c 'import json; print(json.load(open("/tmp/handoff-read.json"))["version"])')"
@@ -145,10 +145,10 @@ Path('ledger-next.md').write_text(text.replace(old, new, 1).replace('# Handoff\n
 
 python3 "$GUARD" apply --root . --expect-version "$VERSION" --content ledger-next.md >/dev/null
 python3 "$GUARD" validate --root . >/dev/null
-sleep 0.8
+sleep 1.2
 
 echo
 echo '# one ledger, two agents, no work redone'
-sleep 0.9
+sleep 1.2
 git --no-pager diff HEAD -- HANDOFF.md
-sleep 2.0
+sleep 4.0

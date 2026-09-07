@@ -183,10 +183,10 @@ Convert and compress:
 ```sh
 agg handoff.cast handoff.gif \
   --font-size 16 \
-  --speed 1.35 \
+  --speed 1.0 \
   --theme asciinema \
-  --idle-time-limit 1.5 \
-  --last-frame-duration 4
+  --idle-time-limit 5 \
+  --last-frame-duration 8
 
 gifsicle -O3 --lossy=60 --colors 128 handoff.gif -o handoff-opt.gif
 ls -lh handoff-opt.gif
