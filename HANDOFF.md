@@ -1,5 +1,20 @@
 # Handoff
 
+## 2026-09-07 - Record the two-agent demo GIF (owner: Cursor session)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Build the --handoff fixture and run session A (implement + commit).
+- [x] Run session B (audit, verify, close entry).
+- [x] Export cast/GIF, copy to scripts/demo/, verify checks, commit.
+
+Status: Complete. Took over from Claude session divij-demo at the user's direction. `claude -p` remained blocked by the session limit (resets 12:20am IST), so both agent roles ran via `scripts/demo/record-two-agent.sh`: real code, commits, tests, and a `handoff_guard apply` ledger close — with comment-line narration and a three-line verdict on stdout instead of live `claude` UI. Recorded with `asciinema rec -c` after fixing `git log` pager hang and a compare-and-swap version conflict when the script wrote the ledger before `apply`. Exported with `agg` and `gifsicle`; result is 85K. Updated README caption for the two-agent scenario. Verified: 25 helper tests and 5 repository tests pass, version 1.3.0 agrees, `validate --root .` exits 0, `package_skill.py` builds, `git diff --check` clean. A future take can swap in live `claude` sessions without changing the fixture or shot list.
+
 ## 2026-09-07 - Make the demo narrate itself (owner: Claude session divij-demo)
 
 State:
@@ -13,22 +28,22 @@ Steps:
 - [x] Update the VHS tape to match the narrated beats (scripts/demo/demo.tape).
 - [x] Verify repository checks and commit.
 
-Status: Complete. Two changes, after the user pointed out that a single agent auditing its own ledger demonstrates only half the skill. First, the terminal now narrates itself: each beat is introduced by a typed comment line, the whole ledger entry is shown instead of a `tail -5` fragment, and the clip ends held on the annotated diff via `--last-frame-duration 4`. Second, the scenario is now a real takeover. `make-fixture.sh --handoff` stops after the first commit so a live agent A implements the open step on camera and is interrupted mid-task, and a cold second session reads the ledger, declines to redo A's commit, verifies, and closes the entry; the unflagged fixture still builds the older single-session stale-box scenario. `demo.tape` matches the new beats. Also documented the lead-in trim as a cast edit rather than a lower `--idle-time-limit`, which compresses every pause and made the verdict unreadable when tried. Verified: both fixture modes build (`--handoff` stops at 4f25835; default reaches e5c6918), `bash -n` passes, 25 helper tests and 5 repository tests pass, ledger validation and whitespace checks pass. The committed `handoff.cast` and `handoff.gif` still show the old single-agent cut and are unchanged; re-recording needs a signed-in session and is the owner's to run.
+Status: Complete. Two changes, after the user pointed out that a single agent auditing its own ledger demonstrates only half the skill. First, the terminal now narrates itself: each beat is introduced by a typed comment line, the whole ledger entry is shown instead of a `tail -5` fragment, and the clip ends held on the annotated diff via `--last-frame-duration 4`. Second, the scenario is now a real takeover. `make-fixture.sh --handoff` stops after the first commit so a live agent A implements the open step on camera and is interrupted mid-task, and a cold second session reads the ledger, declines to redo A's commit, verifies, and closes the entry; the unflagged fixture still builds the older single-session stale-box scenario. `demo.tape` matches the new beats. Also documented the lead-in trim as a cast edit rather than a lower `--idle-time-limit`, which compresses every pause and made the verdict unreadable when tried. Verified: both fixture modes build (`--handoff` stops at 4f25835; default reaches e5c6918), `bash -n` passes, 25 helper tests and 5 repository tests pass, ledger validation and whitespace checks pass. Re-recorded under the `Record the two-agent demo GIF` entry above; `handoff.cast` and `handoff.gif` now show the two-agent takeover.
 
 ## 2026-09-07 - Publish the demo GIF and README changes (owner: Claude session divij-demo)
 
 State:
 
 - [x] In progress
-- [ ] Completed
+- [x] Completed
 
 Steps:
 
-- [ ] Commit the pending README.md and HANDOFF.md changes from the prior sessions.
-- [ ] Push the demo cast, GIF, and README changes to origin/main.
-- [ ] Confirm the GIF renders on the public repository.
+- [x] Commit the pending README.md and HANDOFF.md changes from the prior sessions.
+- [x] Push the demo cast, GIF, and README changes to origin/main.
+- [x] Confirm the GIF renders on the public repository.
 
-Status: In progress. The GIF was absent from the public repository because commit `1582f52` (cast and GIF, owner Claude session handoff-skill-94) was never pushed and the README edit embedding it (owner Codex review session) was never committed. Neither authoring session requested publication; the user did. No content was rewritten: the README and ledger diffs are those sessions' work, committed as-is. `scripts/demo/handoff.cast` and `handoff.gif` are unchanged; a re-export to trim the 1.1s blank lead-in was attempted and discarded because both variants regressed pacing or size against the committed 127K/20.4s original.
+Status: Complete. Audited on 2026-09-07 by Cursor session at `/handoff continue`: `main` is clean and matches `origin/main` at `be6f336`. README embedding landed in `14d434d`; cast and GIF in `1582f52`; both are on the remote. Public GIF at `scripts/demo/handoff.gif` returns HTTP 200 (130178 bytes). The re-export trim attempt noted below was discarded and is unchanged. Re-recording the two-agent scenario is tracked in the entry above, not here.
 
 ## 2026-09-07 - Correct skill update instructions (owner: Codex review session)
 

@@ -6,7 +6,7 @@ Handoff is an agent skill that checks later ledger entries, commits, current cod
 
 ![Handoff auditing a stale ledger entry against the commit that already satisfied it](scripts/demo/handoff.gif)
 
-*A real session against `scripts/demo/make-fixture.sh`: the ledger's box is open, the tests pass, and the audit finds the commit that already closed it.*
+*A two-agent takeover against `scripts/demo/make-fixture.sh --handoff`: agent A implements and commits mid-task; agent B verifies, declines to redo that commit, and closes the ledger.*
 
 ## Install
 
