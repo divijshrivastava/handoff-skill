@@ -31,8 +31,13 @@ LOCK_TIMEOUT_SECONDS = 30.0
 
 try:
     import fcntl
-except ImportError:  # pragma: no cover - exercised only on platforms without fcntl
+except ImportError:  # pragma: no cover - selected by platform
     fcntl = None
+
+try:
+    import msvcrt
+except ImportError:  # pragma: no cover - selected by platform
+    msvcrt = None
 
 
 @dataclass
@@ -385,47 +390,50 @@ def ledger_lock(ledger: Path, timeout: float = LOCK_TIMEOUT_SECONDS):
     on the old inode would not exclude a writer that opened the new one.
     """
     lock_path = ledger.with_name(ledger.name + ".lock")
-    if fcntl is not None:
-        handle = os.open(str(lock_path), os.O_CREAT | os.O_RDWR, 0o644)
-        try:
-            deadline = time.monotonic() + timeout
-            while True:
-                try:
-                    fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    break
-                except OSError:
-                    if time.monotonic() >= deadline:
-                        raise TimeoutError(f"Timed out waiting for {lock_path}")
-                    time.sleep(0.01)
-            try:
-                yield
-            finally:
-                fcntl.flock(handle, fcntl.LOCK_UN)
-        finally:
-            os.close(handle)
-        return
+    if fcntl is None and msvcrt is None:  # pragma: no cover - selected by platform
+        raise RuntimeError(
+            "No OS lock primitive (fcntl or msvcrt) is available, so apply cannot "
+            "serialize writers. Refusing to write: proceeding unserialized would "
+            "silently reintroduce the lost update this command exists to prevent."
+        )
 
-    # Platforms without fcntl fall back to an exclusive-create lock rather than
-    # proceeding unserialized, which would silently reintroduce the lost update.
-    deadline = time.monotonic() + timeout
-    while True:
-        try:
-            handle = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o644)
-            break
-        except OSError as error:
-            if error.errno != errno.EEXIST:
-                raise
-            if time.monotonic() >= deadline:
-                raise TimeoutError(f"Timed out waiting for {lock_path}")
-            time.sleep(0.01)
+    def acquire(handle: int) -> None:
+        if fcntl is not None:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        else:  # pragma: no cover - selected by platform
+            os.lseek(handle, 0, os.SEEK_SET)
+            msvcrt.locking(handle, msvcrt.LK_NBLCK, 1)
+
+    def release(handle: int) -> None:
+        if fcntl is not None:
+            fcntl.flock(handle, fcntl.LOCK_UN)
+        else:  # pragma: no cover - selected by platform
+            os.lseek(handle, 0, os.SEEK_SET)
+            msvcrt.locking(handle, msvcrt.LK_UNLCK, 1)
+
+    # Both primitives are released by the OS when the process dies, so a writer that
+    # crashes cannot strand the lock. An exclusive-create lock file would: it is only
+    # unlinked on a clean exit, so one kill -9 blocks every later writer forever, and
+    # deleting a lock without proving it stale would break the guarantee outright.
+    handle = os.open(str(lock_path), os.O_CREAT | os.O_RDWR, 0o644)
     try:
-        yield
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                acquire(handle)
+                break
+            except OSError as error:
+                if error.errno not in (errno.EACCES, errno.EAGAIN, errno.EDEADLK):
+                    raise
+                if time.monotonic() >= deadline:
+                    raise TimeoutError(f"Timed out waiting for {lock_path}")
+                time.sleep(0.01)
+        try:
+            yield
+        finally:
+            release(handle)
     finally:
         os.close(handle)
-        try:
-            lock_path.unlink()
-        except FileNotFoundError:
-            pass
 
 
 def read_source(source: str) -> str:

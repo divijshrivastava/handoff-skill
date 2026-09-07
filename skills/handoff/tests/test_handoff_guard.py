@@ -395,6 +395,67 @@ class OverlappingWriterTests(unittest.TestCase):
         self.assertIn("Task A", retried)
         self.assertIn("Task B", retried)
 
+    # Worker that parks inside atomic_write: past the version check, still holding the
+    # lock. Monkeypatching keeps the pause out of the shipped helper.
+    PARKED_WORKER = """
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("parked_guard", sys.argv[1])
+guard = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = guard
+spec.loader.exec_module(guard)
+real_write = guard.atomic_write
+def parked_write(path, text):
+    print("READY", flush=True)
+    sys.stdin.read(1)
+    real_write(path, text)
+guard.atomic_write = parked_write
+parsed = guard.build_parser().parse_args(sys.argv[2:])
+sys.exit(parsed.handler(parsed))
+"""
+
+    def test_second_writer_waits_while_the_critical_section_is_held(self) -> None:
+        """B must block while A holds the lock, then conflict without losing A's entry.
+
+        test_overlapping_writers_do_not_lose_an_entry parks A before it reads the
+        ledger, so it passes even with the lock removed. This one parks A after the
+        version check, which only the lock can serialize.
+        """
+        version = self.version()
+        slow = self.entry_file("A")
+        fast = self.entry_file("B")
+        args = ["apply", "--root", str(self.root), "--json",
+                "--expect-version", version, "--entry"]
+
+        parked = subprocess.Popen(
+            [sys.executable, "-c", self.PARKED_WORKER, str(SCRIPT), *args, str(slow)],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        other = None
+        try:
+            self.assertEqual(parked.stdout.readline().strip(), "READY")
+            other = subprocess.Popen(
+                [sys.executable, str(SCRIPT), *args, str(fast)],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            )
+            # B must not get through while A holds the lock.
+            with self.assertRaises(subprocess.TimeoutExpired):
+                other.communicate(timeout=1.0)
+
+            parked.stdin.write("x")
+            parked.stdin.flush()
+            slow_out, _ = parked.communicate(timeout=30)
+            fast_out, _ = other.communicate(timeout=30)
+        finally:
+            for proc in (parked, other):
+                if proc is not None and proc.poll() is None:
+                    proc.kill()
+                    proc.wait()
+
+        self.assertEqual(parked.returncode, 0, slow_out)
+        self.assertEqual(other.returncode, 3, fast_out)
+        self.assertEqual(json.loads(fast_out)["status"], "conflict")
+        self.assertIn("Task A", self.ledger.read_text(encoding="utf-8"))
+
     def test_apply_preserves_the_ledger_file_mode(self) -> None:
         os.chmod(self.ledger, 0o644)
         proc = self.apply_process(str(self.entry_file("C")), self.version())
