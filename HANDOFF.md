@@ -1,5 +1,21 @@
 # Handoff
 
+## 2026-09-08 - Ship a PATH-stable launcher for the progress viewer (owner: Claude session 01LD89UW)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Add a launcher that resolves the viewer at run time instead of a version-pinned path.
+- [x] Ship it in the release archives as an executable runtime file.
+- [x] Cover resolution order, version ordering, and failure modes with tests.
+- [x] Document the launcher and run the repository checks.
+
+Status: Complete. The viewer's install path is version-pinned (`.../handoff/1.4.0/...`), so any command line naming it breaks at the next release. Added `skills/handoff/scripts/handoff-tui`, a stdlib-only launcher that resolves `handoff_tui.py` at run time and forwards every argument unchanged, plus its own `--which` for reporting the copy it chose. Resolution order is `$HANDOFF_TUI`, a sibling `handoff_tui.py`, the `installed_plugins.json` install, the plugin cache and marketplace globs, then `$HANDOFF_SKILL_REPO`; the sibling rule is deliberate, so a launcher run in place uses its own skill directory while one copied onto PATH tracks the newest install. Matching is keyed on the plugin name rather than the `divij-skills` marketplace, version directories are ordered numerically so 1.10.0 outranks 1.5.0, and `$CLAUDE_CONFIG_DIR` is honored. Packaging: added the launcher to `RUNTIME_FILES` and introduced `EXECUTABLE_FILES`, a fixed set shipped at mode 0755 so a copied launcher runs; the set is constant, so archives stay byte-reproducible, and a test now asserts both modes. Docs recommend copying rather than symlinking, since a symlink points back into the version-pinned directory the launcher exists to escape. Verified on Python 3.9.10 and 3.12: 64 helper/viewer/launcher tests and 5 repository tests pass, versions agree at 1.5.0, `validate --root .` exits 0, archives build, `git diff --check` is clean. Two of my own test assertions were wrong and were corrected rather than retried: one compared an unresolved temp path against the launcher's resolved `__file__` (macOS `/var` vs `/private/var`), and one compared two snapshots byte-for-byte though the header carries a clock time, which failed roughly one run in five; the repository suite now passes 15 consecutive runs. Not done: the launcher is not installed onto this machine's PATH by this change, and nothing is committed or published. Next action for a follow-up owner: none required; a user who wants the command runs the documented `cp` into a PATH directory.
+
 ## 2026-09-08 - Add a live terminal progress dashboard (owner: Codex TUI session)
 
 State:

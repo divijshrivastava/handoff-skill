@@ -115,6 +115,18 @@ rate, or `--file /path/to/handoff.md` for an explicit ledger filename. Live mode
 uses Python's standard-library curses module on macOS/Linux; snapshot mode also
 works without curses. No package installation or service is needed.
 
+A plugin install lives under a version-pinned directory, so a command line
+naming one breaks at the next release. The skill ships a launcher that resolves
+the viewer at run time; copy it once onto your PATH:
+
+```bash
+cp skills/handoff/scripts/handoff-tui ~/.local/bin/ && chmod +x ~/.local/bin/handoff-tui
+handoff-tui --root /path/to/your/repo
+```
+
+It takes the same flags, plus `--which` to print the copy it resolved. Copy it
+rather than symlinking, so it does not point back into a version-pinned path.
+
 Percentages reflect recorded checkboxes and heading owners. They do not measure
 effort or verify who performed a step; stale entries still need an audit.
 See [controls and counting rules](skills/handoff/references/progress-viewer.md).

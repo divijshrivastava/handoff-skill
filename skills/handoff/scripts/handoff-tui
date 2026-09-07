@@ -1,0 +1,123 @@
+#!/usr/bin/env python3
+"""Launch the progress viewer from whichever copy of the skill is installed.
+
+Plugin installs live under a version-pinned path, so a command line naming one
+directly stops working at the next release. Copy this launcher somewhere on
+PATH; it locates handoff_tui.py at run time and forwards every argument to it
+unchanged.
+
+Resolution order:
+  1. $HANDOFF_TUI                     explicit path to handoff_tui.py
+  2. a sibling handoff_tui.py         running in place inside a skill directory
+  3. installed_plugins.json           the registered plugin install, newest first
+  4. the plugin cache and marketplace directories, if that registry is stale
+  5. $HANDOFF_SKILL_REPO              a checkout of the source repository
+
+A launcher copied onto PATH has no sibling, so it resolves dynamically and keeps
+working across upgrades. One run in place inside a skill directory uses that
+copy. --which prints the resolved path instead of running it; every other
+argument belongs to handoff_tui.py.
+"""
+
+from __future__ import annotations
+
+import glob
+import json
+import os
+import sys
+from pathlib import Path
+
+SUFFIX = Path("skills") / "handoff" / "scripts" / "handoff_tui.py"
+VIEWER = "handoff_tui.py"
+
+
+def plugin_root() -> Path:
+    config = os.environ.get("CLAUDE_CONFIG_DIR")
+    base = Path(config).expanduser() if config else Path.home() / ".claude"
+    return base / "plugins"
+
+
+def rank(path: Path):
+    """Order candidates by version directory, then by modification time."""
+    version = []
+    for part in path.parts:
+        fields = part.split(".")
+        if fields and all(field.isdigit() for field in fields):
+            version = [int(field) for field in fields]
+    try:
+        modified = path.stat().st_mtime
+    except OSError:
+        modified = 0.0
+    return (version, modified)
+
+
+def newest(candidates) -> Path | None:
+    found = [path for path in candidates if path.is_file()]
+    return max(found, key=rank) if found else None
+
+
+def from_registry(plugins: Path) -> Path | None:
+    try:
+        data = json.loads((plugins / "installed_plugins.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    installs = []
+    for name, entries in (data.get("plugins") or {}).items():
+        if name.split("@", 1)[0] != "handoff":
+            continue
+        for entry in entries or []:
+            location = entry.get("installPath")
+            if location:
+                installs.append(Path(location).expanduser() / SUFFIX)
+    return newest(installs)
+
+
+def resolve() -> Path:
+    override = os.environ.get("HANDOFF_TUI")
+    if override:
+        path = Path(override).expanduser()
+        if not path.is_file():
+            sys.exit("handoff-tui: $HANDOFF_TUI is not a file: %s" % path)
+        return path
+
+    sibling = Path(__file__).resolve().with_name(VIEWER)
+    if sibling.is_file():
+        return sibling
+
+    plugins = plugin_root()
+    found = from_registry(plugins)
+    if found:
+        return found
+
+    for pattern in (
+        plugins / "cache" / "*" / "handoff" / "*" / SUFFIX,
+        plugins / "marketplaces" / "*" / SUFFIX,
+    ):
+        found = newest(Path(match) for match in glob.glob(str(pattern)))
+        if found:
+            return found
+
+    checkout = os.environ.get("HANDOFF_SKILL_REPO")
+    if checkout:
+        path = Path(checkout).expanduser() / SUFFIX
+        if path.is_file():
+            return path
+
+    sys.exit(
+        "handoff-tui: no %s found.\n"
+        "Install the handoff plugin, or set $HANDOFF_TUI to that script\n"
+        "or $HANDOFF_SKILL_REPO to a checkout of the handoff-skill repository." % VIEWER
+    )
+
+
+def main() -> int:
+    arguments = sys.argv[1:]
+    viewer = resolve()
+    if "--which" in arguments:
+        print(viewer)
+        return 0
+    os.execv(sys.executable, [sys.executable, str(viewer)] + arguments)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

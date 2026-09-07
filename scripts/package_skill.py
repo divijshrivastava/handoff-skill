@@ -16,9 +16,13 @@ RUNTIME_FILES = (
     "references/design-notes.md",
     "references/ledger-contract.md",
     "references/progress-viewer.md",
+    "scripts/handoff-tui",
     "scripts/handoff_guard.py",
     "scripts/handoff_tui.py",
 )
+# Launchers ship executable so they work once copied onto PATH. The set is
+# fixed, so archives stay byte-reproducible.
+EXECUTABLE_FILES = frozenset({"scripts/handoff-tui"})
 
 
 def build(output: Path, root: Path = ROOT) -> list[Path]:
@@ -32,7 +36,8 @@ def build(output: Path, root: Path = ROOT) -> list[Path]:
         for name, data in sorted(sources):
             info = ZipInfo("handoff/" + name, date_time=(2020, 1, 1, 0, 0, 0))
             info.create_system = 3
-            info.external_attr = 0o100644 << 16
+            mode = 0o100755 if name in EXECUTABLE_FILES else 0o100644
+            info.external_attr = mode << 16
             bundle.writestr(info, data)
     upload = output / "handoff.skill"
     upload.write_bytes(archive.read_bytes())

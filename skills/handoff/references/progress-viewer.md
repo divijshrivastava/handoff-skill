@@ -11,6 +11,31 @@ Use the script from the installed skill directory or from this repository's
 standard-library `curses` module, normally available on macOS and Linux; Python
 builds without curses can use `--once`. There are no third-party dependencies.
 
+A plugin install lives under a version-pinned directory, so a command line
+naming one stops working at the next release. `scripts/handoff-tui` is a
+launcher that resolves the viewer at run time; copy it once onto PATH and it
+survives upgrades:
+
+```sh
+cp "$SKILL_DIR/scripts/handoff-tui" ~/.local/bin/ && chmod +x ~/.local/bin/handoff-tui
+handoff-tui --root /path/to/repository
+```
+
+Copy the launcher rather than symlinking it: a symlink points back into the
+version-pinned directory and breaks on the next upgrade, which is the problem
+the launcher exists to solve.
+
+It forwards every argument to `handoff_tui.py` unchanged and adds one flag of
+its own, `--which`, which prints the copy it resolved. Resolution order is
+`$HANDOFF_TUI`, then a `handoff_tui.py` beside the launcher, then the registered
+plugin install, then the plugin cache and marketplace directories, then
+`$HANDOFF_SKILL_REPO`. Preferring a sibling means a launcher run in place inside
+a skill directory uses that copy, while one copied onto PATH resolves the newest
+install. When several versioned directories match, version numbers are compared
+numerically, so 1.10.0 outranks 1.5.0. Set `$CLAUDE_CONFIG_DIR` if the Claude
+configuration is not at `~/.claude`. With no copy found, the launcher exits 1
+and names both environment variables rather than guessing.
+
 The default refresh interval is one second. The viewer re-reads the file,
 including after an atomic replacement by `handoff_guard.py apply`. It never
 edits the ledger or acquires the writer's lock. Progress appears when an agent
