@@ -1,0 +1,45 @@
+{
+  "skill_name": "handoff",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "A repository HANDOFF.md has an old unchecked 'add export button' entry, but a newer completed UI task cites commit abc1234 and the current source contains the verified export button. I ask you to add search. Explain your intake and ledger actions before implementation.",
+      "expected_output": "Audits later evidence, treats export as complete rather than reopening it, records search as a stepped task, and starts it only after ownership checks.",
+      "files": [],
+      "expectations": [
+        "Does not report the old export task as effectively unfinished",
+        "Uses later ledger, commit, and current-source evidence",
+        "Creates or proposes separate In progress and Completed boxes for search",
+        "Includes concrete search verification and handoff steps",
+        "Does not invent agent names, dates, file paths, or commit ids beyond those the scenario supplies; records unknown values as unknown"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "HANDOFF.md shows one genuinely unfinished task owned by an active Agent A and another unassigned unfinished task. I ask for a new settings page without saying what to do with old work. Describe exactly what you do next.",
+      "expected_output": "Surfaces effective unfinished work and ownership, asks finish-first versus leave-and-start, avoids implementation and active-agent takeover until the user chooses.",
+      "files": [],
+      "expectations": [
+        "Reports both effective unfinished tasks and their ownership",
+        "Asks the user to choose finish-first or leave-and-start",
+        "Does not begin settings-page implementation before the choice",
+        "Does not adopt or modify Agent A's active task",
+        "Does not self-assign ownership of the settings task before the user's pickup choice"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "I say 'finish the unassigned migration task first, then build the dashboard.' The migration has two completed steps and one unverified step. Explain the task-state transitions and what remains in HANDOFF.md throughout.",
+      "expected_output": "Queues dashboard as pending, resumes only migration's remaining step, verifies and completes migration, then starts dashboard while preserving history.",
+      "files": [],
+      "expectations": [
+        "Keeps the dashboard visible as a pending stepped task",
+        "Resumes only the migration's genuinely remaining scope",
+        "Checks migration completion only after verification",
+        "Starts the dashboard only after the migration is complete",
+        "Preserves prior ownership and progressive history",
+        "Identifies the agent taking over the migration as unknown rather than inventing a name"
+      ]
+    }
+  ]
+}

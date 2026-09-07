@@ -1,0 +1,4 @@
+interface:
+  display_name: "Handoff"
+  short_description: "Resume repository work with evidence and ownership"
+  default_prompt: "Use $handoff to audit this repository's ledger and continue the authorized work."
