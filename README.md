@@ -1,10 +1,12 @@
 # Handoff
 
-**Pick up the work. Keep the history. Know what is actually left.**
+An agent picks up yesterday's checklist and starts redoing work another session already finished. The box is still open; the code has moved on.
 
-An agent skill for continuing repository work across sessions and agents using one shared `HANDOFF.md` ledger.
+Handoff is an agent skill that checks later ledger entries, commits, current code, and ownership before deciding what is actually left. One shared `HANDOFF.md` keeps new requests visible, protects another agent's work, and gives the next session enough context to continue.
 
-An unchecked box from yesterday does not always mean unfinished work today. Handoff checks later entries, commits, current code, and ownership before deciding what to resume. It keeps new requests visible, protects work owned by another agent, and leaves enough context for the next session to continue.
+![Handoff auditing a stale ledger entry against the commit that already satisfied it](scripts/demo/handoff.gif)
+
+*A real session against `scripts/demo/make-fixture.sh`: the ledger's box is open, the tests pass, and the audit finds the commit that already closed it.*
 
 ## Install
 
@@ -15,12 +17,19 @@ An unchecked box from yesterday does not always mean unfinished work today. Hand
 /plugin install handoff@divij-skills
 ```
 
-Claude Code refreshes the marketplace in the background once per session, so a new
-release is picked up without reinstalling. To update on demand:
+Third-party marketplaces such as `divij-skills` have auto-update disabled by
+default. To enable it, run `/plugin`, open **Marketplaces**, select
+**divij-skills**, and choose **Enable auto-update**. Claude Code then checks for
+updates in the background after startup. Run `/reload-plugins` or start a new
+session to load an updated plugin. See the
+[Claude Code auto-update documentation](https://code.claude.com/docs/en/discover-plugins#configure-auto-updates).
+
+To update on demand and load the new version:
 
 ```sh
-/plugin update handoff@divij-skills
 /plugin marketplace update divij-skills
+/plugin update handoff@divij-skills
+/reload-plugins
 ```
 
 Pin a version by adding the marketplace at a tag, for example
@@ -39,9 +48,23 @@ ambiguous, and the copied one does not update.
 npx skills add divijshrivastava/handoff-skill --skill handoff
 ```
 
-These hosts have no update channel: re-run the same command to move to a new version.
+This installs in the current project. Add `-g` for installation across projects.
+The installer lets you select your agent.
 
-Add `-g` for installation across projects. The installer lets you select your agent.
+To update the project's installed copy, run this from the same project:
+
+```sh
+npx skills@latest update handoff -p
+```
+
+For a global installation, use:
+
+```sh
+npx skills@latest update handoff -g
+```
+
+Updates are fetched when you run the command. See the
+[skills CLI update documentation](https://github.com/vercel-labs/skills#skills-update).
 
 For a manual, project-local installation, clone the repository to a new directory and copy the **entire** `skills/handoff` directory into your host's skills directory. For example, Claude Code uses `.claude/skills/handoff/` within a project. Do not copy only `SKILL.md`: the references and helper script are part of the skill. If you already have a `handoff` skill installed, review it before replacing it.
 

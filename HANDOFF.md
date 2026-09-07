@@ -1,6 +1,6 @@
 # Handoff
 
-## 2026-09-07 - Record the README demo GIF (owner: Claude session handoff-skill-94)
+## 2026-09-07 - Publish the demo GIF and README changes (owner: Claude session divij-demo)
 
 State:
 
@@ -9,12 +9,58 @@ State:
 
 Steps:
 
-- [ ] Install the recording tools `scripts/demo/RECORDING.md` names (asciinema, agg, gifsicle, vhs).
-- [ ] Record a real session against the demo fixture and export the GIF.
-- [ ] Reference the GIF from `README.md` and verify the repository checks.
-- [ ] Commit and record verification.
+- [ ] Commit the pending README.md and HANDOFF.md changes from the prior sessions.
+- [ ] Push the demo cast, GIF, and README changes to origin/main.
+- [ ] Confirm the GIF renders on the public repository.
 
-Status: In progress. Installing the four tools through Homebrew while the evaluation runs execute; next action is to build the fixture and record the audit against it. The demo-assets entry below left `scripts/demo/` complete but produced no GIF, because none of the recording tools were installed on this machine.
+Status: In progress. The GIF was absent from the public repository because commit `1582f52` (cast and GIF, owner Claude session handoff-skill-94) was never pushed and the README edit embedding it (owner Codex review session) was never committed. Neither authoring session requested publication; the user did. No content was rewritten: the README and ledger diffs are those sessions' work, committed as-is. `scripts/demo/handoff.cast` and `handoff.gif` are unchanged; a re-export to trim the 1.1s blank lead-in was attempted and discarded because both variants regressed pacing or size against the committed 127K/20.4s original.
+
+## 2026-09-07 - Correct skill update instructions (owner: Codex review session)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Correct Claude Code auto-update setup and activation instructions in README.md.
+- [x] Document project and global updates for skills CLI installations in README.md.
+- [x] Verify the documentation and required repository checks, then record the handoff.
+
+Status: Complete. README.md now explains how to enable auto-updates for the divij-skills marketplace and load updated plugins, refreshes the marketplace before the on-demand plugin update, and documents named skills CLI updates with -p from the original project and -g for global installs. Linked the official Claude Code and skills CLI documentation supporting these instructions. Verified: 25 helper tests and 5 repository tests pass; version agreement remains 1.3.0; ledger validation, archive packaging, and whitespace checks pass. Reviewed the diff and preserved the pre-existing README introduction edits and all older ledger entries. No installer or plugin update command was executed. Changes are uncommitted; no commit or publication was requested. No remaining work for this documentation fix. The demo recording tasks remain open with their existing owners and recorded blockers.
+
+## 2026-09-07 - Finish the demo take and lead README with the problem (owner: Codex)
+
+State:
+
+- [x] In progress
+- [ ] Completed
+
+Steps:
+
+- [ ] Verify the requested recording tools and remove the stale manual Claude skill copy.
+- [ ] Record the real fixture audit and export the source cast and optimized GIF.
+- [ ] Lead README.md with the problem and place the GIF above Install.
+- [x] Run the required repository checks and record the handoff.
+
+Status: Blocked after partial progress. Codex continued at the user's explicit direction, preserving the original Claude attribution and the pre-existing Kimi continuation below. README.md now opens with the stale-checklist problem. All four existing tools execute from ~/.local/bin (asciinema 2.4.0, agg 1.9.0, gifsicle 1.96, vhs 0.11.0), but the requested Homebrew install failed because this session cannot write Homebrew directories. Automatic approval review rejected forced removal; the safer `rm -r ~/.claude/skills/handoff` failed with Operation not permitted. That manual copy remains and reports 1.2.2. Built a separate fixture at /tmp/handoff-demo-codex-20260907, preserving the earlier /tmp/handoff-demo; its two commits are 4f25835 and e5c6918, its three tests pass, and its ledger validates. Claude's real audit preflight with the installed 1.3.0 plugin exited 1 with Not logged in; `claude auth status` reports loggedIn false and authMethod none. No cast or GIF was produced and no missing image was linked. Verified: 25 helper tests and 5 repository tests pass, versions agree at 1.3.0, archives build, and whitespace and ledger structure checks pass. Changes remain uncommitted. Next action: use a session with filesystem access to finish Homebrew installation and stale-copy removal, sign in to Claude, then record the five beats in scripts/demo/RECORDING.md against a clean fixture. Export and inspect the actual cast/GIF, retain both in the repository, and embed the GIF between the README introduction and Install. The original recording task's remaining capture, integration, and commit steps are still open; this entry records the current blockers rather than superseding its history. Annotation added 2026-09-07 by Claude session handoff-skill-94, which is not adopting or editing this task: the outcomes this entry was blocked on now exist. The recording, export, and README placement were completed under the `Record the README demo GIF` entry above and committed in `1582f52`; the two blockers named here no longer hold, because the tools are installed at `~/.local/bin` and the `claude -p` audit ran successfully in this session. The stale manual copy at `~/.claude/skills/handoff` and the Homebrew permission fix are both still outstanding. Checkboxes here are left for this entry's owner.
+
+## 2026-09-07 - Record the README demo GIF (owner: Claude session handoff-skill-94)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Install the recording tools `scripts/demo/RECORDING.md` names (asciinema, agg, gifsicle, vhs).
+- [x] Record a real session against the demo fixture and export the GIF.
+- [x] Reference the GIF from `README.md` and verify the repository checks.
+- [x] Commit and record verification.
+
+Status: Complete. Correcting the record first: this entry's owner, Claude session handoff-skill-94, has been active in this tree throughout, so the Kimi Code CLI session's status text asserting otherwise was wrong and is replaced here; its factual observations are kept below. Tools: Homebrew refuses to install anything in this environment because `/usr/local/share/man/man8` is root-owned and needs `sudo chown -R divij /usr/local/share/man/man8`, so the four tools were installed without it and all run from `~/.local/bin` - asciinema 2.4.0 (pipx), agg 1.9.0 and vhs 0.11.0 (upstream release binaries), gifsicle 1.96 (built from source). vhs additionally needs ttyd and ffmpeg, which are still missing and still blocked behind that same Homebrew fix, so the recording took the primary asciinema route as `RECORDING.md` prescribes. Recording: the fixture was rebuilt clean and the five beats ran unattended, with the audit itself a real `claude -p` session against `/tmp/handoff-demo` - it read the ledger, ran `python3 -m unittest test_search` rather than crediting the diff, named `e5c6918` as the commit that satisfied the open box, and annotated the entry instead of redoing the work, which beat 5 shows as a 28-line ledger diff. Two earlier takes were discarded and re-recorded rather than trimmed: one died under memory pressure, the other hung because `git diff` opened a pager, and its audit only reported without writing, so the prompt now asks for the audit and the update. Nothing in the agent's output was edited. Export: `agg --speed 1 --idle-time-limit 5` then `gifsicle -O3 --lossy=60 --colors 128`, with per-frame delays retimed so the audit frame holds 6 seconds; the result is 20.4 seconds and 127K, well under the 3 MB target. `scripts/demo/handoff.cast` is kept so the GIF can be re-rendered without re-recording. Verified: 25 helper tests and 5 packaging tests pass, `check_versions.py` reports 1.3.0, `validate --root .` exits 0, `package_skill.py` builds, and `git diff --check` is clean; the GIF was inspected frame by frame rather than assumed. Committed in `1582f52`, which stages only `scripts/demo/handoff.cast` and `scripts/demo/handoff.gif`. `README.md` now carries the GIF between the introduction and `## Install`, but it is left uncommitted on purpose: that file also holds Codex's introduction rewrite and its install-instruction corrections, and this ledger holds two other agents' entries, so staging either would sweep another owner's in-flight work into this session's commit. Whoever commits them should attribute those parts to their authors.
 
 ## 2026-09-07 - Add CLAUDE.md and commit the instruction files (owner: Claude session 01L6aEop)
 
