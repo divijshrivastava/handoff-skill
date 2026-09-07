@@ -3,7 +3,7 @@ name: handoff
 description: "Coordinate progressive repository work across agents with a shared HANDOFF.md ledger. Use before starting, continuing, checking, pausing, handing off, or committing a repository task whenever HANDOFF.md exists, multiple agents may be involved, the user mentions unfinished tasks or another agent, or work must be split into trackable steps. Audits later work and current code before treating old unchecked boxes as unfinished. Do not use for read-only questions that require no task tracking or repository mutation."
 license: MIT
 metadata:
-  version: "1.1.0"
+  version: "1.2.0"
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
 ---
 
@@ -23,17 +23,18 @@ rules, ownership boundaries, verification requirements, or safety policy.
 Ground every statement in repository state, and say only what the decision
 requires.
 
-- Name tasks, owners, files, and commits exactly as the ledger and repository
-  give them. If a name, owner, or date is not in evidence, say it is unknown.
-- Never invent an agent name, task title, step text, commit id, or file path,
-  and never carry one over from this skill's examples. Placeholders in
-  `references/ledger-contract.md` show shape only.
-- Report conclusions and their evidence, not the process that produced them.
-  Restating these steps back, or narrating tool runs that found nothing, adds
-  length without adding a decision. When the user does ask about intake or
-  process, answer that directly once rather than repeating it per scenario.
-- Show ledger content as the Markdown that will actually be written, not prose
-  about what an entry would say.
+- Preserve existing task names, steps, and identifiers. Create concise titles
+  and outcome-oriented steps for new requests from the user's instructions;
+  proposed work is a plan, not evidence that it already exists.
+- Ground owners, dates, paths, commits, and claims about existing behavior in
+  the session or repository. Mark unknown details as unknown. Do not assume
+  a UI structure, framework, or file layout from a feature name. Examples in
+  `references/ledger-contract.md` illustrate shape, not repository facts.
+- State the effective status, supporting evidence, and next action once.
+  Explain intake when requested, without repeating the shared procedure for
+  each scenario. Routine tool narration does not help the user decide.
+- Show only necessary ledger snippets as Markdown. Avoid reproducing a whole
+  entry for a single state transition or repeating a snippet in prose.
 
 ## Step 0: Preflight before task work
 
@@ -54,7 +55,8 @@ requires.
 
 The doctor reports structural state only. Never present its raw pending or
 in-progress result as the effective status until the progressive audit below is
-complete.
+complete. Keep the `Version` it prints; it identifies the revision this session
+read and is what makes a safe concurrent write possible.
 
 If the repository has no ledger, follow its local instructions; when none are
 prescribed and mutation is authorized, create `HANDOFF.md` from
@@ -137,7 +139,7 @@ If effective unfinished work exists when a new request arrives, report each
 task's ledger name, its owner and whether that owner appears active, the
 concrete remaining outcome, and any file overlap with the new request.
 
-Unless the user already chose, ask whether to:
+Only in that case, unless the user already chose, ask whether to:
 
 1. finish eligible unfinished work first, or
 2. leave it with its current owner and start the new task.
@@ -145,6 +147,9 @@ Unless the user already chose, ask whether to:
 Do not implement either branch before the choice. Read-only investigation may
 continue when it helps make the choice accurate. An explicit user ordering such
 as "finish X first, then Y" is already the choice; do not ask again.
+
+If the audit finds no effective unfinished work, proceed with the authorized
+new task after the usual ownership and file checks; no pickup choice is needed.
 
 When the user chooses **finish first**:
 
@@ -197,6 +202,36 @@ When verification fails, the task stays `[x] In progress` and `[ ] Completed`.
 Record the failure evidence, remaining work or blocker, and next action; queued
 work stays pending.
 
+### Writing when another agent may write too
+
+Editing the ledger directly is correct for sequential handoffs and for separate
+worktrees, where git surfaces any collision. When another agent may write the
+same working tree during this session, route ledger writes through the guard so
+a concurrent write cannot silently drop an entry:
+
+```bash
+python3 "$SKILL_DIR/scripts/handoff_guard.py" apply --root /absolute/repo/path \
+  --expect-version <version from the read> \
+  --entry /path/to/new-entry.md
+```
+
+Use `--entry` to insert one new task entry at the newest position, or
+`--content` to replace the whole ledger after editing existing entries; either
+accepts `-` for stdin. The write is refused unless the ledger still matches the
+version that was read, and it lands through an atomic replace, so no reader
+observes a partial ledger.
+
+Exit `3` means another writer changed the ledger first. The read that informed
+this edit is stale, so the audit behind it is stale too: re-read the ledger,
+redo the Step 2 progressive audit against the new entries, and apply again with
+the current version. Never retry with the old version or reconstruct the
+intended file from memory.
+
+Exit `4` means the write would introduce structural errors and nothing was
+written. Fix the entry rather than checking boxes the evidence does not support.
+`--allow-structure-errors` exists for repairing a ledger that is already
+malformed, not for pushing past a failed check.
+
 ## Step 5: Commit and stop safely
 
 Before committing or stopping:
@@ -227,14 +262,17 @@ repository alone, without this conversation.
 - **Private-context handoff:** leaving "continue later" without state, evidence,
   blocker, and next action.
 - **Broad staging:** catch-all staging in a shared working tree.
+- **Blind overwrite:** writing the ledger from a read another agent has already
+  superseded, or retrying a rejected write without redoing the audit.
 - **Borrowed detail:** filling a real entry with an example's agent name, path,
   or commit id instead of the repository's own values.
 
 ## Gates
 
-Do not implement until the pickup choice is known, ownership and file overlap
-are safe, the selected task is marked `In progress`, and newer queued work is
-still visible in the ledger.
+When effective unfinished work exists, resolve the pickup choice before
+implementation unless the user has already supplied the ordering. In every
+case, ownership and file overlap must be safe, the selected task must be marked
+`In progress`, and any newer queued work must remain visible in the ledger.
 
 Do not declare success until every claimed step has evidence, required
 verification ran, the validator passes, and only genuinely unfinished outcomes

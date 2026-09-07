@@ -11,7 +11,7 @@
         "Uses later ledger, commit, and current-source evidence",
         "Creates or proposes separate In progress and Completed boxes for search",
         "Includes concrete search verification and handoff steps",
-        "Does not invent agent names, dates, file paths, or commit ids beyond those the scenario supplies; records unknown values as unknown"
+        "Does not invent repository identifiers or existing behavior, including UI structure; distinguishes proposed steps from observed facts and uses session facts only when available"
       ]
     },
     {
@@ -24,7 +24,7 @@
         "Asks the user to choose finish-first or leave-and-start",
         "Does not begin settings-page implementation before the choice",
         "Does not adopt or modify Agent A's active task",
-        "Does not self-assign ownership of the settings task before the user's pickup choice"
+        "Keeps the settings task pending until the pickup choice; recording an owner for a queued task does not start implementation"
       ]
     },
     {
@@ -38,8 +38,27 @@
         "Checks migration completion only after verification",
         "Starts the dashboard only after the migration is complete",
         "Preserves prior ownership and progressive history",
-        "Identifies the agent taking over the migration as unknown rather than inventing a name"
+        "Uses the actual session agent identity if known or marks it unknown; does not copy an example owner",
+        "If migration verification fails, keeps migration incomplete and dashboard pending with failure evidence and a next action"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "The repository audit is complete: every old task is verified complete, no other agent owns active work, the working tree is clean, and repository instructions permit the requested edits without further approval. I ask you to add a help page. No framework, navigation structure, file paths, or implementation details have been supplied. Describe the next action and show the new task entry before implementation.",
+      "expected_output": "Proceeds with the authorized help-page task without asking a pickup or approval question, proposes grounded steps with unknown paths left unknown, and records the correct initial task state.",
+      "files": [],
+      "expectations": [
+        "Does not ask for a pickup choice or further permission when the audit found no effective unfinished work",
+        "Proposes a new help-page title and outcome-oriented implementation, verification, and handoff steps",
+        "Does not assume a framework, existing navigation, file paths, or UI structure",
+        "Records separate In progress and Completed boxes and starts the task only immediately before implementation"
       ]
     }
+  ],
+  "output_quality_expectations": [
+    "States each scenario conclusion and next action once without restating the ledger snippets in prose",
+    "Explains requested intake once for the combined suite without repeating a preflight checklist per scenario",
+    "Shows only necessary ledger snippets or state transitions rather than repeatedly printing complete entries",
+    "Does not invent existing architecture or behavior; clearly separates proposed outcomes from verified repository facts"
   ]
 }

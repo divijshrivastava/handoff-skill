@@ -8,6 +8,11 @@ task names, the real owner, and real identifiers. If a value is unknown, write
 what the ledger actually says or record it as unknown - do not fill the gap
 with an example value.
 
+Preserve existing titles and steps. For a new request, write a concise title
+and proposed outcomes based on the request; leave repository-specific details
+unknown until inspected. Show only the ledger content needed for the decision
+or transition being explained.
+
 ## Canonical task entry
 
 Place newest entries at the top of the task list unless repository instructions
