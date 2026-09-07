@@ -1,5 +1,22 @@
 # Handoff
 
+## 2026-09-07 - Add demo recording assets for the README GIF (owner: Claude session divij-demo)
+
+State:
+
+- [x] In progress
+- [ ] Completed
+
+Steps:
+
+- [x] Add the fixture builder (scripts/demo/make-fixture.sh).
+- [x] Add the recording shot list and export pipeline (scripts/demo/RECORDING.md).
+- [x] Add the VHS tape alternative (scripts/demo/demo.tape).
+- [x] Verify the fixture builds, validates, and its tests pass.
+- [ ] Commit and record verification.
+
+Status: In progress. Assets added under `scripts/demo/`: `make-fixture.sh` builds a two-commit fixture at /tmp/handoff-demo whose ledger leaves `Verify empty queries and no-result behavior.` unchecked while the second commit implements it and adds `test_search.py`, so a recorded audit has real evidence to find rather than a staged result; `RECORDING.md` carries the five-beat shot list, terminal settings, and the asciinema/agg/gifsicle pipeline; `demo.tape` is the VHS alternative. No runtime skill files, packaging, or CI change. Verified: the fixture builds from the committed copy, its three tests pass, and `validate --root /tmp/handoff-demo` exits 0; in this repository 25 helper tests and 5 packaging tests pass on Python 3.9, `validate --root .` passes, `package_skill.py` builds, and `git diff --check` is clean. Recording tools (asciinema, agg, gifsicle, vhs) are not installed on this machine, so no GIF was produced and none is claimed. Separately observed, not changed: a stale manual copy of this skill at `~/.claude/skills/handoff/` reports version 1.1.0 and lacks the `read` and `apply` commands, while the plugin cache holds 1.2.2 — the ambiguity README.md warns about, reproduced on the author's own machine. Next action is to record the commit id.
+
 ## 2026-09-07 - Distribute as a Claude Code plugin marketplace (owner: Claude session divij-f8)
 
 State:
