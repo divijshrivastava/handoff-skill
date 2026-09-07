@@ -3,7 +3,7 @@ name: handoff
 description: "Coordinate progressive repository work across agents with a shared HANDOFF.md ledger. Use before starting, continuing, checking, pausing, handing off, or committing a repository task whenever HANDOFF.md exists, multiple agents may be involved, the user mentions unfinished tasks or another agent, or work must be split into trackable steps. Audits later work and current code before treating old unchecked boxes as unfinished. Do not use for read-only questions that require no task tracking or repository mutation."
 license: MIT
 metadata:
-  version: "1.2.0"
+  version: "1.2.1"
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
 ---
 
@@ -41,7 +41,17 @@ requires.
 1. Resolve the repository root without assuming the current directory is it.
 2. Read every applicable repository instruction file before mutating anything.
 3. Read the whole handoff ledger, newest entry to oldest. Do not stop at the
-   first unchecked box.
+   first unchecked box. When another agent may write this tree, take that text
+   and its version from one snapshot rather than two separate reads:
+
+   ```bash
+   python3 "$SKILL_DIR/scripts/handoff_guard.py" read --root /absolute/repo/path
+   ```
+
+   Audit the text it returns and pass the version it returns. Reading the ledger
+   and then asking separately for a version binds an audit of the old text to a
+   newer version, and a `--content` write built from it deletes the peer entry
+   that landed between the two reads.
 4. Run the bundled read-only doctor, using the directory that contains this
    `SKILL.md` as `SKILL_DIR`:
 
@@ -55,8 +65,9 @@ requires.
 
 The doctor reports structural state only. Never present its raw pending or
 in-progress result as the effective status until the progressive audit below is
-complete. Keep the `Version` it prints; it identifies the revision this session
-read and is what makes a safe concurrent write possible.
+complete. The doctor's `Version` is a convenience for a single-writer tree; when
+peers may write, use the snapshot from `read` instead, because only that binds
+the audited text to the version.
 
 If the repository has no ledger, follow its local instructions; when none are
 prescribed and mutation is authorized, create `HANDOFF.md` from
@@ -217,9 +228,16 @@ python3 "$SKILL_DIR/scripts/handoff_guard.py" apply --root /absolute/repo/path \
 
 Use `--entry` to insert one new task entry at the newest position, or
 `--content` to replace the whole ledger after editing existing entries; either
-accepts `-` for stdin. The write is refused unless the ledger still matches the
-version that was read, and it lands through an atomic replace, so no reader
-observes a partial ledger.
+accepts `-` for stdin. `apply` holds an exclusive lock across the re-read,
+version check, and replacement, so two writers cannot both pass the check
+against the same revision; the payload is read before the lock is taken, so
+blocking input cannot stall peers. The replacement is atomic and preserves the
+ledger's file mode, so no reader observes a partial ledger and collaborator
+access is not revoked.
+
+Editing `HANDOFF.md` directly is still a plain read-modify-write with no such
+protection. Under concurrency, route every write through `apply`; the guarantee
+belongs to the command, not to the file.
 
 Exit `3` means another writer changed the ledger first. The read that informed
 this edit is stale, so the audit behind it is stale too: re-read the ledger,

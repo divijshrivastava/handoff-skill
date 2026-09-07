@@ -1,6 +1,6 @@
 # Contributing
 
-Keep `skills/handoff/SKILL.md` the runtime source of truth. Put conditional details in its references and keep the helper dependency-free and read-only.
+Keep `skills/handoff/SKILL.md` the runtime source of truth. Put conditional details in its references and keep the helper dependency-free. `doctor`, `validate`, `read`, and `template` are read-only; `apply` is the one writer, and any change to it must keep the read, version check, and replacement inside a single held lock.
 
 Before changing the workflow, describe a concrete failure case. Preserve progressive history, explicit ownership, and the distinction between structural checks and evidence of completion. Add a regression test when helper behavior changes. Behavioral scenarios belong in `skills/handoff/evals/evals.json`; do not report them as passing model evaluations unless they were actually run.
 

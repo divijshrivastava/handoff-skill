@@ -1,5 +1,25 @@
 # Handoff
 
+## 2026-09-07 - Fix compare-and-swap race found in external review (owner: Claude session divij-f8)
+
+State:
+
+- [x] In progress
+- [ ] Completed
+
+Steps:
+
+- [x] Serialize apply's read, version check, and replacement under an exclusive lock (skills/handoff/scripts/handoff_guard.py).
+- [x] Read the payload before taking the lock so blocking input cannot stall peers.
+- [x] Preserve the ledger's file mode across the atomic replace.
+- [x] Add a read command binding audited text to its version in one snapshot.
+- [x] Reject duplicate and contradictory task-level state checkboxes.
+- [x] Add an overlapping-writer regression test and confirm it fails without the fix.
+- [x] Correct the SKILL.md, README.md, and CONTRIBUTING.md claims about the guarantee.
+- [ ] Commit, publish 1.2.1, and record verification.
+
+Status: In progress. An external review of `781441f` reported that the 1.2.0 compare-and-swap was not atomic. Reproduced with two unmodified CLI processes: writer A parked reading a FIFO payload after its version check while writer B completed; both returned `applied` and exit 0 and A's replace discarded B's entry. The hash comparison was a check-then-act, not a compare-and-swap, because nothing serialized the sequence. `apply` now holds an exclusive lock on a `HANDOFF.md.lock` sidecar across the re-read, check, and replacement, and the same reproduction now returns exit 3 for A with both entries preserved after retry. The new regression test was confirmed to fail against `781441f`. Also fixed from the same review: `atomic_write` reset the ledger from 0644 to 0600 via `mkstemp`; `checkbox_value` returned the first match so contradictory duplicate state boxes validated clean; the documented preflight read the ledger and the version separately, which could bind an audit to a version it never saw; and `CONTRIBUTING.md` still called the helper read-only. Verified on Python 3.9 and 3.14: 24 helper tests and 5 packaging tests pass, validate passes, the archive builds. Next action is to commit and publish 1.2.1, because the released 1.2.0 documents a guarantee it does not provide.
+
 ## 2026-09-07 - Add compare-and-swap ledger writes (owner: Claude session divij-f8)
 
 State:

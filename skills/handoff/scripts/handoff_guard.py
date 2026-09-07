@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import hashlib
 import json
 import os
@@ -11,6 +12,8 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import date
 from pathlib import Path
@@ -24,6 +27,12 @@ FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 
 VERSION_PREFIX_MIN = 8
 APPLY_EXIT = {"applied": 0, "dry-run": 0, "conflict": 3, "rejected": 4, "error": 1}
+LOCK_TIMEOUT_SECONDS = 30.0
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - exercised only on platforms without fcntl
+    fcntl = None
 
 
 @dataclass
@@ -69,13 +78,20 @@ def outside_fence_headings(lines: list[str]) -> list[tuple[int, str]]:
     return headings
 
 
-def checkbox_value(lines: Iterable[str], label: str) -> bool | None:
+def checkbox_values(lines: Iterable[str], label: str) -> list[bool]:
+    """Every checkbox carrying this exact label, in order.
+
+    Returning all of them rather than the first lets a task with contradictory or
+    duplicated state boxes - a plausible merge artifact - be reported as an error
+    instead of silently resolving to whichever box happens to come first.
+    """
     wanted = label.casefold()
+    values: list[bool] = []
     for line in lines:
         match = BOX_RE.match(line)
         if match and match.group(2).strip().casefold() == wanted:
-            return match.group(1).casefold() == "x"
-    return None
+            values.append(match.group(1).casefold() == "x")
+    return values
 
 
 def parse_tasks(text: str) -> list[Task]:
@@ -107,12 +123,19 @@ def parse_tasks(text: str) -> list[Task]:
             else:
                 state_end = steps_index if steps_index is not None else len(block)
                 state_lines = block[state_index + 1 : state_end]
-            in_progress = checkbox_value(state_lines, "In progress")
-            completed = checkbox_value(state_lines, "Completed")
-            if in_progress is None:
-                errors.append("missing In progress checkbox")
-            if completed is None:
-                errors.append("missing Completed checkbox")
+            for label, name in (("In progress", "in_progress"), ("Completed", "completed")):
+                values = checkbox_values(state_lines, label)
+                if not values:
+                    errors.append(f"missing {label} checkbox")
+                elif len(values) > 1:
+                    errors.append(f"duplicate {label} checkbox")
+                    if len(set(values)) > 1:
+                        errors.append(f"contradictory {label} checkbox")
+                else:
+                    if name == "in_progress":
+                        in_progress = values[0]
+                    else:
+                        completed = values[0]
 
             if steps_index is None:
                 errors.append("missing Steps section")
@@ -323,7 +346,16 @@ def insert_entry(text: str, entry: str) -> str:
 
 
 def atomic_write(path: Path, text: str) -> None:
-    """Replace the ledger through a sibling temp file so no reader sees a partial write."""
+    """Replace the ledger through a sibling temp file so no reader sees a partial write.
+
+    mkstemp creates the temp file 0600 and os.replace carries that mode across, so the
+    existing ledger's permissions are restored before the swap. Losing them would revoke
+    collaborator access under a different OS account.
+    """
+    try:
+        mode = os.stat(path).st_mode & 0o7777
+    except FileNotFoundError:
+        mode = None
     handle, temp_name = tempfile.mkstemp(
         dir=str(path.parent), prefix=".handoff-", suffix=".tmp"
     )
@@ -333,11 +365,67 @@ def atomic_write(path: Path, text: str) -> None:
             stream.write(text)
             stream.flush()
             os.fsync(stream.fileno())
+        if mode is not None:
+            os.chmod(temp, mode)
         os.replace(temp, path)
     except BaseException:
         if temp.exists():
             temp.unlink()
         raise
+
+
+@contextmanager
+def ledger_lock(ledger: Path, timeout: float = LOCK_TIMEOUT_SECONDS):
+    """Serialize the whole read/check/replace sequence across cooperating writers.
+
+    Comparing a hash is not by itself a compare-and-swap: without this lock two writers
+    can both pass the version check against the same revision and the second replace
+    silently discards the first writer's entry. The lock lives in a stable sidecar file
+    rather than the ledger, because os.replace swaps the ledger's inode and a lock held
+    on the old inode would not exclude a writer that opened the new one.
+    """
+    lock_path = ledger.with_name(ledger.name + ".lock")
+    if fcntl is not None:
+        handle = os.open(str(lock_path), os.O_CREAT | os.O_RDWR, 0o644)
+        try:
+            deadline = time.monotonic() + timeout
+            while True:
+                try:
+                    fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except OSError:
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError(f"Timed out waiting for {lock_path}")
+                    time.sleep(0.01)
+            try:
+                yield
+            finally:
+                fcntl.flock(handle, fcntl.LOCK_UN)
+        finally:
+            os.close(handle)
+        return
+
+    # Platforms without fcntl fall back to an exclusive-create lock rather than
+    # proceeding unserialized, which would silently reintroduce the lost update.
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            handle = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o644)
+            break
+        except OSError as error:
+            if error.errno != errno.EEXIST:
+                raise
+            if time.monotonic() >= deadline:
+                raise TimeoutError(f"Timed out waiting for {lock_path}")
+            time.sleep(0.01)
+    try:
+        yield
+    finally:
+        os.close(handle)
+        try:
+            lock_path.unlink()
+        except FileNotFoundError:
+            pass
 
 
 def read_source(source: str) -> str:
@@ -387,59 +475,77 @@ def apply_command(args: argparse.Namespace) -> int:
             "note": "Create the ledger from references/ledger-contract.md before applying writes.",
         })
 
-    current = ledger.read_text(encoding="utf-8")
-    current_version = ledger_version(current)
-    if not version_matches(current_version, args.expect_version):
-        return emit({
-            **base,
-            "status": "conflict",
-            "expected_version": args.expect_version,
-            "current_version": current_version,
-            "errors": ["HANDOFF.md changed since this writer read it"],
-            "note": (
-                "Another writer changed the ledger. Re-read it, redo the progressive "
-                "audit against the new entries, then apply again with the current "
-                "version. Do not retry with the stale version."
-            ),
-        })
-
+    # Read the payload before taking the lock: stdin or a named pipe can block
+    # indefinitely, and holding the lock while it does would stall every peer.
     payload = read_source(args.entry if args.entry else args.content)
-    if args.entry:
-        updated = insert_entry(current, payload)
-    else:
-        updated = payload if payload.endswith("\n") else payload + "\n"
 
-    known = {(heading, error) for heading, error, _ in structure_findings(current)}
-    introduced = [
-        message
-        for heading, error, message in structure_findings(updated)
-        if (heading, error) not in known
-    ]
-    if introduced and not args.allow_structure_errors:
+    try:
+        with ledger_lock(ledger):
+            # Re-read under the lock. The version read outside it is not a
+            # compare-and-swap; only this read/check/replace sequence is.
+            current = ledger.read_text(encoding="utf-8")
+            current_version = ledger_version(current)
+            if not version_matches(current_version, args.expect_version):
+                return emit({
+                    **base,
+                    "status": "conflict",
+                    "expected_version": args.expect_version,
+                    "current_version": current_version,
+                    "errors": ["HANDOFF.md changed since this writer read it"],
+                    "note": (
+                        "Another writer changed the ledger. Re-read it, redo the progressive "
+                        "audit against the new entries, then apply again with the current "
+                        "version. Do not retry with the stale version."
+                    ),
+                })
+
+            if args.entry:
+                updated = insert_entry(current, payload)
+            else:
+                updated = payload if payload.endswith("\n") else payload + "\n"
+
+            known = {(heading, error) for heading, error, _ in structure_findings(current)}
+            introduced = [
+                message
+                for heading, error, message in structure_findings(updated)
+                if (heading, error) not in known
+            ]
+            if introduced and not args.allow_structure_errors:
+                return emit({
+                    **base,
+                    "status": "rejected",
+                    "current_version": current_version,
+                    "errors": introduced,
+                    "note": (
+                        "The write would introduce structural errors and was not applied. "
+                        "Fix the entry without falsifying task state, or pass "
+                        "--allow-structure-errors when the ledger is being repaired."
+                    ),
+                })
+
+            new_version = ledger_version(updated)
+            if args.dry_run:
+                return emit({
+                    **base,
+                    "status": "dry-run",
+                    "current_version": current_version,
+                    "new_version": new_version,
+                    "errors": introduced,
+                    "note": "Nothing was written.",
+                })
+
+            atomic_write(ledger, updated)
+    except TimeoutError as error:
         return emit({
             **base,
-            "status": "rejected",
-            "current_version": current_version,
-            "errors": introduced,
+            "status": "error",
+            "errors": [str(error)],
             "note": (
-                "The write would introduce structural errors and was not applied. "
-                "Fix the entry without falsifying task state, or pass "
-                "--allow-structure-errors when the ledger is being repaired."
+                "Another writer held the ledger lock past the timeout. Nothing was "
+                "written; retry once that writer finishes."
             ),
         })
 
-    new_version = ledger_version(updated)
-    if args.dry_run:
-        return emit({
-            **base,
-            "status": "dry-run",
-            "current_version": current_version,
-            "new_version": new_version,
-            "errors": introduced,
-            "note": "Nothing was written.",
-        })
-
-    atomic_write(ledger, updated)
     return emit({
         **base,
         "status": "applied",
@@ -448,6 +554,46 @@ def apply_command(args: argparse.Namespace) -> int:
         "errors": introduced,
         "note": "Pass the new version to the next apply from this session.",
     })
+
+
+def read_command(args: argparse.Namespace) -> int:
+    """Return the ledger text and its version from a single read.
+
+    Reading the ledger and then separately asking doctor for a version is two reads: a
+    peer write landing between them binds an audit of the old text to the new version,
+    and a --content write built from that audit silently deletes the peer's entry. The
+    audit and the write must both use the snapshot this command returns.
+    """
+    repo = find_repo_root(Path(args.root))
+    ledger = repo / "HANDOFF.md"
+    if not ledger.exists():
+        result = {
+            "root": str(repo),
+            "ledger": None,
+            "version": None,
+            "text": None,
+            "errors": ["HANDOFF.md not found"],
+        }
+        print(json.dumps(result, indent=2))
+        return 1
+
+    text = ledger.read_text(encoding="utf-8")
+    if args.out:
+        Path(args.out).write_text(text, encoding="utf-8")
+    result = {
+        "root": str(repo),
+        "ledger": str(ledger),
+        "version": ledger_version(text),
+        "text": None if args.out else text,
+        "saved_to": args.out,
+        "errors": [message for _, _, message in structure_findings(text)],
+        "note": (
+            "Audit this exact text and pass this version to apply. Do not re-read the "
+            "ledger separately for either one."
+        ),
+    }
+    print(json.dumps(result, indent=2))
+    return 0
 
 
 def report_command(args: argparse.Namespace) -> int:
@@ -486,6 +632,13 @@ def build_parser() -> argparse.ArgumentParser:
     template.add_argument("--owner", required=True)
     template.add_argument("--step", action="append", required=True)
     template.set_defaults(handler=template_command)
+
+    read_parser = subparsers.add_parser("read")
+    read_parser.add_argument("--root", default=".", help="Repository path or child path")
+    read_parser.add_argument(
+        "--out", help="Write the ledger text to this file instead of returning it inline"
+    )
+    read_parser.set_defaults(handler=read_command)
 
     apply_parser = subparsers.add_parser("apply")
     apply_parser.add_argument("--root", default=".", help="Repository path or child path")

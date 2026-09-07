@@ -89,21 +89,23 @@ python3 skills/handoff/scripts/handoff_guard.py template \
   --step "Verify behavior and update the handoff."
 ```
 
-`doctor` and `validate` currently run the same structural checks, with exit code 1 for a missing ledger or structural errors and 0 otherwise. Legacy sections are reported for manual review, not migrated automatically. An empty or legacy-only ledger can pass structural validation; this is not evidence of task completion. Instruction discovery lists root-level files only: the agent must also read applicable ancestor and nested instructions. `template` prints Markdown to stdout. `doctor`, `validate`, and `template` never edit the repository.
+`doctor` and `validate` currently run the same structural checks, with exit code 1 for a missing ledger or structural errors and 0 otherwise. Legacy sections are reported for manual review, not migrated automatically. An empty or legacy-only ledger can pass structural validation; this is not evidence of task completion. Instruction discovery lists root-level files only: the agent must also read applicable ancestor and nested instructions. `template` prints Markdown to stdout. `read` returns the ledger text and its version from a single snapshot, so an audit cannot be bound to a version it never saw. `doctor`, `validate`, `read`, and `template` never edit the repository; `apply` is the only writer.
 
 ### Concurrent writers
 
 Editing `HANDOFF.md` directly is fine for sequential handoffs and for separate worktrees, where git surfaces collisions. When several agents share one working tree, two of them can read the same ledger and the second write silently drops the first entry. `apply` is the compare-and-swap write that prevents it:
 
 ```sh
-python3 skills/handoff/scripts/handoff_guard.py doctor --root /absolute/path/to/repo --json
-# note the reported "version", then:
+python3 skills/handoff/scripts/handoff_guard.py read --root /absolute/path/to/repo
+# audit the "text" it returns and pass the "version" it returns, then:
 python3 skills/handoff/scripts/handoff_guard.py apply --root /absolute/path/to/repo \
   --expect-version 98caeaf3ffbe \
   --entry new-entry.md
 ```
 
-`--entry` inserts one task entry at the newest position; `--content` replaces the whole ledger after editing existing entries. Both accept `-` for stdin, take a full hash or a prefix of at least 8 characters, and write through an atomic replace so no reader sees a partial ledger. `--dry-run` reports without writing.
+`--entry` inserts one task entry at the newest position; `--content` replaces the whole ledger after editing existing entries. Both accept `-` for stdin, take a full hash or a prefix of at least 8 characters, and `--dry-run` reports without writing.
+
+`apply` holds an exclusive lock (a `HANDOFF.md.lock` sidecar) across the re-read, version check, and replacement. The hash comparison alone is not a compare-and-swap: without that lock two writers can both pass the check against the same revision and the second replace discards the first entry. The payload is read before the lock is taken so blocking input cannot stall peers, and the replacement preserves the ledger's file mode. Editing `HANDOFF.md` directly bypasses all of this — under concurrency the guarantee belongs to `apply`, not to the file.
 
 Exit codes: `0` applied, `3` version conflict (another writer got there first), `4` the write would introduce structural errors and was not applied, `1` usage or missing ledger. On `3` the read behind the edit is stale, so the progressive audit is stale too — re-read, re-audit, and apply against the current version rather than retrying the same content.
 

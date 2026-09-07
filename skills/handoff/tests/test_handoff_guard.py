@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
@@ -317,6 +319,125 @@ class CompareAndSwapTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertEqual(result["status"], "error")
         self.assertFalse(self.ledger.exists())
+
+
+class OverlappingWriterTests(unittest.TestCase):
+    """Two writers whose critical sections genuinely overlap.
+
+    CompareAndSwapTests waits for the first write to return before starting the second,
+    so it can only prove stale-version rejection. These start the second writer while
+    the first is parked inside apply, which is the case that actually loses entries.
+    """
+
+    def setUp(self) -> None:
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.root = Path(self.directory.name)
+        self.ledger = self.root / "HANDOFF.md"
+        self.ledger.write_text("# Handoff\n", encoding="utf-8")
+
+    def entry_file(self, owner: str) -> Path:
+        path = self.root / f"{owner}.md"
+        path.write_text(
+            handoff_guard.make_template("2026-09-07", f"Task {owner}", owner, ["Work."]),
+            encoding="utf-8",
+        )
+        return path
+
+    def version(self) -> str:
+        return handoff_guard.ledger_version(self.ledger.read_text(encoding="utf-8"))
+
+    def apply_process(self, entry: str, version: str) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            [sys.executable, str(SCRIPT), "apply", "--root", str(self.root),
+             "--json", "--expect-version", version, "--entry", entry],
+            capture_output=True, text=True, check=False,
+        )
+
+    def test_overlapping_writers_do_not_lose_an_entry(self) -> None:
+        """A parked writer must not overwrite a peer that completed while it waited."""
+        stale = self.version()
+        pipe = self.root / "payload.fifo"
+        os.mkfifo(pipe)
+        slow = self.entry_file("A")
+        fast = self.entry_file("B")
+
+        # Writer A blocks reading its payload from the pipe, inside apply.
+        result: dict = {}
+        def run_slow() -> None:
+            result["proc"] = self.apply_process(str(pipe), stale)
+        thread = threading.Thread(target=run_slow)
+        thread.start()
+
+        # Writer B completes end to end while A is still parked.
+        fast_proc = self.apply_process(str(fast), stale)
+        self.assertEqual(fast_proc.returncode, 0, fast_proc.stdout + fast_proc.stderr)
+
+        # Release A's payload and let it finish.
+        with open(pipe, "w") as handle:
+            handle.write(slow.read_text(encoding="utf-8"))
+        thread.join(timeout=60)
+        self.assertFalse(thread.is_alive(), "slow writer did not finish")
+
+        slow_proc = result["proc"]
+        self.assertEqual(slow_proc.returncode, 3,
+                         f"expected conflict, got {slow_proc.returncode}: {slow_proc.stdout}")
+        self.assertEqual(json.loads(slow_proc.stdout)["status"], "conflict")
+
+        text = self.ledger.read_text(encoding="utf-8")
+        self.assertIn("Task B", text)
+        self.assertNotIn("Task A", text)
+
+        # Retrying against the current version preserves both entries.
+        retry = self.apply_process(str(slow), self.version())
+        self.assertEqual(retry.returncode, 0, retry.stdout)
+        retried = self.ledger.read_text(encoding="utf-8")
+        self.assertIn("Task A", retried)
+        self.assertIn("Task B", retried)
+
+    def test_apply_preserves_the_ledger_file_mode(self) -> None:
+        os.chmod(self.ledger, 0o644)
+        proc = self.apply_process(str(self.entry_file("C")), self.version())
+        self.assertEqual(proc.returncode, 0, proc.stdout)
+        self.assertEqual(os.stat(self.ledger).st_mode & 0o777, 0o644)
+
+    def test_read_binds_the_returned_text_to_the_returned_version(self) -> None:
+        proc = subprocess.run(
+            [sys.executable, str(SCRIPT), "read", "--root", str(self.root)],
+            capture_output=True, text=True, check=False,
+        )
+        self.assertEqual(proc.returncode, 0)
+        payload = json.loads(proc.stdout)
+        self.assertEqual(handoff_guard.ledger_version(payload["text"]), payload["version"])
+
+
+class DuplicateStateBoxTests(unittest.TestCase):
+    def test_contradictory_completed_boxes_are_an_error(self) -> None:
+        text = """# Handoff
+
+## 2026-09-07 - Contradictory (owner: X)
+
+State:
+
+- [x] In progress
+- [x] Completed
+- [ ] Completed
+
+Steps:
+
+- [x] Done.
+
+Status: Complete.
+"""
+        task = handoff_guard.parse_tasks(text)[0]
+        self.assertIn("duplicate Completed checkbox", task.errors)
+        self.assertIn("contradictory Completed checkbox", task.errors)
+        self.assertEqual(task.state, "invalid")
+
+    def test_single_state_boxes_still_parse(self) -> None:
+        task = handoff_guard.parse_tasks(MINIMAL_LEDGER)[0]
+        self.assertEqual(task.errors, [])
+        self.assertEqual(task.state, "in_progress")
 
 
 if __name__ == "__main__":
