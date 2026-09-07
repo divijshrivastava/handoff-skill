@@ -96,6 +96,29 @@ Next action: Add and run empty-query/no-results tests.
 
 Completed tasks retain both state boxes checked, so the ledger remains useful as history. See the full [ledger contract](skills/handoff/references/ledger-contract.md) for formatting rules and examples.
 
+## Live progress dashboard
+
+Watch overall completion and each agent's recorded progress while they work:
+
+```bash
+python3 skills/handoff/scripts/handoff_tui.py --root /path/to/your/repo
+```
+
+Run this from a checkout of this repository, or use the script's path inside
+your installed handoff skill. It refreshes every second as agents save ledger
+updates. The Agents view shows completed tasks and checked steps per owner;
+press Enter to browse an owner's tasks and inspect their steps and status.
+Use Tab to switch views, arrow keys to navigate, and `q` to quit.
+
+Add `--once` for a plain-text snapshot, `--interval 2` to change the refresh
+rate, or `--file /path/to/handoff.md` for an explicit ledger filename. Live mode
+uses Python's standard-library curses module on macOS/Linux; snapshot mode also
+works without curses. No package installation or service is needed.
+
+Percentages reflect recorded checkboxes and heading owners. They do not measure
+effort or verify who performed a step; stale entries still need an audit.
+See [controls and counting rules](skills/handoff/references/progress-viewer.md).
+
 ## Multi-agent safety
 
 For normal sequential work—or separate Git worktrees—editing `HANDOFF.md` directly is fine.

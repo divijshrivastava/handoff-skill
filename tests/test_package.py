@@ -24,6 +24,8 @@ class PackageTests(unittest.TestCase):
             self.assertEqual(first[0].read_bytes(), first[1].read_bytes())
             self.assertIn(hashlib.sha256(first[0].read_bytes()).hexdigest(), first[2].read_text())
             with ZipFile(first[0]) as archive:
+                self.assertIn("handoff/scripts/handoff_tui.py", archive.namelist())
+                self.assertIn("handoff/references/progress-viewer.md", archive.namelist())
                 self.assertEqual(set(archive.namelist()), {
                     "handoff/" + name for name in (*package.RUNTIME_FILES, "LICENSE")
                 })
@@ -34,6 +36,15 @@ class PackageTests(unittest.TestCase):
                 capture_output=True, text=True, check=True,
             )
             self.assertIn("- [ ] Completed", result.stdout)
+            ledger = base / "HANDOFF.md"
+            ledger.write_text("# Handoff\n\n" + result.stdout, encoding="utf-8")
+            viewer = helper.with_name("handoff_tui.py")
+            report = subprocess.run(
+                [sys.executable, str(viewer), "--once", "--file", str(ledger)],
+                cwd=base, capture_output=True, text=True, check=True,
+            )
+            self.assertIn("0/1 completed", report.stdout)
+            self.assertIn("Tester", report.stdout)
 
     def test_missing_resource_fails_before_creating_output(self):
         with tempfile.TemporaryDirectory() as directory:

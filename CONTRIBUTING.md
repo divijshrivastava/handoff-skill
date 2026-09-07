@@ -1,6 +1,6 @@
 # Contributing
 
-Keep `skills/handoff/SKILL.md` the runtime source of truth. Put conditional details in its references and keep the helper dependency-free. `doctor`, `validate`, `read`, and `template` are read-only; `apply` is the one writer, and any change to it must keep the read, version check, and replacement inside a single held lock.
+Keep `skills/handoff/SKILL.md` the runtime source of truth. Put conditional details in its references and keep the helper dependency-free. `doctor`, `validate`, `read`, and `template` and the standalone `handoff_tui.py` viewer are read-only; `apply` is the one writer, and any change to it must keep the read, version check, and replacement inside a single held lock.
 
 Before changing the workflow, describe a concrete failure case. Preserve progressive history, explicit ownership, and the distinction between structural checks and evidence of completion. Add a regression test when helper behavior changes. Behavioral scenarios belong in `skills/handoff/evals/evals.json`; do not report them as passing model evaluations unless they were actually run.
 
@@ -14,7 +14,7 @@ python3 scripts/package_skill.py
 git diff --check
 ```
 
-The release bundle deliberately includes only `SKILL.md`, `agents/openai.yaml`, `scripts/handoff_guard.py`, referenced Markdown files, and the license. Update the explicit allowlist and packaging tests if you add a runtime resource.
+The release bundle deliberately includes only `SKILL.md`, `agents/openai.yaml`, `scripts/handoff_guard.py`, `scripts/handoff_tui.py`, referenced Markdown files, and the license. Update the explicit allowlist and packaging tests if you add a runtime resource.
 
 ## Publish a release
 

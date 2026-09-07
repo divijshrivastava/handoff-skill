@@ -1,5 +1,21 @@
 # Handoff
 
+## 2026-09-08 - Add a live terminal progress dashboard (owner: Codex TUI session)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Implement a read-only live TUI with overall, per-owner, and task progress.
+- [x] Add regression coverage for counts, refresh, terminal behavior, and packaged execution.
+- [x] Document usage and include the utility in release archives.
+- [x] Run repository checks and record the handoff.
+
+Status: Complete. Added skills/handoff/scripts/handoff_tui.py: a read-only curses dashboard with one-second polling, overall task and step progress, totals by recorded owner, owner-to-task drilldown, full step/status details, keyboard navigation, resize handling, stale-read recovery, and --once/pipe snapshots. Reuses the guard parser; invalid and legacy entries are excluded from totals, and the viewer explicitly distinguishes checkbox/heading attribution from verified completion, live activity, or per-step authorship. Documented controls and counting rules, included both runtime files in reproducible archives, and bumped all three version declarations to 1.4.0. Verified on Python 3.9.10: 40 helper/viewer tests and 5 repository tests pass, including execution of the extracted viewer; version agreement, ledger validation, archive build, and git diff --check pass. Real curses terminal verification covered task details, per-owner navigation, automatic refresh after the guarded ledger update (this task moved from 0/4 to 3/4), and clean exit. No model evaluations were run or claimed. Changes remain uncommitted; no publication requested. The pre-existing scripts/demo/handoff-opt.gif and earlier owners/history are untouched. No remaining implementation work for this request.
+
 ## 2026-09-07 - Record the two-agent demo GIF (owner: Cursor session)
 
 State:

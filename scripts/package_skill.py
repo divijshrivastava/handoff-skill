@@ -15,7 +15,9 @@ RUNTIME_FILES = (
     "agents/openai.yaml",
     "references/design-notes.md",
     "references/ledger-contract.md",
+    "references/progress-viewer.md",
     "scripts/handoff_guard.py",
+    "scripts/handoff_tui.py",
 )
 
 

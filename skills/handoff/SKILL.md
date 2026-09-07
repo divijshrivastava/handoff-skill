@@ -3,7 +3,7 @@ name: handoff
 description: "Coordinate progressive repository work across agents with a shared HANDOFF.md ledger. Use before starting, continuing, checking, pausing, handing off, or committing a repository task whenever HANDOFF.md exists, multiple agents may be involved, the user mentions unfinished tasks or another agent, or work must be split into trackable steps. Audits later work and current code before treating old unchecked boxes as unfinished. Do not use for read-only questions that require no task tracking or repository mutation."
 license: MIT
 metadata:
-  version: "1.3.0"
+  version: "1.4.0"
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
 ---
 
@@ -264,6 +264,15 @@ Before committing or stopping:
 
 If the task pauses, another agent must be able to continue from the ledger and
 repository alone, without this conversation.
+
+## Optional live progress viewer
+
+Users can run `python3 "$SKILL_DIR/scripts/handoff_tui.py" --root /absolute/repo/path`
+in a separate terminal to watch recorded task and per-owner progress. The viewer
+is read-only and refreshes as the ledger changes. Counts reflect checkboxes and
+heading owners; they do not replace the progressive audit or establish live
+activity or per-step authorship. See `references/progress-viewer.md` for controls,
+snapshot mode, and counting rules.
 
 ## Named failure modes
 
