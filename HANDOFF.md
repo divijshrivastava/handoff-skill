@@ -1,5 +1,20 @@
 # Handoff
 
+## 2026-09-07 - Make the demo narrate itself (owner: Claude session divij-demo)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Rewrite the shot list so each beat is labelled in the terminal (scripts/demo/RECORDING.md).
+- [x] Update the VHS tape to match the narrated beats (scripts/demo/demo.tape).
+- [x] Verify repository checks and commit.
+
+Status: Complete. Two changes, after the user pointed out that a single agent auditing its own ledger demonstrates only half the skill. First, the terminal now narrates itself: each beat is introduced by a typed comment line, the whole ledger entry is shown instead of a `tail -5` fragment, and the clip ends held on the annotated diff via `--last-frame-duration 4`. Second, the scenario is now a real takeover. `make-fixture.sh --handoff` stops after the first commit so a live agent A implements the open step on camera and is interrupted mid-task, and a cold second session reads the ledger, declines to redo A's commit, verifies, and closes the entry; the unflagged fixture still builds the older single-session stale-box scenario. `demo.tape` matches the new beats. Also documented the lead-in trim as a cast edit rather than a lower `--idle-time-limit`, which compresses every pause and made the verdict unreadable when tried. Verified: both fixture modes build (`--handoff` stops at 4f25835; default reaches e5c6918), `bash -n` passes, 25 helper tests and 5 repository tests pass, ledger validation and whitespace checks pass. The committed `handoff.cast` and `handoff.gif` still show the old single-agent cut and are unchanged; re-recording needs a signed-in session and is the owner's to run.
+
 ## 2026-09-07 - Publish the demo GIF and README changes (owner: Claude session divij-demo)
 
 State:

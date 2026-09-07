@@ -63,51 +63,109 @@ clear
 
 ## 3. The shot list
 
-Five beats. Times are targets for the finished GIF, not a stopwatch for the take.
+Two sessions, one terminal. The point of the skill is that the second agent
+picks up the first one's work correctly, so the clip has to show two distinct
+agents — a single session auditing its own ledger only demonstrates half of it,
+and a viewer can reasonably ask why `git log` would not do.
 
-**Beat 1 — the setup (0:00–0:04).** The looping frame. This is what a scrolling
-reader sees, so it has to state the problem without narration.
-
-```sh
-tail -5 HANDOFF.md
-```
-
-Shows `- [ ] Verify empty queries and no-result behavior.` — an open box from
-three days ago.
-
-**Beat 2 — the contradiction (0:04–0:07).**
+Build the fixture in handoff mode, where nothing implements the open step yet:
 
 ```sh
-python3 -m unittest discover -q
+./make-fixture.sh --handoff /tmp/handoff-demo && cd /tmp/handoff-demo
 ```
 
-Three tests, OK. The box is open. The work is done. Anyone who has run an agent
-over a stale checklist knows what happens next.
+The clip has no voiceover, so the terminal narrates itself with comment lines
+typed at the prompt. They are part of the demo, not setup.
 
-**Beat 3 — the prompt (0:07–0:09).** Type it, don't paste it:
+### Session A — the agent that gets interrupted
 
-```
-Use handoff to audit HANDOFF.md and tell me what is actually unfinished.
-```
-
-**Beat 4 — the audit (0:09–0:20).** The payload. What has to be visible:
-
-- it reads the ledger
-- it checks `git log` / the source rather than trusting the box
-- it names the commit that satisfied the step
-- it says it is annotating rather than redoing
-
-If the run buries this under tool narration, that is worth fixing in `SKILL.md`
-before you record again — the output discipline section already asks for exactly
-this and the demo is the test of whether it works.
-
-**Beat 5 — the receipt (0:20–0:25).**
+**Beat 1 — the task (0:00–0:05).**
 
 ```sh
-git diff --stat HANDOFF.md && git diff HANDOFF.md | head -20
+# agent A picks up the task
+cat HANDOFF.md
 ```
 
-The ledger now carries the resolution and the evidence. End on this frame.
+The whole entry, not a fragment: task name, the ticked step, the open one.
+
+**Beat 2 — A works (0:05–0:14).**
+
+```sh
+claude
+```
+
+```
+Use handoff. Implement the open step in HANDOFF.md.
+```
+
+A checks `In progress`, writes the empty-query handling and its tests, and
+commits.
+
+**Beat 3 — the session dies (0:14–0:17).** Close it mid-task, before A records
+verification and closes the entry out. Do not ask it to stop politely — an
+interrupted session is the actual scenario, and the ledger is what has to
+survive it.
+
+```sh
+# A's session ends here. mid-task.
+git log --oneline -1
+```
+
+### Session B — the agent that takes over
+
+**Beat 4 — a cold start (0:17–0:21).** The boundary has to be unmistakable, so
+clear the screen and say so.
+
+```sh
+clear
+# new session. no memory of anything above.
+```
+
+**Beat 5 — B picks it up (0:21–0:34).**
+
+```sh
+claude
+```
+
+```
+Use handoff. Tell me what is unfinished and finish it.
+```
+
+This is the payload, and what has to be legible:
+
+- B knows a task is open and **who owns it**
+- B sees that the implementation is already done, in A's commit, and **does not
+  redo it**
+- B verifies rather than trusting the ledger
+- B finishes only the genuinely remaining step and closes the entry
+
+The one sentence the whole clip exists for is B saying, in effect: *agent A
+already implemented this in `<sha>`; I am not rewriting it — what is left is the
+verification.* If your take buries that under tool narration, fix the output
+discipline before recording again.
+
+Keep the answer short. Add "answer in three lines" to the prompt if the model
+sprawls; a thousand characters flashing past in one frame reads as noise.
+
+**Beat 6 — the receipt (0:34–0:40).** End on the ledger, and hold it.
+
+```sh
+# one ledger, two agents, no work redone
+git diff HANDOFF.md
+```
+
+Give this frame extra time on export with `--last-frame-duration 4`.
+
+### If you want the stronger version
+
+Run the two sessions in side-by-side `tmux` panes and record the pane pair, so
+both agents are on screen at once and the takeover is spatial rather than
+sequential. It is a harder take to land — two live sessions and no `clear` to
+hide behind — but nobody has to be told there are two agents.
+
+The default `./make-fixture.sh` (no flag) still builds the older single-session
+scenario, where the work is already committed and one agent audits the stale
+box. Keep it for a shorter clip.
 
 ## 4. Record
 
@@ -127,15 +185,33 @@ agg handoff.cast handoff.gif \
   --font-size 16 \
   --speed 1.35 \
   --theme asciinema \
-  --idle-time-limit 1.5
+  --idle-time-limit 1.5 \
+  --last-frame-duration 4
 
 gifsicle -O3 --lossy=60 --colors 128 handoff.gif -o handoff-opt.gif
 ls -lh handoff-opt.gif
 ```
 
+**Lead-in.** asciinema starts timing before your first keystroke, so the clip can open on a
+blank terminal -- which is the frame a README and a link preview both show. Trim it in the cast
+rather than lowering `--idle-time-limit`, which compresses every pause in the recording and can
+make the verdict unreadable:
+
+```sh
+python3 - <<'EOF'
+import json
+lines = open('handoff.cast').read().splitlines()
+events = [json.loads(l) for l in lines[1:] if l.strip()]
+shift = events[0][0] - 0.2
+open('handoff.cast', 'w').write('\n'.join(
+    [lines[0]] + [json.dumps([round(t - shift, 6), k, d]) for t, k, d in events]) + '\n')
+EOF
+```
+
 **Size targets.** Under 5 MB or X will transcode it into mush; under 3 MB is
 better. GitHub renders up to 10 MB but a slow README hero costs you the visit.
-If it is too big, cut beat 2 before you cut the audit — the audit is the product.
+If it is too big, shorten the `cat HANDOFF.md` frame before you touch beats 5 and 6 —
+the verdict and the receipt are the product.
 
 ## 5. VHS alternative
 

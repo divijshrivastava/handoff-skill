@@ -7,10 +7,17 @@
 # the commit that implements the box is real, and the ledger genuinely was
 # never updated, which is why the audit has something true to find.
 #
-#   ./make-fixture.sh [target-dir]     (default: /tmp/handoff-demo)
+#   ./make-fixture.sh [target-dir]              both commits: the stale-box audit
+#   ./make-fixture.sh --handoff [target-dir]    first commit only: a live agent A
+#                                               does the work, agent B takes over
 #
 set -euo pipefail
 
+HANDOFF_MODE=0
+if [ "${1:-}" = "--handoff" ]; then
+  HANDOFF_MODE=1
+  shift
+fi
 TARGET="${1:-/tmp/handoff-demo}"
 
 if [ -e "$TARGET" ]; then
@@ -63,6 +70,19 @@ GIT_AUTHOR_DATE="2026-09-02T14:10:00" GIT_COMMITTER_DATE="2026-09-02T14:10:00" \
 # ---------------------------------------------------------------- commit 2
 # A later session implements and tests exactly what the open box asks for,
 # and -- as actually happens -- never goes back to tick the box.
+#
+# Skipped under --handoff: there, a live agent A writes this itself while the
+# camera is running, and a second session takes the task over afterwards.
+
+if [ "$HANDOFF_MODE" = "1" ]; then
+  echo "fixture ready (handoff mode): $TARGET"
+  echo
+  git --no-pager log --oneline
+  echo
+  echo "open box in HANDOFF.md:  'Verify empty queries and no-result behavior.'"
+  echo "nothing implements it yet -- agent A does that on camera."
+  exit 0
+fi
 
 cat > search.py <<'PY'
 """Item search for the catalogue."""
