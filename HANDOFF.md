@@ -1,5 +1,23 @@
 # Handoff
 
+## 2026-09-07 - Distribute as a Claude Code plugin marketplace (owner: Claude session divij-f8)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Add the plugin and marketplace manifests (.claude-plugin/plugin.json, .claude-plugin/marketplace.json).
+- [x] Assert one version across the skill, plugin, and marketplace manifests (scripts/check_versions.py).
+- [x] Run that check in CI and replace the release workflow's single-file tag assertion.
+- [x] Document the plugin install and update path, and the stale-copy conflict (README.md).
+- [x] Verify installation end to end and record what the plugin actually ships.
+- [x] Commit and record verification.
+
+Status: Complete. Installed and uninstalled locally to verify rather than trusting the manifest: `claude plugin validate .` passes, the plugin installs as `handoff@divij-skills` version 1.2.2, enabled, and the helper runs from the installed copy at `~/.claude/plugins/cache/divij-skills/handoff/1.2.2/skills/handoff/`. Updates key off the version string, so `scripts/check_versions.py` fails CI when the three manifests disagree; drift was confirmed to exit 1. Known trade-off: `source: "./"` makes the plugin root the repository root, so an install copies the whole repository (416K locally) including `README.md`, `CONTRIBUTING.md`, `tests/`, `.github/`, and this ledger, rather than the allowlisted bundle `scripts/package_skill.py` builds. Git-sourced installs exclude gitignored paths such as `dist/` and `HANDOFF.md.lock`. Narrowing this would require moving `skills/handoff/` under a `plugins/handoff/` root and updating every path in CI, packaging, and documentation; it was not done. Verified on Python 3.9 and 3.14: 25 helper tests and 5 packaging tests pass, validate passes, the archive builds.
+
 ## 2026-09-07 - Fix compare-and-swap race and recheck findings from external review (owner: Claude session divij-f8)
 
 State:

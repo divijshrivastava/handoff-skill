@@ -8,11 +8,38 @@ An unchecked box from yesterday does not always mean unfinished work today. Hand
 
 ## Install
 
-From an Agent Skills compatible host:
+### Claude Code (recommended: gets updates)
+
+```sh
+/plugin marketplace add divijshrivastava/handoff-skill
+/plugin install handoff@divij-skills
+```
+
+Claude Code refreshes the marketplace in the background once per session, so a new
+release is picked up without reinstalling. To update on demand:
+
+```sh
+/plugin update handoff@divij-skills
+/plugin marketplace update divij-skills
+```
+
+Pin a version by adding the marketplace at a tag, for example
+`divijshrivastava/handoff-skill@v1.2.2`. Updates are triggered by the version string,
+which `scripts/check_versions.py` keeps identical across `SKILL.md`,
+`.claude-plugin/plugin.json`, and `.claude-plugin/marketplace.json`; CI fails on drift,
+because a version that never changes is never offered as an update.
+
+If you previously installed this skill by copying it into `.claude/skills/handoff/`,
+remove that copy before installing the plugin. Two skills of the same name are
+ambiguous, and the copied one does not update.
+
+### Other Agent Skills hosts
 
 ```sh
 npx skills add divijshrivastava/handoff-skill --skill handoff
 ```
+
+These hosts have no update channel: re-run the same command to move to a new version.
 
 Add `-g` for installation across projects. The installer lets you select your agent.
 

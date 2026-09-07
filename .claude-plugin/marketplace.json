@@ -1,0 +1,19 @@
+{
+  "name": "divij-skills",
+  "owner": { "name": "Divij Shrivastava", "url": "https://github.com/divijshrivastava" },
+  "description": "Agent skills for coordinating repository work across multiple agents.",
+  "plugins": [
+    {
+      "name": "handoff",
+      "source": "./",
+      "version": "1.2.2",
+      "displayName": "Handoff",
+      "description": "Coordinate progressive repository work across agents with a shared HANDOFF.md ledger.",
+      "homepage": "https://github.com/divijshrivastava/handoff-skill#readme",
+      "repository": "https://github.com/divijshrivastava/handoff-skill",
+      "license": "MIT",
+      "category": "productivity",
+      "tags": ["handoff", "ledger", "multi-agent", "task-tracking"]
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "name": "handoff",
+  "version": "1.2.2",
+  "description": "Coordinate progressive repository work across agents with a shared HANDOFF.md ledger.",
+  "author": { "name": "Divij Shrivastava" },
+  "homepage": "https://github.com/divijshrivastava/handoff-skill#readme",
+  "repository": "https://github.com/divijshrivastava/handoff-skill",
+  "license": "MIT",
+  "keywords": ["handoff", "ledger", "multi-agent", "task-tracking"]
+}
