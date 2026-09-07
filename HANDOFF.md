@@ -1,5 +1,20 @@
 # Handoff
 
+## 2026-09-07 - Add CLAUDE.md and commit the instruction files (owner: Claude session 01L6aEop)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Write CLAUDE.md covering commands and the architecture spanning several files.
+- [x] Commit AGENTS.md and CLAUDE.md as separate changes, preserving authorship.
+- [x] Verify the repository checks and record the handoff.
+
+Status: Complete. Wrote `CLAUDE.md` in response to the user's `/init`: it defers to `AGENTS.md` for style and commit conventions rather than restating them, and documents the authority split between `SKILL.md` and the structural helper, the compare-and-swap design of `apply` with its exit codes, the version-triple and packaging-allowlist invariants CI enforces, and this repository's use of its own ledger. Committed in `ecd858f`. `AGENTS.md` was authored by Codex in an earlier session and left uncommitted; the user asked for it here, so it was committed unchanged and separately in `4e4e2ec`, with authorship stated in the commit body rather than absorbed into this session's work. Neither file is a runtime resource: both sit outside `RUNTIME_FILES` and outside the skill and command components, so no version bump or release was needed and `v1.3.0` is unaffected. Verified: 25 helper tests and 5 packaging tests pass, `check_versions.py` reports 1.3.0 agreeing, `validate --root .` exits 0, `package_skill.py` builds, and `git diff --check` is clean. Not pushed; the user asked only for commits. Next action for whoever continues: push `main`, and exercise `/continue` end to end, which remains untested from the earlier entry.
+
 ## 2026-09-07 - Add a /continue command that resumes ledger work (owner: Claude session 01L6aEop)
 
 State:
@@ -28,7 +43,7 @@ Steps:
 - [x] Create AGENTS.md if absent with concise repository-specific guidance.
 - [x] Verify the guide and record the handoff.
 
-Status: Complete. Created the 382-word AGENTS.md contributor guide using exclusive file creation after confirming it was absent. Verified repository-specific paths and commands; 25 helper tests and 5 repository tests pass, versions agree, ledger validation passes, archives build, and whitespace checks are clean. No commit or publication requested. Earlier evaluation and release entries remain with Claude session divij-f8, whose activity is not observable through this session's agent list; their implementation commits are in current history and v1.2.2 exists locally, but current-skill evaluation results and remote release publication are not verified here. No implementation-file overlap; earlier entries are preserved. No remaining work for this guide.
+Status: Complete. Created the 382-word AGENTS.md contributor guide using exclusive file creation after confirming it was absent. Verified repository-specific paths and commands; 25 helper tests and 5 repository tests pass, versions agree, ledger validation passes, archives build, and whitespace checks are clean. No commit or publication requested. Earlier evaluation and release entries remain with Claude session divij-f8, whose activity is not observable through this session's agent list; their implementation commits are in current history and v1.2.2 exists locally, but current-skill evaluation results and remote release publication are not verified here. No implementation-file overlap; earlier entries are preserved. No remaining work for this guide. Committed unchanged later in `4e4e2ec` by Claude session 01L6aEop at the user's request; authorship remains Codex's.
 
 ## 2026-09-07 - Add demo recording assets for the README GIF (owner: Claude session divij-demo)
 
