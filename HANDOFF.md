@@ -1,5 +1,35 @@
 # Handoff
 
+## 2026-09-07 - Add a /continue command that resumes ledger work (owner: Claude session 01L6aEop)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Add the slash command (`commands/continue.md`).
+- [x] Bump the version triple so installed copies are offered the update.
+- [x] Verify tests, version agreement, ledger validation, packaging, and whitespace.
+
+Status: Complete. Added `commands/continue.md`, a plugin slash command that invokes this skill to audit the ledger and resume only the effective remainder. It refuses to create a ledger or invent scope, takes `$ARGUMENTS` as an optional task focus, and resolves ownership from evidence rather than the `In progress` label, stopping on a live owner or conflicting uncommitted work. It ships through the plugin path only: `marketplace.json` sets `source: "./"`, so the repository root is the plugin root, while `RUNTIME_FILES` in `scripts/package_skill.py` stays skill-runtime only because the ZIP targets hosts that have no slash commands. Version bumped 1.2.2 to 1.3.0 across `SKILL.md`, `plugin.json`, and `marketplace.json`. Verified: 25 helper tests and 5 packaging tests pass, `check_versions.py` reports 1.3.0 agreeing across all three files, `validate --root .` exits 0, `package_skill.py` builds the three artifacts, and `git diff --check` is clean. Not verified end to end: the command was never executed, because the installed plugin cache is 1.2.2 from the GitHub marketplace and does not load this working tree. Committed in `fe57e75` and tagged `v1.3.0` locally on `main`; not pushed, so installed copies remain on 1.2.2 and will not see `/continue` until the tag is pushed and the release workflow publishes the artifacts. Next action for whoever continues: push `main` and `v1.3.0`, then install the updated plugin and exercise `/continue` against a repository with a genuinely unfinished entry.
+
+## 2026-09-07 - Add repository contributor guide (owner: Codex)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Inspect repository structure, contribution rules, and recent history.
+- [x] Create AGENTS.md if absent with concise repository-specific guidance.
+- [x] Verify the guide and record the handoff.
+
+Status: Complete. Created the 382-word AGENTS.md contributor guide using exclusive file creation after confirming it was absent. Verified repository-specific paths and commands; 25 helper tests and 5 repository tests pass, versions agree, ledger validation passes, archives build, and whitespace checks are clean. No commit or publication requested. Earlier evaluation and release entries remain with Claude session divij-f8, whose activity is not observable through this session's agent list; their implementation commits are in current history and v1.2.2 exists locally, but current-skill evaluation results and remote release publication are not verified here. No implementation-file overlap; earlier entries are preserved. No remaining work for this guide.
+
 ## 2026-09-07 - Add demo recording assets for the README GIF (owner: Claude session divij-demo)
 
 State:
