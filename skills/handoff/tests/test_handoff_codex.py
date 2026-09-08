@@ -71,12 +71,15 @@ class SessionTests(unittest.TestCase):
         with patch.object(session, "call") as call:
             session.start("/some path/codex", arguments, Path("/repo with space"), "bar")
         command = call.call_args.args
-        cwd, forwarded = json.loads(base64.b64decode(command[-1]))
+        cwd, forwarded, status = json.loads(base64.b64decode(command[-1]))
         self.assertEqual(forwarded, ["/some path/codex", *arguments])
-        self.assertEqual(cwd, "/repo with space")
+        # Compare as paths: Windows renders this as a backslash path.
+        self.assertEqual(Path(cwd), Path("/repo with space"))
+        self.assertEqual(Path(status), session.status_file)
         call.assert_any_call("set-option", "-t", "handoff", "prefix", "None")
         call.assert_any_call("set-option", "-t", "handoff", "status-format[0]", "bar")
-        self.assertEqual(session.command[2:4], ["-S", "/tmp/private/s"])
+        self.assertEqual(session.command[2], "-S")
+        self.assertEqual(Path(session.command[3]), Path("/tmp/private/s"))
         self.assertIn(os.devnull, session.command)
 
     def test_exit_status_is_codex_status_not_attach_status(self):
@@ -85,6 +88,18 @@ class SessionTests(unittest.TestCase):
             self.assertIsNone(session.exit_status())
             self.assertEqual(session.exit_status(), 7)
             self.assertEqual(session.exit_status(), 1)
+
+    def test_an_empty_pane_dead_status_reads_the_recorded_status(self):
+        # tmux 3.4 reports a dead pane as '1:' with no status. Trusting the
+        # format alone reported every Codex run as exit 1 on that version.
+        with tempfile.TemporaryDirectory() as directory:
+            session = codex.CodexSession("tmux", Path(directory) / "s")
+            with patch.object(session, "call", return_value="1:"):
+                self.assertEqual(session.exit_status(), 1)
+                session.status_file.write_text("7", encoding="utf-8")
+                self.assertEqual(session.exit_status(), 7)
+                session.status_file.write_text("not a number", encoding="utf-8")
+                self.assertEqual(session.exit_status(), 1)
 
     def test_cleanup_waits_for_attached_client(self):
         session = codex.CodexSession("tmux", Path("private"))
@@ -204,7 +219,16 @@ class TmuxIntegrationTests(unittest.TestCase):
                 deadline = time.monotonic() + 5
                 while session.exit_status() is None and time.monotonic() < deadline:
                     time.sleep(0.02)
-                self.assertEqual(session.exit_status(), 7)
+                # A bare status mismatch cannot tell an unreported
+                # pane_dead_status from a child that really exited 1, and the
+                # two need opposite fixes. Report what tmux actually said.
+                raw = session.call("display-message", "-p", "-t", "handoff:0.0",
+                                   "#{pane_dead}:#{pane_dead_status}", check=False)
+                pane = session.call("capture-pane", "-p", "-t", "handoff:0.0", check=False)
+                version = subprocess.run([shutil.which("tmux"), "-V"], capture_output=True,
+                                         text=True, encoding="utf-8").stdout.strip()
+                detail = f"tmux={version!r} raw_state={raw!r} pane={pane!r}"
+                self.assertEqual(session.exit_status(), 7, detail)
             finally:
                 session.close()
             self.assertFalse(session.call("list-sessions", check=False))
