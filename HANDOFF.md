@@ -5,19 +5,29 @@
 State:
 
 - [x] In progress
-- [ ] Completed
+- [x] Completed
 
 Steps:
 
 - [x] Bump the version triple to 1.13.0 and run the release checks.
-- [ ] Commit on a branch, open a pull request, and merge after CI passes.
-- [ ] Tag v1.13.0 and confirm the published release.
-- [ ] Run the repository checks and record the handoff.
+- [x] Commit on a branch, open a pull request, and merge after CI passes.
+- [x] Tag v1.13.0 and confirm the published release.
+- [x] Run the repository checks and record the handoff.
 
-Status: In progress. Version triple moved to 1.13.0 and check_versions.py agrees.
-Verified before commit: 188 helper, viewer, launcher, bar, codex, and keys tests
-and 5 repository tests pass, validate --root . exits 0, archives build, and
-git diff --check is clean. Current step: open the pull request.
+Status: Complete. Released at the user's direction. Version triple moved to
+1.13.0 and `check_versions.py v1.13.0` agrees. Verified before tagging: 188
+helper, viewer, launcher, bar, codex, and keys tests and 5 repository tests
+pass, `validate --root .` exits 0, archives build, and `git diff --check` is
+clean. PR #6 passed all four CI legs (ubuntu and windows, Python 3.9 and 3.12,
+run 34198063536) and was squash-merged as `2a257ea`. Tag `v1.13.0` pushed;
+release workflow run 34198194734 succeeded and the GitHub release published at
+07:12Z with `handoff.zip`, `handoff.skill`, and `SHA256SUMS`. The built archive
+carries 13 files, `handoff/SKILL.md` reports 1.13.0, and includes
+`handoff_keys.py`, so FCFS session naming, `/handoff:view`, and per-emulator
+key installation now reach installed copies. Staged by explicit path throughout;
+the untracked `scripts/demo/handoff-opt.gif` stays with its earlier entry. Next
+action: none. An installed plugin copy needs `/plugin marketplace update
+divij-skills` before it sees 1.13.0.
 
 ## 2026-09-08 - Hand out session names in alphabetical order, first come first served (owner: Heimdall)
 
