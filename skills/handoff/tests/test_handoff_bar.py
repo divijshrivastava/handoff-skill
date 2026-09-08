@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -25,13 +26,13 @@ COMPLETED = LEDGER.replace("- [ ] Completed", "- [x] Completed").replace("- [ ] 
 assert len(COMPLETED) == len(LEDGER)
 
 
-def run(payload, base, *args, **environment):
+def run(payload, base, *args, script=None, **environment):
     env = dict(os.environ)
     env["HANDOFF_BAR_CACHE"] = str(base / "cache")
     env.pop("HANDOFF_TUI", None)
     env.update({k: str(v) for k, v in environment.items()})
     return subprocess.run(
-        ["sh", str(BAR), *args],
+        ["sh", str(script or BAR), *args],
         input=payload, capture_output=True, text=True, env=env, cwd=str(base),
     )
 
@@ -135,6 +136,61 @@ class CacheTests(unittest.TestCase):
         (other / "HANDOFF.md").write_text(COMPLETED, encoding="utf-8")
         self.assertIn("1/2 tasks", run(self.payload, self.base).stdout)
         self.assertIn("2/2 tasks", run(json.dumps({"cwd": str(other)}), self.base).stdout)
+
+
+class ViewerResolutionTests(unittest.TestCase):
+    """Regression: an old copy without --bar once won and blanked the row."""
+
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.base = Path(self.dir.name)
+        self.repo = self.base / "repo"
+        self.repo.mkdir()
+        (self.repo / "HANDOFF.md").write_text(LEDGER, encoding="utf-8")
+        self.payload = json.dumps({"cwd": str(self.repo)})
+        self.addCleanup(self.dir.cleanup)
+
+    def installed(self):
+        """A copy away from the scripts directory, so the sibling rule cannot apply."""
+        target = self.base / "bin" / "handoff-bar"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(BAR, target)
+        return target
+
+    def plant(self, *parts, supports_bar):
+        target = self.base.joinpath(*parts) / "skills/handoff/scripts/handoff_tui.py"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        real = (SCRIPTS / "handoff_tui.py").read_text(encoding="utf-8")
+        target.write_text(real if supports_bar else "import sys\nsys.exit(2)\n", encoding="utf-8")
+        if supports_bar:
+            for helper in ("handoff_guard.py",):
+                (target.parent / helper).write_text(
+                    (SCRIPTS / helper).read_text(encoding="utf-8"), encoding="utf-8")
+        return target
+
+    def test_old_copy_without_bar_is_skipped(self):
+        self.plant(".agents", supports_bar=False)
+        current = self.plant(".claude/plugins/cache/market/handoff/1.8.0", supports_bar=True)
+        result = run(self.payload, self.base, script=self.installed(),
+                     HOME=str(self.base), PATH="/usr/bin:/bin")
+        self.assertIn("1/2 tasks", result.stdout)
+        self.assertEqual((self.base / "cache" / "viewer").read_text().strip(), str(current))
+
+    def test_newest_version_wins_over_an_older_install(self):
+        self.plant(".claude/plugins/cache/market/handoff/1.2.0", supports_bar=True)
+        newest = self.plant(".claude/plugins/cache/market/handoff/1.8.0", supports_bar=True)
+        run(self.payload, self.base, script=self.installed(),
+            HOME=str(self.base), PATH="/usr/bin:/bin")
+        self.assertEqual((self.base / "cache" / "viewer").read_text().strip(), str(newest))
+
+    def test_a_stale_remembered_viewer_is_replaced(self):
+        current = self.plant(".claude/plugins/cache/market/handoff/1.8.0", supports_bar=True)
+        (self.base / "cache").mkdir(parents=True, exist_ok=True)
+        (self.base / "cache" / "viewer").write_text(str(self.base / "gone.py") + "\n", encoding="utf-8")
+        result = run(self.payload, self.base, script=self.installed(),
+                     HOME=str(self.base), PATH="/usr/bin:/bin")
+        self.assertIn("1/2 tasks", result.stdout)
+        self.assertEqual((self.base / "cache" / "viewer").read_text().strip(), str(current))
 
 
 if __name__ == "__main__":

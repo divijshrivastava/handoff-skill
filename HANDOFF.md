@@ -1,5 +1,20 @@
 # Handoff
 
+## 2026-09-08 - Fix status-line viewer resolution in handoff-bar (owner: Claude session 01LD89UW)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Fix resolution so a current install beats an older leftover copy.
+- [x] Add regression tests that run the script the way an installed copy runs.
+- [x] Verify from the installed path and record the handoff.
+
+Status: Complete. 1.8.0 shipped `handoff-bar` with a resolution bug that only appeared once the script was installed onto PATH. Its search loop assigned every existing candidate without breaking, so the last directory in the list won: `~/.agents/skills/handoff` here, holding a 1.0.0 snapshot with no `--bar` flag. That copy exited non-zero, the row came back empty, and the bar silently showed nothing. The repository tests missed it because they ran the script from its own scripts directory, where the sibling-viewer shortcut returns before the loop is reached; the same blind spot the launcher tests had. Fixed by resolving in priority order and breaking on the first hit, sorting the versioned plugin glob newest-first, requiring a candidate to contain `--bar` before accepting it, and caching the resolved viewer path separately from the row so the resolution cost is paid once rather than on every ledger change. Added three regression tests that copy the script to a PATH-like directory first: an old copy without `--bar` is skipped, the newest version wins over an older install, and a stale remembered path is replaced. Verified from the installed copy at `~/.local/bin/handoff-bar`: it now resolves the 1.8.0 plugin viewer and renders for both the nested `workspace.current_dir` and the flat `cwd` payload; 75 helper/viewer/launcher/bar tests and 5 repository tests pass, versions agree at 1.8.1, ledger validation, archive build, and whitespace checks pass, and steady-state cost is unchanged at about 32ms per cached run. Still unverified end to end: Grok and Kimi status lines, as recorded in the previous entry. Next action: release 1.8.1 so installed copies stop resolving a stale viewer.
+
 ## 2026-09-08 - Make the live progress bar work across agent harnesses (owner: Claude session 01LD89UW)
 
 State:

@@ -73,23 +73,47 @@ if [ -n "$stamp" ] && [ -r "$cache" ]; then
     fi
 fi
 
-# Cache miss. Resolve a viewer without paying for the Python launcher.
+# A viewer is only usable here if it has --bar; old copies linger in skill
+# directories and would fail silently, leaving the row blank.
+usable() {
+    [ -f "$1" ] && grep -q -- "--bar" "$1" 2>/dev/null
+}
+
+# Cache miss. Resolving is the slow part, so remember the answer separately from
+# the row: the ledger changes often, the install almost never.
 viewer=${HANDOFF_TUI:-}
-if [ -z "$viewer" ] || [ ! -f "$viewer" ]; then
+usable "$viewer" || {
     viewer=""
     here=$(dirname "$0")
-    if [ -f "$here/handoff_tui.py" ]; then
+    if usable "$here/handoff_tui.py"; then
         viewer="$here/handoff_tui.py"
     else
-        # Newest install across the harnesses that keep skills in a home directory.
-        for home in "$HOME/.claude/plugins/cache"/*/handoff/* "$HOME/.claude/plugins/marketplaces"/* \
-                    "$HOME/.claude" "$HOME/.kimi-code" "$HOME/.grok" "$HOME/.codex" \
-                    "$HOME/.cursor" "$HOME/.config/opencode" "$HOME/.agents"; do
-            candidate="$home/skills/handoff/scripts/handoff_tui.py"
-            [ -f "$candidate" ] && viewer=$candidate
-        done
+        remembered="$cache_dir/viewer"
+        [ -r "$remembered" ] && viewer=$(cat "$remembered" 2>/dev/null)
+        if ! usable "$viewer"; then
+            viewer=""
+            # The launcher already resolves correctly, including version order.
+            command -v handoff-tui >/dev/null 2>&1 && viewer=$(handoff-tui --which 2>/dev/null)
+            if ! usable "$viewer"; then
+                viewer=""
+                # Newest first, so a current install beats an older leftover copy.
+                for candidate in $(ls -1d "$HOME"/.claude/plugins/cache/*/handoff/*/skills/handoff/scripts/handoff_tui.py 2>/dev/null | sort -r) \
+                                 "$HOME"/.claude/plugins/marketplaces/*/skills/handoff/scripts/handoff_tui.py \
+                                 "$HOME"/.claude/skills/handoff/scripts/handoff_tui.py \
+                                 "$HOME"/.kimi-code/skills/handoff/scripts/handoff_tui.py \
+                                 "$HOME"/.grok/skills/handoff/scripts/handoff_tui.py \
+                                 "$HOME"/.codex/skills/handoff/scripts/handoff_tui.py \
+                                 "$HOME"/.cursor/skills/handoff/scripts/handoff_tui.py \
+                                 "$HOME"/.config/opencode/skills/handoff/scripts/handoff_tui.py \
+                                 "$HOME"/.agents/skills/handoff/scripts/handoff_tui.py; do
+                    if usable "$candidate"; then viewer=$candidate; break; fi
+                done
+            fi
+            [ -n "$viewer" ] && mkdir -p "$cache_dir" 2>/dev/null &&
+                printf '%s\n' "$viewer" > "$remembered" 2>/dev/null
+        fi
     fi
-fi
+}
 [ -n "$viewer" ] && [ -f "$viewer" ] || exit 0
 
 line=$(printf '%s' "$payload" | "${HANDOFF_PYTHON:-python3}" "$viewer" --bar --file "$ledger" $passthrough 2>/dev/null) || exit 0
