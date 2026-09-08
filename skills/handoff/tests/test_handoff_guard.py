@@ -689,33 +689,28 @@ class SessionNameTests(unittest.TestCase):
         self.assertEqual(self.run_name("--seed", "session-one"), name)
 
     def test_a_name_an_owner_already_holds_is_never_handed_out_again(self) -> None:
-        seed = "session-one"
-        wanted = handoff_guard.name_order(seed)[0]
+        wanted = handoff_guard.names_starting_with("A")[0]
         self.ledger.write_text(
             handoff_guard.make_template("2026-09-08", "Task", wanted, ["Do the work."]),
             encoding="utf-8")
-        chosen = self.run_name("--seed", seed)
+        chosen = self.run_name("--seed", "session-one")
         self.assertNotEqual(chosen, wanted)
-        self.assertEqual(chosen, handoff_guard.name_order(seed)[1])
+        self.assertEqual(chosen, handoff_guard.names_starting_with("A")[1])
 
     def test_a_completed_owner_still_holds_its_name(self) -> None:
-        seed = "session-one"
-        wanted = handoff_guard.name_order(seed)[0]
+        wanted = handoff_guard.names_starting_with("A")[0]
         self.ledger.write_text(
             f"# Handoff\n\n## 2026-09-08 - Done (owner: {wanted})\n\nState:\n\n"
             "- [x] In progress\n- [x] Completed\n\nSteps:\n\n- [x] Done.\n\n"
             "Status: Complete.\n", encoding="utf-8")
-        self.assertNotEqual(self.run_name("--seed", seed), wanted)
+        self.assertNotEqual(self.run_name("--seed", "session-one"), wanted)
 
-    def test_two_unrecorded_sessions_do_not_share_one_name(self) -> None:
-        # Both have claimed a name but neither has written an entry yet, so the
-        # ledger cannot separate them; the claim records have to.
-        collide = "shared-first-choice"
-        order = handoff_guard.name_order(collide)
-        with unittest.mock.patch.object(handoff_guard, "name_order", return_value=order):
-            first = handoff_guard.claim_name(collide, self.ledger, set())[0]
-            second = handoff_guard.claim_name("another-session", self.ledger, set())[0]
-        self.assertEqual(first, order[0])
+    def test_two_unrecorded_sessions_cycle_a_to_b(self) -> None:
+        # First come, first served: the first session claims an A name, the next a B name.
+        first = handoff_guard.claim_name("session-one", self.ledger, set())[0]
+        second = handoff_guard.claim_name("session-two", self.ledger, set())[0]
+        self.assertEqual(first, handoff_guard.names_starting_with("A")[0])
+        self.assertEqual(second, handoff_guard.names_starting_with("B")[0])
         self.assertNotEqual(second, first)
 
     def test_an_exhausted_roster_numbers_repeats_instead_of_failing(self) -> None:
@@ -756,11 +751,19 @@ class SessionNameTests(unittest.TestCase):
             self.assertNotEqual(handoff_guard.session_seed(), handoff_guard.session_seed())
 
     def test_a_stale_claim_stops_reserving_its_name(self) -> None:
-        seed = "session-one"
-        wanted = handoff_guard.name_order(seed)[0]
-        self.run_name("--seed", "older-session")
-        stale = next(self.cache.iterdir())
+        wanted = handoff_guard.names_starting_with("A")[0]
+        slot_path = self.cache / handoff_guard.FCFS_SLOT_FILE
+        self.cache.mkdir(parents=True, exist_ok=True)
+        slot_path.write_text("0\n", encoding="utf-8")
+        stale = self.cache / "stale-claim"
         stale.write_text(wanted + "\n", encoding="utf-8")
         aged = time.time() - handoff_guard.NAME_CLAIM_SECONDS - 60
         os.utime(stale, (aged, aged))
-        self.assertEqual(self.run_name("--seed", seed), wanted)
+        self.assertEqual(self.run_name("--seed", "session-one"), wanted)
+
+    def test_fcfs_wraps_from_z_back_to_a(self) -> None:
+        slot_path = self.cache / handoff_guard.FCFS_SLOT_FILE
+        slot_path.parent.mkdir(parents=True, exist_ok=True)
+        slot_path.write_text("26\n", encoding="utf-8")
+        chosen = handoff_guard.claim_name("wrap-session", self.ledger, set())[0]
+        self.assertEqual(chosen, handoff_guard.names_starting_with("A")[0])

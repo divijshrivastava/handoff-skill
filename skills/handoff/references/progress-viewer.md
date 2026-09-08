@@ -183,6 +183,8 @@ cannot bind a key to a command themselves. To stop an unwrapped Claude Code
 session answering `ctrl+g` with its own editor action, run
 `handoff-tui --install-viewer-key` once; see
 [releasing the key in the host](harness-setup.md#releasing-the-key-in-the-host).
+In Claude Code, `/handoff:view` opens the viewer in a separate terminal because
+the harness has no controlling terminal for curses.
 
 The row ends with `^G open` while the key is bound. `Ctrl-G` is the only key
 this mode keeps for itself - the private session has no tmux prefix, so every

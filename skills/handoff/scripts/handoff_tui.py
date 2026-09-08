@@ -677,12 +677,15 @@ def main(argv: list[str] | None = None) -> int:
                         help="Run AGENT (claude, codex, kimi, grok, ...) with a live bottom bar "
                              "and the viewer key (tmux 3.2+); remaining arguments go to AGENT")
     parser.add_argument("--install-viewer-key", action="store_true",
-                        help="Release the viewer key in the host harness's own keybindings and exit")
+                        help="Install a viewer key binding for this terminal or host")
+    parser.add_argument("--emulator", default="auto",
+                        help="Emulator for --install-viewer-key: auto, claude, kitty, wezterm, iterm2")
     args = parser.parse_args(argv)
     use_utf8_stdout()
     if args.install_viewer_key:
-        from handoff_codex import install_host_keybindings, viewer_key
-        print(install_host_keybindings(viewer_key()))
+        from handoff_keys import install
+        root = args.root.resolve() if args.file is None else args.file.resolve().parent
+        print(install(root=root, emulator=args.emulator))
         return 0
     # Both flags take the rest of the line, so only the first one given is ever
     # set; whichever it is, everything after it belongs to the wrapped agent.

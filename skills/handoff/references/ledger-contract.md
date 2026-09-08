@@ -128,7 +128,9 @@ python3 "$SKILL_DIR/scripts/handoff_guard.py" name --root /absolute/repo/path
 It answers with one of a hundred mythological names, skipping every name an
 owner in this ledger already holds - completed entries included, because
 reusing a retired owner's name makes the ledger's own history ambiguous about
-who did which work. The same session is given the same name each time it asks,
+who did which work. Names are handed out first come, first served, cycling
+initials A through Z and wrapping to the next free A name after Z. The same
+session is given the same name each time it asks,
 so an agent that re-runs preflight after recording an entry keeps owning it.
 Write the name exactly as printed; a label the helper did not issue, or a
 second name adopted mid-task, breaks the one thing attribution rests on.

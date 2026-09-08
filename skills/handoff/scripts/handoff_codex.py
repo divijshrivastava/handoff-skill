@@ -15,97 +15,21 @@ import tempfile
 import time
 
 from handoff_tui import Watcher, bar_line, clean_text, count_tasks
+from handoff_keys import (
+    CLAUDE_KEYBINDINGS,
+    DEFAULT_KEY as VIEWER_KEY,
+    HOST_CONTEXT,
+    HOST_DISPLACED,
+    host_key_name,
+    install_claude_release as install_host_keybindings,
+    key_label,
+    viewer_key,
+)
 
-VIEWER_KEY = "C-g"
 # Leave room for the agent's prompt and the bar itself, so the popup reads as an
 # overlay the user is looking through rather than a screen they switched to.
 POPUP_SIZE = ("90%", "85%")
 DEFAULT_AGENT = "codex"
-# Where Claude Code reads user keybindings, and the one default the viewer key
-# collides with: `ctrl+g` runs `chat:externalEditor` there, so pressing it in an
-# unwrapped session opens an editor instead of the ledger. `ctrl+e` is the
-# alternative Claude Code's own documentation uses for exactly this move.
-CLAUDE_KEYBINDINGS = Path.home() / ".claude" / "keybindings.json"
-HOST_CONTEXT = "Chat"
-HOST_DISPLACED = {"ctrl+g": ("chat:externalEditor", "ctrl+e")}
-
-
-def viewer_key() -> str | None:
-    """The one key this session keeps for itself; "none" gives it back to the agent."""
-    key = os.environ.get("HANDOFF_VIEWER_KEY", VIEWER_KEY).strip()
-    if not key or key.lower() == "none":
-        return None
-    return key
-
-
-def key_label(key: str) -> str:
-    """Name a tmux key the way a keyboard shows it, so the hint reads as typed."""
-    if len(key) > 2 and key[1] == "-" and key[0] in "cC":
-        return "^" + key[2:].upper()
-    return key
-
-
-def host_key_name(key: str) -> str | None:
-    """Spell a tmux key the way a host harness names it, or None if it cannot.
-
-    Only the control keys map cleanly. tmux's `M-` and function keys have host
-    spellings too, but the harnesses this override targets disagree about them,
-    and guessing wrong writes a binding that silently never fires.
-    """
-    if len(key) == 3 and key[1] == "-" and key[0] in "cC" and key[2].isalpha():
-        return "ctrl+" + key[2].lower()
-    return None
-
-
-def install_host_keybindings(key: str | None, path: Path | None = None) -> str:
-    """Stop the host harness acting on the viewer key, and report what changed.
-
-    The wrapper binds the key in tmux's root table, so inside a wrapped session
-    the host never sees it. Unwrapped, the host still owns it: in Claude Code
-    `ctrl+g` runs `chat:externalEditor`, which opens whichever editor is on PATH.
-    Unbinding it there means one key has one meaning in this repository whether
-    or not the session happens to be wrapped. The displaced action is not
-    dropped - it is moved to the alternative the host already documents - and
-    every other block in the file is preserved untouched.
-    """
-    if key is None:
-        return "No viewer key is bound, so no host override is needed."
-    host_key = host_key_name(key)
-    if host_key is None:
-        return f"Cannot express {key_label(key)} as a host binding; override skipped."
-    target = path or CLAUDE_KEYBINDINGS
-    displaced = HOST_DISPLACED.get(host_key)
-    try:
-        existing = json.loads(target.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        existing = {"bindings": []}
-    except (OSError, ValueError) as error:
-        # Never rewrite a file that failed to parse: the user's own bindings
-        # are in there, and a fresh document would silently discard them.
-        return f"Leaving {target} alone; it did not parse ({error})."
-    if not isinstance(existing, dict) or not isinstance(existing.get("bindings"), list):
-        return f"Leaving {target} alone; it is not a keybindings document."
-    blocks = existing["bindings"]
-    block = next((item for item in blocks
-                  if isinstance(item, dict) and item.get("context") == HOST_CONTEXT
-                  and isinstance(item.get("bindings"), dict)), None)
-    if block is None:
-        block = {"context": HOST_CONTEXT, "bindings": {}}
-        blocks.append(block)
-    if host_key in block["bindings"] and block["bindings"][host_key] is None:
-        return f"{target} already releases {host_key} for the viewer."
-    block["bindings"][host_key] = None
-    if displaced is not None:
-        action, moved_to = displaced
-        # Only relocate the action if the user has not already rehomed it.
-        if action not in block["bindings"].values():
-            block["bindings"][moved_to] = action
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(json.dumps(existing, indent=2) + "\n", encoding="utf-8")
-    if displaced is not None:
-        return (f"Released {host_key} in {target}; "
-                f"{displaced[0]} now answers to {displaced[1]}.")
-    return f"Released {host_key} in {target}."
 
 
 def viewer_command(ledger: Path, interval: float, read_only: bool) -> str:

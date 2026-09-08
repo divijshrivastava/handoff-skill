@@ -3,7 +3,7 @@ name: handoff
 description: "Coordinate progressive repository work across agents with a shared HANDOFF.md ledger. Use before starting, continuing, checking, pausing, handing off, or committing a repository task whenever HANDOFF.md exists, multiple agents may be involved, the user mentions unfinished tasks or another agent, or work must be split into trackable steps. Audits later work and current code before treating old unchecked boxes as unfinished. Do not use for read-only questions that require no task tracking or repository mutation."
 license: MIT
 metadata:
-  version: "1.12.0"
+  version: "1.13.0"
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
 ---
 
@@ -332,10 +332,12 @@ viewer key, or reports that `Ctrl-G` does something else in their harness, run:
 python3 "$SKILL_DIR/scripts/handoff_tui.py" --install-viewer-key
 ```
 
-It releases the key in the host's own keybindings so it means one thing whether
-or not the session is wrapped, merging into the file rather than replacing it.
-It is idempotent, so running it when nothing needs changing is safe and says so.
-Do not edit a user's keybindings any other way, and do not run it unasked.
+It writes a binding that actually fires where the terminal emulator allows one,
+and releases the key in Claude Code's own keybindings where it cannot. Use
+`/handoff:view` when the harness has no controlling terminal for curses. It
+merges into existing config rather than replacing it, is idempotent, and refuses
+to rewrite files that do not parse. Do not edit a user's keybindings any other
+way, and do not run it unasked.
 
 ## Named failure modes
 

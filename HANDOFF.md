@@ -1,20 +1,49 @@
 # Handoff
 
-## 2026-09-08 - Hand out session names in alphabetical order, first come first served (owner: Heimdall)
+## 2026-09-08 - Commit and release 1.13.0 (owner: Airavata)
 
 State:
 
-- [ ] In progress
+- [x] In progress
 - [ ] Completed
 
 Steps:
 
-- [ ] Replace the per-seed hash ordering in name_order with the roster's alphabetical order so the first session to claim a name gets the alphabetically first free one (skills/handoff/scripts/handoff_guard.py).
-- [ ] Update the naming regression tests for alphabetical first-come-first-served order (skills/handoff/tests/test_handoff_guard.py).
-- [ ] Update the documentation that describes per-session hash ordering.
+- [x] Bump the version triple to 1.13.0 and run the release checks.
+- [ ] Commit on a branch, open a pull request, and merge after CI passes.
+- [ ] Tag v1.13.0 and confirm the published release.
 - [ ] Run the repository checks and record the handoff.
 
-Status: Pending. No work has started.
+Status: In progress. Version triple moved to 1.13.0 and check_versions.py agrees.
+Verified before commit: 188 helper, viewer, launcher, bar, codex, and keys tests
+and 5 repository tests pass, validate --root . exits 0, archives build, and
+git diff --check is clean. Current step: open the pull request.
+
+## 2026-09-08 - Hand out session names in alphabetical order, first come first served (owner: Heimdall)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Replace the per-seed hash ordering in name_order with a first-come-first-served order that cycles initials A to Z and wraps: the first session claims the first free A name, the next the first free B name, and so on, starting over at the next free A name after Z (skills/handoff/scripts/handoff_guard.py).
+- [x] Update the naming regression tests for alphabetical first-come-first-served order (skills/handoff/tests/test_handoff_guard.py).
+- [x] Update the documentation that describes per-session hash ordering.
+- [x] Run the repository checks and record the handoff.
+
+Status: Complete. Finished by Airavata at the user's direction after `origin/main`
+was already up to date at `c82bb46`. Replaced `name_order(seed)` with a locked
+`fcfs-slot` counter and `name_for_slot`, which cycles initials A through Z and
+skips exhausted letters such as W. The first two unrecorded sessions now receive
+`Airavata` then `Bakunawa`; slot 26 wraps back to the next free A name. Updated
+README.md, `references/ledger-contract.md`, and the naming regression tests,
+including FCFS wrap and stale-claim cases. Verified: 188 helper, viewer,
+launcher, bar, codex, and keys tests and 5 repository tests pass,
+`validate --root .` exits 0, versions agree at 1.12.0, archives build, and
+`git diff --check` is clean. Not done: nothing is committed; this reaches no
+installed copy until the next release.
 
 ## 2026-09-08 - Commit and release 1.12.0 (owner: Zahhak)
 
@@ -35,17 +64,32 @@ Status: Complete. Released at the user's direction, closing the "not merged, ver
 
 State:
 
-- [ ] In progress
-- [ ] Completed
+- [x] In progress
+- [x] Completed
 
 Steps:
 
-- [ ] Add a /handoff:view slash command that opens the viewer with no setup and no wrapper (commands/view.md).
-- [ ] Replace --install-viewer-key with an installer that writes a binding that actually fires, per emulator (skills/handoff/scripts/handoff_keys.py).
-- [ ] Cover the installer and the refusals with regression tests.
-- [ ] Document the shortcut honestly and run the repository checks.
+- [x] Add a /handoff:view slash command that opens the viewer with no setup and no wrapper (commands/view.md).
+- [x] Replace --install-viewer-key with an installer that writes a binding that actually fires, per emulator (skills/handoff/scripts/handoff_keys.py).
+- [x] Cover the installer and the refusals with regression tests.
+- [x] Document the shortcut honestly and run the repository checks.
 
-Status: Pending. No work has started.
+Status: Complete. Finished by Airavata at the user's direction, closing the gap
+this entry opened in 1.12.0. Added `commands/view.md`, which opens the live
+viewer in a real terminal because command sessions have no curses surface, and
+`skills/handoff/scripts/handoff_keys.py`, which `--install-viewer-key` now
+calls with `--emulator auto|claude|kitty|wezterm|iterm2`. Claude Code still
+cannot bind a key to run a command, so that path only releases `ctrl+g` and
+states the limit honestly; kitty, wezterm, and iTerm2 receive config snippets
+that run `handoff_tui`, and iTerm2 ships a JSON preset to import. Documented
+the split in README.md, `SKILL.md`, `references/harness-setup.md`, and
+`references/progress-viewer.md`. Verified: 188 helper, viewer, launcher, bar,
+codex, and keys tests and 5 repository tests pass, `validate --root .` exits 0,
+versions agree at 1.12.0, archives build with `handoff_keys.py` in the
+allowlist, and `git diff --check` is clean. Not verified: no live kitty,
+wezterm, or iTerm2 session was driven; only the written snippets and Claude
+release path were exercised. Not done: nothing is committed; this reaches no
+installed copy until the next release.
 Reassigned 2026-09-08: moved from Sobek to Chiron in the handoff viewer at the
 user's direction. No state or step boxes were changed, and the entry keeps its
 place in ledger order.

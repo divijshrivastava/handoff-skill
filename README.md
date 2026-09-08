@@ -201,10 +201,11 @@ The launcher also discovers project `.agents/skills/handoff` and
 
 ## Slash commands
 
-Installed as a Claude Code plugin, the skill adds two commands:
+Installed as a Claude Code plugin, the skill adds three commands:
 
 | Command | Purpose |
 | --- | --- |
+| `/handoff:view` | Open the live progress viewer in a separate terminal |
 | `/handoff:status` | Turn on a live progress bar in the status line, and report progress |
 | `/handoff:continue` | Audit the ledger and resume what is actually unfinished |
 
@@ -305,9 +306,11 @@ python3 skills/handoff/scripts/handoff_guard.py template \
 Every session in a repository with Handoff installed claims a name at
 preflight, drawn from a hundred mythological figures worldwide, so the ledger
 and the dashboard read as named agents rather than a column of host session
-ids. A name is never one an owner in that ledger already holds, and the same
-session asking twice gets the same name. `$HANDOFF_SESSION` identifies a
-session whose host exposes no id of its own, and `--seed` names one explicitly.
+ids. Names are handed out first come, first served, cycling initials A through
+Z and wrapping to the next free A name after Z. A name is never one an owner
+in that ledger already holds, and the same session asking twice gets the same
+name. `$HANDOFF_SESSION` identifies a session whose host exposes no id of its
+own, and `--seed` names one explicitly.
 
 The helper validates ledger structure only. It cannot determine whether a feature is really implemented, whether ownership is active, or whether a requirement is obsolete—those are evidence-based decisions made by the agent.
 
