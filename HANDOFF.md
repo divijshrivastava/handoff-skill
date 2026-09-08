@@ -5,16 +5,16 @@
 State:
 
 - [x] In progress
-- [ ] Completed
+- [x] Completed
 
 Steps:
 
-- [ ] Bump the version triple to 1.16.0 and run the release checks.
-- [ ] Commit the release change and push main.
-- [ ] Tag v1.16.0, push it, and confirm the published release against a clean-checkout build.
-- [ ] Record the handoff.
+- [x] Bump the version triple to 1.16.0 and run the release checks.
+- [x] Commit the release change and push main.
+- [x] Tag v1.16.0, push it, and confirm the published release against a clean-checkout build.
+- [x] Record the handoff.
 
-Status: In progress. The user asked to release the viewer work adopted from the Codex session and committed as 6a3f9d8: ledger-order agent lists and the gg/G jump keys, which ship in handoff_tui.py and progress-viewer.md and so reach installed copies only through a release. 1.15.0 is tagged and deliberately excluded that work, so the triple moves to 1.16.0. Next action: bump the triple and run the release checks.
+Status: In progress. The user asked to release the viewer work adopted from the Codex session and committed as 6a3f9d8: ledger-order agent lists and the gg/G jump keys, which ship in handoff_tui.py and progress-viewer.md and so reach installed copies only through a release. 1.15.0 is tagged and deliberately excluded that work, so the triple moves to 1.16.0. Complete. Triple moved to 1.16.0 and check_versions.py v1.16.0 agrees. Verified before tagging: 212 helper tests and 5 repository tests pass, validate exits 0, git diff --check is clean, and a clean worktree build at 92da65c carries 13 files, reports 1.16.0, ships jump_to_end in handoff_tui.py and the gg/G row in progress-viewer.md. Pushed 1efba4b..92da65c and tag v1.16.0. Release run 34271308883 succeeded and the release published at 19:50:55Z; the downloaded handoff.zip and handoff.skill hash to ab151bc7aa057ee95ab2d034e8395853912532a46bd3149604ce1fbc696a8bf3, identical to that clean build. Validate run 34271305828 succeeded on ubuntu and windows for Python 3.9 and 3.12. Next action: none. An installed plugin copy needs /plugin marketplace update divij-skills before it sees 1.16.0.
 
 ## 2026-09-09 - Order the agent list newest first and add vim jump keys (owner: Daedalus)
 
