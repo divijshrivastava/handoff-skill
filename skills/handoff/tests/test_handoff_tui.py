@@ -224,7 +224,7 @@ class DashboardTests(unittest.TestCase):
 class CliTests(unittest.TestCase):
     def run_cli(self, *args):
         return subprocess.run([sys.executable, str(SCRIPTS / "handoff_tui.py"), *args],
-                              capture_output=True, text=True, timeout=5)
+                              capture_output=True, text=True, encoding="utf-8", timeout=5)
 
     def test_pipe_falls_back_to_snapshot_and_explicit_lowercase_file_works(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -332,7 +332,7 @@ class EncodingTests(unittest.TestCase):
             for mode in ("--once", "--bar"):
                 result = subprocess.run(
                     [sys.executable, str(SCRIPTS / "handoff_tui.py"), mode, "--file", str(ledger)],
-                    capture_output=True, text=True,
+                    capture_output=True, text=True, encoding="utf-8",
                     env={**os.environ, "PYTHONIOENCODING": "cp1252"},
                 )
                 self.assertEqual(result.returncode, 0, (mode, result.stderr))

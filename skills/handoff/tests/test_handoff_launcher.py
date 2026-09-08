@@ -46,7 +46,7 @@ def which(base: Path, script: Path | None = None, **environment) -> subprocess.C
     env.update(environment)
     return subprocess.run(
         [sys.executable, str(script or installed_copy(base)), "--which"],
-        capture_output=True, text=True, env=env,
+        capture_output=True, text=True, encoding="utf-8", env=env,
     )
 
 
@@ -150,7 +150,7 @@ class InPlaceTests(unittest.TestCase):
             )
             result = subprocess.run(
                 [sys.executable, str(LAUNCHER), "--once", "--file", str(ledger)],
-                capture_output=True, text=True, check=True,
+                capture_output=True, text=True, encoding="utf-8", check=True,
             )
             self.assertIn("0/1 completed", result.stdout)
             self.assertIn("Tester", result.stdout)

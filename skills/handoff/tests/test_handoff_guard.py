@@ -126,7 +126,7 @@ Status: Complete.
             ledger.write_text(text)
             result = subprocess.run(
                 [sys.executable, str(SCRIPT), "validate", "--root", str(root), "--json"],
-                capture_output=True, text=True,
+                capture_output=True, text=True, encoding="utf-8",
             )
             self.assertEqual(result.returncode, 1)
             self.assertTrue(json.loads(result.stdout)["errors"])
@@ -195,7 +195,7 @@ class CompareAndSwapTests(unittest.TestCase):
         result = subprocess.run(
             [sys.executable, str(SCRIPT), "apply", "--root", str(self.root), "--json", *args],
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8",
             check=False,
         )
         return result.returncode, json.loads(result.stdout)
@@ -351,7 +351,7 @@ class OverlappingWriterTests(unittest.TestCase):
         return subprocess.run(
             [sys.executable, str(SCRIPT), "apply", "--root", str(self.root),
              "--json", "--expect-version", version, "--entry", entry],
-            capture_output=True, text=True, check=False,
+            capture_output=True, text=True, encoding="utf-8", check=False,
         )
 
     @unittest.skipUnless(hasattr(os, "mkfifo"), "needs a POSIX FIFO to park a writer")
@@ -429,14 +429,14 @@ sys.exit(parsed.handler(parsed))
 
         parked = subprocess.Popen(
             [sys.executable, "-c", self.PARKED_WORKER, str(SCRIPT), *args, str(slow)],
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8",
         )
         other = None
         try:
             self.assertEqual(parked.stdout.readline().strip(), "READY")
             other = subprocess.Popen(
                 [sys.executable, str(SCRIPT), *args, str(fast)],
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8",
             )
             # B must not get through while A holds the lock.
             with self.assertRaises(subprocess.TimeoutExpired):
@@ -467,7 +467,7 @@ sys.exit(parsed.handler(parsed))
     def test_read_binds_the_returned_text_to_the_returned_version(self) -> None:
         proc = subprocess.run(
             [sys.executable, str(SCRIPT), "read", "--root", str(self.root)],
-            capture_output=True, text=True, check=False,
+            capture_output=True, text=True, encoding="utf-8", check=False,
         )
         self.assertEqual(proc.returncode, 0)
         payload = json.loads(proc.stdout)

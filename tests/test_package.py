@@ -42,7 +42,7 @@ class PackageTests(unittest.TestCase):
             helper = base / "unpacked/handoff/scripts/handoff_guard.py"
             result = subprocess.run(
                 [sys.executable, str(helper), "template", "--title", "Example", "--owner", "Tester", "--step", "Verify."],
-                capture_output=True, text=True, check=True,
+                capture_output=True, text=True, encoding="utf-8", check=True,
             )
             self.assertIn("- [ ] Completed", result.stdout)
             ledger = base / "HANDOFF.md"
@@ -50,7 +50,7 @@ class PackageTests(unittest.TestCase):
             viewer = helper.with_name("handoff_tui.py")
             report = subprocess.run(
                 [sys.executable, str(viewer), "--once", "--file", str(ledger)],
-                cwd=base, capture_output=True, text=True, check=True,
+                cwd=base, capture_output=True, text=True, encoding="utf-8", check=True,
             )
             self.assertIn("0/1 completed", report.stdout)
             self.assertIn("Tester", report.stdout)
@@ -58,12 +58,12 @@ class PackageTests(unittest.TestCase):
             launcher = helper.with_name("handoff-tui")
             resolved = subprocess.run(
                 [sys.executable, str(launcher), "--which"],
-                capture_output=True, text=True, check=True,
+                capture_output=True, text=True, encoding="utf-8", check=True,
             )
             self.assertEqual(Path(resolved.stdout.strip()), viewer.resolve())
             forwarded = subprocess.run(
                 [sys.executable, str(launcher), "--once", "--file", str(ledger)],
-                cwd=base, capture_output=True, text=True, check=True,
+                cwd=base, capture_output=True, text=True, encoding="utf-8", check=True,
             )
             # The snapshot header carries a clock time, so compare the ledger content.
             def content(text):
@@ -75,7 +75,7 @@ class PackageTests(unittest.TestCase):
                 return
             bar = subprocess.run(
                 ["sh", str(helper.with_name("handoff-bar")), "--file", str(ledger)],
-                input="", capture_output=True, text=True,
+                input="", capture_output=True, text=True, encoding="utf-8",
                 env={**os.environ, "HANDOFF_BAR_CACHE": str(base / "barcache")},
             )
             self.assertEqual(bar.returncode, 0, bar.stderr)

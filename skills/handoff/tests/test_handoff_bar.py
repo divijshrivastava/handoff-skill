@@ -39,7 +39,7 @@ def run(payload, base, *args, script=None, **environment):
     env.update({k: str(v) for k, v in environment.items()})
     return subprocess.run(
         ["sh", str(script or BAR), *args],
-        input=payload, capture_output=True, text=True, env=env, cwd=str(base),
+        input=payload, capture_output=True, text=True, encoding="utf-8", env=env, cwd=str(base),
     )
 
 
