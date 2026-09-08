@@ -5,15 +5,15 @@
 State:
 
 - [x] In progress
-- [ ] Completed
+- [x] Completed
 
 Steps:
 
-- [ ] Point the README lead image at assets/handoff-tui.gif from the 4:44 recording (README.md).
-- [ ] Remove the older assets/dashboard-session.gif.
-- [ ] Commit, push origin/main, and record the identifier.
+- [x] Point the README lead image at assets/handoff-tui.gif from the 4:44 recording (README.md).
+- [x] Remove the older assets/dashboard-session.gif.
+- [x] Commit, push origin/main, and record the identifier.
 
-Status: In progress. The 4:44 recording is already assets/handoff-tui.gif in the dashboard section. Moving it to the lead image and removing assets/dashboard-session.gif.
+Status: Complete. The 4:44 AM screen recording is assets/handoff-tui.gif. It is now the README lead image and the Live progress dashboard embed. Removed assets/dashboard-session.gif. Pushed as 2297574 and 32bb5d7. Next action: none.
 
 ## 2026-09-09 - Add a handoff-tui GIF to the README dashboard section (owner: Haetae) (harness: Grok)
 
