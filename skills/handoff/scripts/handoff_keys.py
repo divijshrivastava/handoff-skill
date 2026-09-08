@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import json
 import os
+import platform
 import re
 import shlex
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -38,13 +41,28 @@ def host_key_name(key: str) -> str | None:
     return None
 
 
-def viewer_command(root: Path | None = None) -> str:
+def viewer_command(root: Path | None = None, *, read_only: bool = False) -> str:
     """Shell command that opens the live viewer for one repository."""
     viewer = Path(__file__).resolve().with_name("handoff_tui.py")
     parts = [sys.executable, str(viewer)]
     if root is not None:
         parts.extend(["--root", str(root.resolve())])
+    if read_only:
+        parts.append("--read-only")
     return " ".join(shlex.quote(part) for part in parts)
+
+
+def viewer_launch_command(root: Path | None = None, *, read_only: bool = False) -> str:
+    """Prefer the PATH launcher so opened terminals survive skill upgrades."""
+    launcher = shutil.which("handoff-tui")
+    if launcher:
+        parts = [launcher]
+        if root is not None:
+            parts.extend(["--root", str(root.resolve())])
+        if read_only:
+            parts.append("--read-only")
+        return " ".join(shlex.quote(part) for part in parts)
+    return viewer_command(root, read_only=read_only)
 
 
 def detect_emulators() -> list[str]:
@@ -225,3 +243,100 @@ def install(key: str | None = None, root: Path | None = None,
                     "/handoff:view.")
         return install_terminal_binding(candidates[0], chosen, root)
     return install_terminal_binding(emulator, chosen, root)
+
+
+def _macos_app_installed(name: str) -> bool:
+    for location in (Path("/Applications"), Path("/System/Applications/Utilities")):
+        if (location / f"{name}.app").is_dir():
+            return True
+    return False
+
+
+def open_candidates() -> list[str]:
+    """Return terminal emulators to try, best first."""
+    found = [emulator for emulator in detect_emulators() if emulator != "claude"]
+    if found:
+        return found
+    if platform.system() != "Darwin":
+        return []
+    candidates: list[str] = []
+    if _macos_app_installed("iTerm"):
+        candidates.append("iterm2")
+    if _macos_app_installed("Terminal"):
+        candidates.append("terminal")
+    return candidates
+
+
+def _open_iterm2(command: str) -> None:
+    script = (
+        'tell application "iTerm2"\n'
+        "  activate\n"
+        "  create window with default profile\n"
+        "  tell current session of current window\n"
+        f"    write text {json.dumps(command)}\n"
+        "  end tell\n"
+        "end tell"
+    )
+    subprocess.run(["osascript", "-e", script], check=True)
+
+
+def _open_terminal_app(command: str) -> None:
+    subprocess.run(
+        ["osascript", "-e", f'tell application "Terminal" to do script {json.dumps(command)}'],
+        check=True,
+    )
+
+
+def _open_kitty(command: str) -> None:
+    subprocess.run(
+        ["kitty", "@", "launch", "--type=window", "sh", "-c", command + "; exec $SHELL"],
+        check=True,
+    )
+
+
+def _open_wezterm(command: str) -> None:
+    subprocess.run(["wezterm", "cli", "spawn", "--"] + shlex.split(command), check=True)
+
+
+def _open_linux(command: str) -> None:
+    for name in ("x-terminal-emulator", "gnome-terminal", "konsole", "xfce4-terminal"):
+        terminal = shutil.which(name)
+        if terminal is None:
+            continue
+        if name == "gnome-terminal":
+            subprocess.run([terminal, "--", "sh", "-c", command + "; exec $SHELL"], check=True)
+        else:
+            subprocess.run([terminal, "-e", command], check=True)
+        return
+    raise FileNotFoundError("no terminal emulator on PATH")
+
+
+def open_viewer(root: Path | None = None, *, read_only: bool = False) -> tuple[int, str]:
+    """Spawn the live viewer in a real terminal and return immediately."""
+    command = viewer_launch_command(root, read_only=read_only)
+    errors: list[str] = []
+    for emulator in open_candidates():
+        try:
+            if emulator == "iterm2":
+                _open_iterm2(command)
+                return 0, f"Opened the handoff viewer in iTerm2."
+            if emulator == "terminal":
+                _open_terminal_app(command)
+                return 0, "Opened the handoff viewer in Terminal."
+            if emulator == "kitty":
+                _open_kitty(command)
+                return 0, "Opened the handoff viewer in kitty."
+            if emulator == "wezterm":
+                _open_wezterm(command)
+                return 0, "Opened the handoff viewer in wezterm."
+        except (OSError, subprocess.CalledProcessError) as error:
+            errors.append(f"{emulator}: {error}")
+    if platform.system() == "Linux":
+        try:
+            _open_linux(command)
+            return 0, "Opened the handoff viewer."
+        except OSError as error:
+            errors.append(str(error))
+    detail = "; ".join(errors) if errors else "no terminal emulator found"
+    return 1, (f"Could not open a terminal ({detail}). "
+               f"Run {command} in your own terminal.")

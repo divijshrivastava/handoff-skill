@@ -678,18 +678,28 @@ def main(argv: list[str] | None = None) -> int:
                              "and the viewer key (tmux 3.2+); remaining arguments go to AGENT")
     parser.add_argument("--install-viewer-key", action="store_true",
                         help="Install a viewer key binding for this terminal or host")
+    parser.add_argument("--open", action="store_true",
+                        help="Open the live viewer in a new terminal window and exit")
     parser.add_argument("--emulator", default="auto",
                         help="Emulator for --install-viewer-key: auto, claude, kitty, wezterm, iterm2")
     args = parser.parse_args(argv)
     use_utf8_stdout()
+    wrapped = args.codex if args.codex is not None else args.agent
     if args.install_viewer_key:
         from handoff_keys import install
         root = args.root.resolve() if args.file is None else args.file.resolve().parent
         print(install(root=root, emulator=args.emulator))
         return 0
+    if args.open:
+        if wrapped is not None or args.bar or args.once:
+            parser.error("--open cannot be combined with --bar, --once, --codex, or --with")
+        from handoff_keys import open_viewer
+        root = args.root.resolve() if args.file is None else args.file.resolve().parent
+        code, message = open_viewer(root, read_only=args.read_only)
+        print(message)
+        return code
     # Both flags take the rest of the line, so only the first one given is ever
     # set; whichever it is, everything after it belongs to the wrapped agent.
-    wrapped = args.codex if args.codex is not None else args.agent
     if wrapped is not None and (args.bar or args.once):
         parser.error("--codex and --with cannot be combined with --bar or --once")
     if args.agent is not None and not [word for word in args.agent if word != "--"]:

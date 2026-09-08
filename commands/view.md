@@ -13,62 +13,43 @@ Resolve the repository root from the argument when given, otherwise from the
 current working directory. If `HANDOFF.md` is absent, say so and stop; do not
 create one.
 
-## Why a separate terminal
+## Open the viewer immediately
 
 A command session has no controlling terminal, so curses cannot draw into it.
-Opening the viewer means running `handoff-tui` where the user can see it.
+Run **one** command that spawns a real terminal and returns; do not assemble
+AppleScript or emulator-specific launchers yourself:
 
-Check that `handoff-tui` is on PATH (`command -v handoff-tui`). If it is
-missing, copy the launcher from this skill first:
+```sh
+handoff-tui --open --root <target>
+```
+
+If `handoff-tui` is missing from PATH, copy the launcher first:
 
 ```sh
 cp "$SKILL_DIR/scripts/handoff-tui" ~/.local/bin/
 chmod +x ~/.local/bin/handoff-tui
 ```
 
-## Open the viewer
-
-If stdout is a terminal, run the viewer in the foreground and tell the user to
-press `q` to return:
+Use the repository copy when the installed skill is older than the `--open`
+flag:
 
 ```sh
-handoff-tui --root <target>
+python3 "$SKILL_DIR/scripts/handoff_tui.py" --open --root <target>
 ```
 
-Otherwise spawn a new terminal that keeps running until the user closes the
-viewer. Prefer the emulator the environment names; fall back to the first option
-that exists on PATH.
-
-**iTerm2 on macOS**
-
-```sh
-osascript -e 'tell application "iTerm2" to create window with default profile command "handoff-tui --root '"'"'<target>'"'"'"'
-```
-
-**Terminal.app on macOS**
-
-```sh
-osascript -e 'tell application "Terminal" to do script "handoff-tui --root '"'"'<target>'"'"'"'
-```
-
-**Linux or other Unix**
-
-```sh
-x-terminal-emulator -e handoff-tui --root <target>
-```
-
-If none of these work, tell the user to run `handoff-tui --root <target>` in
-their own terminal.
+If stdout is a terminal and the user is already at a shell, `--open` is
+optional: `handoff-tui --root <target>` in the foreground also works; tell
+them to press `q` to return.
 
 ## What to report
 
-Name the repository, the command you ran or asked the user to run, and that the
+Name the repository, confirm the opener ran (or quote its error), and that the
 viewer refreshes as the ledger changes. Mention `x`/`p`/`P` for handing a task
 to another agent when write access is allowed, and `--read-only` when it is not.
 Point at `/handoff:status` for a one-line snapshot when a full dashboard is not
 needed.
 
-State plainly that host harnesses such as Claude Code cannot bind a key to run
-this command; `handoff-tui --install-viewer-key` writes a binding only where the
-terminal emulator allows one, and the `--with` wrapper remains the way to get
-`Ctrl-G` inside an agent session.
+State plainly that host harnesses such as Claude Code and Cursor cannot bind a
+key to run this command; `handoff-tui --install-viewer-key` writes a binding
+only where the terminal emulator allows one, and the `--with` wrapper remains
+the way to get `Ctrl-G` inside an agent session.

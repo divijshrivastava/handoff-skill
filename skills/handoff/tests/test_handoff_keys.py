@@ -84,6 +84,32 @@ class HandoffKeysTests(unittest.TestCase):
                 self.assertEqual(keys.install(emulator="auto"), "ok")
                 install.assert_called_once_with("kitty", keys.viewer_key(), None)
 
+    def test_open_iterm2_uses_an_interactive_shell(self) -> None:
+        with patch.object(keys, "open_candidates", return_value=["iterm2"]):
+            with patch.object(keys, "viewer_launch_command", return_value="handoff-tui --root /repo"):
+                with patch.object(keys.subprocess, "run") as run:
+                    code, message = keys.open_viewer(Path("/repo"))
+        self.assertEqual(code, 0)
+        self.assertIn("iTerm2", message)
+        script = run.call_args.args[0][2]
+        self.assertIn("write text", script)
+        self.assertNotIn("create window with default profile command", script)
+
+    def test_open_falls_back_when_spawn_fails(self) -> None:
+        with patch.object(keys, "open_candidates", return_value=["iterm2"]):
+            with patch.object(keys, "viewer_launch_command", return_value="handoff-tui --root /repo"):
+                with patch.object(keys.subprocess, "run", side_effect=keys.subprocess.CalledProcessError(1, "osascript")):
+                    code, message = keys.open_viewer(Path("/repo"))
+        self.assertEqual(code, 1)
+        self.assertIn("Could not open a terminal", message)
+        self.assertIn("handoff-tui --root /repo", message)
+
+    def test_open_candidates_include_installed_iterm_on_macos(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            with patch.object(keys.platform, "system", return_value="Darwin"):
+                with patch.object(keys, "_macos_app_installed", side_effect=lambda name: name == "iTerm"):
+                    self.assertEqual(keys.open_candidates(), ["iterm2"])
+
 
 if __name__ == "__main__":
     unittest.main()
