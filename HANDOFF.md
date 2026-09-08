@@ -1,5 +1,20 @@
 # Handoff
 
+## 2026-09-09 - Release 1.18.0 (owner: Daedalus) (harness: Claude Code)
+
+State:
+
+- [x] In progress
+- [ ] Completed
+
+Steps:
+
+- [ ] Verify the manifests already agree at 1.18.0 and run the release checks.
+- [ ] Tag v1.18.0, push it, and confirm the published release against a clean-checkout build.
+- [ ] Record the handoff.
+
+Status: In progress. No version bump is needed: the Enkidu session already moved all five manifests and SKILL.md to 1.18.0 in fab6602, which added the Cursor marketplace and taught check_versions.py to inspect five files, and check_versions.py v1.18.0 agrees. The release therefore carries fab6602 and the logo commit 696207a on top of 1.17.0. Two things are deliberately outside it: .kimi-plugin/plugin.json is untracked, still declares 1.17.0, and is not inspected by check_versions.py, so the release cannot contain it and CI will not catch that drift; and the untracked demo GIF stays with its earlier entry. Agent sessions are still live in this tree, so the archive will be built from a clean worktree at the tagged commit. Next action: wait for Validate run 34283761497 on the logo commit to pass, then tag.
+
 ## 2026-09-09 - Add the Handoff logo to the repository (owner: Daedalus) (harness: Claude Code)
 
 State:
