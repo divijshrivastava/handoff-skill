@@ -1,21 +1,36 @@
 # Handoff
 
+## 2026-09-08 - Hand out session names in alphabetical order, first come first served (owner: Heimdall)
+
+State:
+
+- [ ] In progress
+- [ ] Completed
+
+Steps:
+
+- [ ] Replace the per-seed hash ordering in name_order with the roster's alphabetical order so the first session to claim a name gets the alphabetically first free one (skills/handoff/scripts/handoff_guard.py).
+- [ ] Update the naming regression tests for alphabetical first-come-first-served order (skills/handoff/tests/test_handoff_guard.py).
+- [ ] Update the documentation that describes per-session hash ordering.
+- [ ] Run the repository checks and record the handoff.
+
+Status: Pending. No work has started.
+
 ## 2026-09-08 - Commit and release 1.12.0 (owner: Zahhak)
 
 State:
 
 - [x] In progress
-- [ ] Completed
+- [x] Completed
 
 Steps:
 
 - [x] Rebase or merge origin/main into bar-viewer-key-and-session-names and bump the version triple to 1.12.0.
-- [ ] Push the branch, open a pull request, and merge after CI passes.
-- [ ] Tag v1.12.0 and confirm the published release.
-- [ ] Run the repository checks and record the handoff.
+- [x] Push the branch, open a pull request, and merge after CI passes.
+- [x] Tag v1.12.0 and confirm the published release.
+- [x] Run the repository checks and record the handoff.
 
-Status: In progress. origin/main merged into the branch (resolving a ledger conflict by keeping both new entries), version triple at 1.12.0, and all checks green: 179 helper tests, 5 repository tests, validate, check_versions.py, archive build, git diff --check. Committed as 1b5f4ca and pushed; PR #5 is open and CI is running. A peer added and the user then moved a viewer-key task to this session during intake; per the user's direction the release proceeds without it.
-
+Status: Complete. Released at the user's direction, closing the "not merged, version triple left at 1.11.1" lines the three entries below carried. Merging origin/main into the branch raised a ledger conflict with the README scope-claim entry (#4); resolved by keeping both new entries newest-first rather than dropping either side. Version triple moved to 1.12.0 and check_versions.py agrees. Verified before tagging: 179 helper, viewer, launcher, bar and codex tests and 5 repository tests pass, validate --root . exits 0, archives build, git diff --check is clean. PR #5 passed all four CI legs (ubuntu and windows, Python 3.9 and 3.12, run 34190002499) and was squash-merged as 4d66f15. Tag v1.12.0 pushed; release workflow run 34190148803 succeeded and the GitHub release published at 05:19Z with handoff.zip, handoff.skill, and SHA256SUMS. The downloaded archive was inspected: handoff/SKILL.md reports 1.12.0 and the zip carries the expected 12 files, so the any-agent wrapper, session naming, and the Ctrl-G viewer key now reach installed copies. Staged by explicit path throughout; the untracked scripts/demo/handoff-opt.gif stays with its earlier entry. Left for the next release, per the user's choice to ship now: the pending viewer-key task this session owns. Next action: none. An installed plugin copy needs /plugin marketplace update divij-skills before it sees 1.12.0.
 ## 2026-09-08 - Make the viewer key work without the tmux wrapper (owner: Zahhak)
 
 State:
