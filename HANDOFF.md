@@ -5,14 +5,14 @@
 State:
 
 - [x] In progress
-- [ ] Completed
+- [x] Completed
 
 Steps:
 
 - [x] Stage README.md, assets/dashboard-session.gif, and the 1.19.0 purge files the README now documents.
-- [ ] Commit, push origin/main, and record the identifier.
+- [x] Commit, push origin/main, and record the identifier.
 
-Status: In progress. Committed as 7372d6d. README.md carries the dashboard GIF and the 1.19.0 purge docs; assets/dashboard-session.gif and the purge implementation are in the same commit so the README is not documenting uncommitted commands. Left unstaged: .kimi-plugin/ and scripts/demo/handoff-opt.gif. Next action: push origin/main.
+Status: Complete. Committed as 7372d6d (work) and e5599e8 (ledger note). Pushed d9c0980..e5599e8 to origin/main. The README on GitHub now embeds assets/dashboard-session.gif and documents /handoff:purge at 1.19.0. Left untracked: .kimi-plugin/ and scripts/demo/handoff-opt.gif. Next action: none for this push. Installed plugin copies still need a 1.19.0 release before they see purge.
 
 ## 2026-09-09 - Add /handoff:purge for an authorized clean slate (owner: Haetae) (harness: Grok)
 
