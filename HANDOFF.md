@@ -9,12 +9,12 @@ State:
 
 Steps:
 
-- [ ] Rebase or merge origin/main into bar-viewer-key-and-session-names and bump the version triple to 1.12.0.
+- [x] Rebase or merge origin/main into bar-viewer-key-and-session-names and bump the version triple to 1.12.0.
 - [ ] Push the branch, open a pull request, and merge after CI passes.
 - [ ] Tag v1.12.0 and confirm the published release.
 - [ ] Run the repository checks and record the handoff.
 
-Status: In progress. Started at the user's direction after the audit found the branch unmerged; current step is merging origin/main into bar-viewer-key-and-session-names and bumping the version triple to 1.12.0.
+Status: In progress. origin/main merged into the branch (resolving a ledger conflict by keeping both new entries), version triple at 1.12.0, and all checks green: 179 helper tests, 5 repository tests, validate, check_versions.py, archive build, git diff --check. Committed as 1b5f4ca and pushed; PR #5 is open and CI is running. A peer added and the user then moved a viewer-key task to this session during intake; per the user's direction the release proceeds without it.
 
 ## 2026-09-08 - Make the viewer key work without the tmux wrapper (owner: Zahhak)
 
