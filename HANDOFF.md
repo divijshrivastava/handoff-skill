@@ -1,5 +1,21 @@
 # Handoff
 
+## 2026-09-09 - Commit and release 1.16.0 (owner: Daedalus)
+
+State:
+
+- [x] In progress
+- [ ] Completed
+
+Steps:
+
+- [ ] Bump the version triple to 1.16.0 and run the release checks.
+- [ ] Commit the release change and push main.
+- [ ] Tag v1.16.0, push it, and confirm the published release against a clean-checkout build.
+- [ ] Record the handoff.
+
+Status: In progress. The user asked to release the viewer work adopted from the Codex session and committed as 6a3f9d8: ledger-order agent lists and the gg/G jump keys, which ship in handoff_tui.py and progress-viewer.md and so reach installed copies only through a release. 1.15.0 is tagged and deliberately excluded that work, so the triple moves to 1.16.0. Next action: bump the triple and run the release checks.
+
 ## 2026-09-09 - Order the agent list newest first and add vim jump keys (owner: Daedalus)
 
 State:
