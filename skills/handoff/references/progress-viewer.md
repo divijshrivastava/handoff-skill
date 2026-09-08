@@ -92,6 +92,14 @@ type an owner name, which is how a task reaches an agent that has no ledger
 entry yet. The held task is marked `*` and named in the line above the footer;
 `x` again puts it back, and cutting is available from task details too.
 
+After a successful paste the view opens the receiving agent's task list with the
+moved task selected and marked `+`, so the task is visible under its new owner
+rather than described by a message; the header names whose list it is, and `b`
+returns to all tasks. The line above the footer keeps naming the receiving agent
+until the next cut or move, so checking the result does not erase the evidence,
+and it leads with that agent's name so a narrow terminal clips the task title
+instead of the answer.
+
 A move rewrites the `(owner: ...)` label in that one heading and appends a dated
 sentence to the task's status naming the previous owner. It changes nothing
 else: state boxes, steps, and the entry's position in ledger order all stay as
