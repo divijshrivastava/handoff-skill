@@ -354,6 +354,7 @@ class OverlappingWriterTests(unittest.TestCase):
             capture_output=True, text=True, check=False,
         )
 
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "needs a POSIX FIFO to park a writer")
     def test_overlapping_writers_do_not_lose_an_entry(self) -> None:
         """A parked writer must not overwrite a peer that completed while it waited."""
         stale = self.version()
@@ -456,6 +457,7 @@ sys.exit(parsed.handler(parsed))
         self.assertEqual(json.loads(fast_out)["status"], "conflict")
         self.assertIn("Task A", self.ledger.read_text(encoding="utf-8"))
 
+    @unittest.skipIf(sys.platform == "win32", "Windows has no POSIX permission bits")
     def test_apply_preserves_the_ledger_file_mode(self) -> None:
         os.chmod(self.ledger, 0o644)
         proc = self.apply_process(str(self.entry_file("C")), self.version())

@@ -164,11 +164,31 @@ def summary_lines(snapshot: Snapshot | None) -> list[str]:
     ]
 
 
-def bar_line(snapshot: Snapshot | None, width: int = 10, color: bool = True) -> str:
+def use_utf8_stdout() -> None:
+    """Windows consoles default to a legacy codepage that cannot encode a
+    ledger's text, and an encoding error there crashes the status line."""
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):  # pragma: no cover - old or wrapped stream
+        pass
+
+
+def stdout_encodes(sample: str) -> bool:
+    encoding = getattr(sys.stdout, "encoding", None) or "ascii"
+    try:
+        sample.encode(encoding)
+    except (UnicodeError, LookupError):
+        return False
+    return True
+
+
+def bar_line(snapshot: Snapshot | None, width: int = 10, color: bool = True,
+             blocks: bool = True) -> str:
     """One row for a host status line; empty when nothing is tracked."""
     counts = count_tasks(snapshot.tasks if snapshot else [])
     if not counts.tracked:
         return ""
+    full, empty, gap = ("█", "░", "·") if blocks else ("#", "-", "|")
     filled = counts.completed * width // counts.tracked
     shade = "\033[32m" if counts.completed == counts.tracked else "\033[33m"
     reset = "\033[0m"
@@ -176,9 +196,9 @@ def bar_line(snapshot: Snapshot | None, width: int = 10, color: bool = True) -> 
     if not color:
         shade = reset = dim = ""
     open_tasks = [t for t in (snapshot.tasks if snapshot else []) if t.modern and task_state(t) != "completed"]
-    trailer = f" {dim}·{reset} " + ", ".join(sorted({owner_name(t) for t in open_tasks})) if open_tasks else ""
-    return (f"{shade}handoff{reset} {shade}{'█' * filled}{'░' * (width - filled)}{reset} "
-            f"{counts.completed}/{counts.tracked} tasks {dim}·{reset} "
+    trailer = f" {dim}{gap}{reset} " + ", ".join(sorted({owner_name(t) for t in open_tasks})) if open_tasks else ""
+    return (f"{shade}handoff{reset} {shade}{full * filled}{empty * (width - filled)}{reset} "
+            f"{counts.completed}/{counts.tracked} tasks {dim}{gap}{reset} "
             f"{counts.checked}/{counts.steps} steps{trailer}")
 
 
@@ -457,6 +477,7 @@ def main(argv: list[str] | None = None) -> int:
                         help="Print one status-line row; reads host JSON on stdin for the directory")
     parser.add_argument("--no-color", action="store_true", help="Omit ANSI colour from --bar")
     args = parser.parse_args(argv)
+    use_utf8_stdout()
     root = args.root
     if args.bar and not args.file and not sys.stdin.isatty():
         # A host status line pipes session JSON in; prefer the directory it reports.
@@ -470,7 +491,8 @@ def main(argv: list[str] | None = None) -> int:
         if not path.is_file():
             return 0
         watcher.poll()
-        line = bar_line(watcher.snapshot, color=not args.no_color)
+        line = bar_line(watcher.snapshot, color=not args.no_color,
+                        blocks=stdout_encodes("\u2588\u2591\u00b7"))
         if line:
             print(line)
         return 0

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -247,7 +248,8 @@ class CliTests(unittest.TestCase):
             (root / "HANDOFF.md").write_text(entry(), encoding="utf-8")
             result = self.run_cli("--once", "--root", str(child))
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn(str(root / "HANDOFF.md"), result.stdout)
+            # Windows temp paths can come back in 8.3 short form, so compare resolved.
+            self.assertIn(str((root / "HANDOFF.md").resolve()), result.stdout)
 
     def test_invalid_structure_is_visible_and_returns_failure_in_snapshot_mode(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -299,6 +301,41 @@ class BarTests(unittest.TestCase):
     def test_bar_is_one_line(self):
         text = "# Handoff\n\n" + entry(title="A\nB", owner="Ann", steps=(True, False))
         self.assertNotIn("\n", tui.bar_line(self.snapshot(text), color=False))
+
+
+class EncodingTests(unittest.TestCase):
+    """Windows consoles default to a legacy codepage; encoding errors crashed the bar."""
+
+    def test_ascii_fallback_avoids_block_characters(self):
+        text = "# Handoff\n\n" + entry(state="completed", steps=(True, True))
+        line = tui.bar_line(tui.parse_snapshot(text), color=False, blocks=False)
+        line.encode("ascii")
+        self.assertIn("#", line)
+        self.assertNotIn("\u2588", line)
+
+    def test_block_glyphs_are_used_when_the_encoding_allows(self):
+        text = "# Handoff\n\n" + entry(state="completed", steps=(True, True))
+        self.assertIn("\u2588", tui.bar_line(tui.parse_snapshot(text), color=False, blocks=True))
+
+    def test_stdout_encodes_reports_what_the_stream_supports(self):
+        self.assertTrue(tui.stdout_encodes("plain"))
+        with patch.object(tui.sys, "stdout", SimpleNamespace(encoding="cp1252")):
+            self.assertFalse(tui.stdout_encodes("\u2588\u2591"))
+            self.assertTrue(tui.stdout_encodes("plain"))
+        with patch.object(tui.sys, "stdout", SimpleNamespace(encoding="utf-8")):
+            self.assertTrue(tui.stdout_encodes("\u2588\u2591"))
+
+    def test_legacy_codepage_does_not_crash_the_cli(self):
+        with tempfile.TemporaryDirectory() as directory:
+            ledger = Path(directory) / "HANDOFF.md"
+            ledger.write_text("# Handoff\n\n" + entry(owner="\u5e73\u4e95"), encoding="utf-8")
+            for mode in ("--once", "--bar"):
+                result = subprocess.run(
+                    [sys.executable, str(SCRIPTS / "handoff_tui.py"), mode, "--file", str(ledger)],
+                    capture_output=True, text=True,
+                    env={**os.environ, "PYTHONIOENCODING": "cp1252"},
+                )
+                self.assertEqual(result.returncode, 0, (mode, result.stderr))
 
 
 class StatusLineRootTests(unittest.TestCase):
