@@ -5,15 +5,15 @@
 State:
 
 - [x] In progress
-- [ ] Completed
+- [x] Completed
 
 Steps:
 
-- [ ] Verify the manifests already agree at 1.18.0 and run the release checks.
-- [ ] Tag v1.18.0, push it, and confirm the published release against a clean-checkout build.
-- [ ] Record the handoff.
+- [x] Verify the manifests already agree at 1.18.0 and run the release checks.
+- [x] Tag v1.18.0, push it, and confirm the published release against a clean-checkout build.
+- [x] Record the handoff.
 
-Status: In progress. No version bump is needed: the Enkidu session already moved all five manifests and SKILL.md to 1.18.0 in fab6602, which added the Cursor marketplace and taught check_versions.py to inspect five files, and check_versions.py v1.18.0 agrees. The release therefore carries fab6602 and the logo commit 696207a on top of 1.17.0. Two things are deliberately outside it: .kimi-plugin/plugin.json is untracked, still declares 1.17.0, and is not inspected by check_versions.py, so the release cannot contain it and CI will not catch that drift; and the untracked demo GIF stays with its earlier entry. Agent sessions are still live in this tree, so the archive will be built from a clean worktree at the tagged commit. Next action: wait for Validate run 34283761497 on the logo commit to pass, then tag.
+Status: In progress. No version bump is needed: the Enkidu session already moved all five manifests and SKILL.md to 1.18.0 in fab6602, which added the Cursor marketplace and taught check_versions.py to inspect five files, and check_versions.py v1.18.0 agrees. The release therefore carries fab6602 and the logo commit 696207a on top of 1.17.0. Two things are deliberately outside it: .kimi-plugin/plugin.json is untracked, still declares 1.17.0, and is not inspected by check_versions.py, so the release cannot contain it and CI will not catch that drift; and the untracked demo GIF stays with its earlier entry. Agent sessions are still live in this tree, so the archive will be built from a clean worktree at the tagged commit. Complete. Validate run 34283761497 on the logo commit passed before tagging. No bump was made or needed: check_versions.py v1.18.0 agrees across all five manifests and SKILL.md. Verified before tagging: 222 helper tests and 5 repository tests pass, validate exits 0, git diff --check is clean, and a clean worktree build at aa8c520 carries 13 files, reports 1.18.0, and correctly excludes assets/handoff.svg, which is a repository asset rather than a runtime resource. Tag v1.18.0 pushed. Release run 34283915512 succeeded and the release published at 22:03:51Z; the downloaded handoff.zip and handoff.skill hash to d218262fc69327385043b574be9fb307db284f3bfa5f9d88be7377e0c8a548fc, identical to that clean build. Validate run 34283905786 succeeded on ubuntu and windows for Python 3.9 and 3.12. The release carries fab6602, the Cursor marketplace manifests written by the Enkidu session, and 696207a, the logo. Still outside it and unresolved: .kimi-plugin/plugin.json is untracked, declares 1.17.0, and is not inspected by check_versions.py, so it is outside version control, outside the release, and outside CI's drift check at once; it belongs to a session that was live at the time and was left alone. Next action: none for the release. An installed plugin copy needs its marketplace updated before it sees 1.18.0.
 
 ## 2026-09-09 - Add the Handoff logo to the repository (owner: Daedalus) (harness: Claude Code)
 
