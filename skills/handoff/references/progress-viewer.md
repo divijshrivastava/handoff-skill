@@ -9,7 +9,8 @@ python3 /path/to/skill/scripts/handoff_tui.py --root /path/to/repository
 Use the script from the installed skill directory or from this repository's
 `skills/handoff/scripts/` directory. Requires Python 3.9+. Live mode uses the
 standard-library `curses` module, normally available on macOS and Linux; Python
-builds without curses can use `--once`. There are no third-party dependencies.
+builds without curses can use `--once`. These modes have no third-party dependencies;
+the optional `--codex` mode described below needs tmux.
 
 A plugin install lives under a version-pinned directory, so a command line
 naming one stops working at the next release. `scripts/handoff-tui` is a
@@ -27,7 +28,8 @@ the launcher exists to solve.
 
 It forwards every argument to `handoff_tui.py` unchanged and adds one flag of
 its own, `--which`, which prints the copy it resolved. Resolution order is
-`$HANDOFF_TUI`, then a `handoff_tui.py` beside the launcher, then the registered
+`$HANDOFF_TUI`, then a `handoff_tui.py` beside the launcher, then project and
+global `.agents`/`.codex` skill installs, then the registered
 plugin install, then the plugin cache and marketplace directories, then
 `$HANDOFF_SKILL_REPO`. Preferring a sibling means a launcher run in place inside
 a skill directory uses that copy, while one copied onto PATH resolves the newest
@@ -36,10 +38,21 @@ numerically, so 1.10.0 outranks 1.5.0. Set `$CLAUDE_CONFIG_DIR` if the Claude
 configuration is not at `~/.claude`. With no copy found, the launcher exits 1
 and names both environment variables rather than guessing.
 
+Project discovery walks up from the current directory, stopping at the first
+Git root. Global discovery checks `~/.agents/skills/handoff`, then
+`$CODEX_HOME/skills/handoff` (default `~/.codex/skills/handoff`). Codex mode skips
+old installs missing `handoff_codex.py`; an explicit `$HANDOFF_TUI` that lacks
+it reports an update error.
+
 The default refresh interval is one second. The viewer re-reads the file,
-including after an atomic replacement by `handoff_guard.py apply`. It never
-edits the ledger or acquires the writer's lock. Progress appears when an agent
-saves a ledger update; it does not monitor an agent process or unsaved work.
+including after an atomic replacement by `handoff_guard.py apply`. Progress
+appears when an agent saves a ledger update; it does not monitor an agent
+process or unsaved work.
+
+The live view makes exactly one kind of edit: handing a task to another agent,
+described in [Moving a task to another agent](#moving-a-task-to-another-agent).
+Every other mode - `--once`, `--bar`, `--codex` - only reads, and `--read-only`
+turns the move keys off in the live view as well.
 
 ## Views and controls
 
@@ -57,6 +70,9 @@ tasks, then Enter on a task to read its steps and full status text.
 | Enter | Open the selected owner's tasks or task details |
 | b, Escape, Backspace | Close details, then clear the owner filter |
 | r | Refresh immediately |
+| x | Cut the selected task, or put a held one back |
+| p | Give the held task to the selected agent or task's owner |
+| P | Give the held task to an owner name you type |
 | q, Ctrl-C | Quit and restore the terminal |
 
 Resize the terminal as needed; live mode needs at least 64 columns and 14 rows.
@@ -64,6 +80,40 @@ Long headings are clipped in lists and available in task details. The screen
 shows read errors and retains the last readable snapshot, labelled stale, until
 the file becomes readable again. A missing file at startup is retried without
 creating it.
+
+## Moving a task to another agent
+
+When an agent cannot finish its task - it is running out of context, it is
+stopping for the day, or the work belongs elsewhere - the task can be handed
+over from the live view. Select it in the Tasks view and press `x` to cut it,
+then press `p` on the receiving agent in the Agents view, on any task that agent
+already owns, or inside that agent's filtered task list. Press `P` instead to
+type an owner name, which is how a task reaches an agent that has no ledger
+entry yet. The held task is marked `*` and named in the line above the footer;
+`x` again puts it back, and cutting is available from task details too.
+
+A move rewrites the `(owner: ...)` label in that one heading and appends a dated
+sentence to the task's status naming the previous owner. It changes nothing
+else: state boxes, steps, and the entry's position in ledger order all stay as
+they were, because ledger order records when work was raised while the label
+records who holds it. Pasting onto `unassigned` removes the label instead.
+
+The write is the same compare-and-swap `handoff_guard.py apply` uses: the same
+lock, the same version check against the revision on screen, and the same
+refusal to introduce structural errors. If a peer changed the ledger after the
+cut, nothing is written and the view reloads so the move can be reconsidered
+against the new entries - that refusal is the point, so do not repeat the move
+without reading what changed.
+
+Moving a task assigns it; it does not perform it, notify anyone, or transfer
+context. Tell the receiving agent, and expect that agent to record its own
+takeover in the status text per the ledger contract. Use `--read-only` for a
+terminal that should never write - a shared screen, or a session watching
+someone else's repository:
+
+```sh
+handoff-tui --root /path/to/repository --read-only
+```
 
 ## Status-line mode
 
@@ -88,6 +138,24 @@ the trailing names are the owners of entries not recorded complete.
 In Claude Code, `/handoff:status` wires this into `statusLine`; see the README.
 Point any such configuration at the `handoff-tui` launcher rather than a
 versioned plugin path, so it survives upgrades.
+
+## Codex with a live bottom bar
+
+```sh
+handoff-tui --root /path/to/repository --codex
+handoff-tui --root /path/to/repository --codex resume --last
+```
+
+This mode starts Codex inside a private tmux session and keeps one Handoff row
+below it. It needs an interactive terminal, tmux 3.2+, and Codex CLI on PATH.
+It works on macOS/Linux and in WSL. Viewer flags go before `--codex`; all
+following arguments belong to Codex. `--once` and `--bar` cannot be combined
+with this mode. Use `--interval` to change polling or `--no-color` for an
+uncoloured row. Exit Codex normally to close the wrapper.
+
+The ledger path stays fixed for the invocation. Details about directory
+selection, tmux ownership, and verification are in
+[Codex setup](harness-setup.md#codex-cli).
 
 ## Counting rules
 

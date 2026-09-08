@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Watch recorded HANDOFF.md progress in a read-only terminal dashboard."""
+"""Watch recorded HANDOFF.md progress, and hand a task to another agent, in a terminal."""
 
 from __future__ import annotations
 
@@ -20,8 +20,13 @@ from handoff_guard import (
     find_repo_root,
     ledger_version,
     outside_fence_lines,
+    owner_label_error,
     parse_tasks,
+    reassign_task,
+    swap_ledger,
 )
+
+UNASSIGNED = "unassigned"
 
 
 @dataclass
@@ -66,7 +71,7 @@ def count_tasks(tasks: list[Task]) -> Counts:
 
 
 def owner_name(task: Task) -> str:
-    return task.owner or "unassigned"
+    return task.owner or UNASSIGNED
 
 
 def owner_counts(tasks: list[Task]) -> list[tuple[str, Counts]]:
@@ -256,8 +261,23 @@ def plain_report(watcher: Watcher) -> str:
     return "\n".join(clean_text(line) for line in lines) + "\n"
 
 
+def move_note(task: Task, target: str, when: datetime | None = None) -> str:
+    """Record the reassignment in the ledger's own status prose.
+
+    Rewriting only the heading would erase who held the task without leaving any
+    trace that it moved, which is the attribution loss the ledger contract exists
+    to prevent. The note states what was changed and, deliberately, claims nothing
+    about progress: a move does not verify a step.
+    """
+    stamp = (when or datetime.now()).date().isoformat()
+    note = (f"Reassigned {stamp}: moved from {owner_name(task)} to {target} in the "
+            "handoff viewer at the user's direction. No state or step boxes were "
+            "changed, and the entry keeps its place in ledger order.")
+    return "\n".join(textwrap.wrap(clean_text(note), width=79))
+
+
 class Dashboard:
-    def __init__(self, watcher: Watcher):
+    def __init__(self, watcher: Watcher, read_only: bool = False):
         self.watcher = watcher
         self.view = "agents"
         self.owner: str | None = None
@@ -265,6 +285,10 @@ class Dashboard:
         self.offset = 0
         self.detail: Task | None = None
         self.detail_offset = 0
+        self.read_only = read_only
+        self.cut: Task | None = None
+        self.prompt: str | None = None
+        self.message: str | None = None
 
     def tasks(self) -> list[Task]:
         snapshot = self.watcher.snapshot
@@ -287,8 +311,127 @@ class Dashboard:
         if self.detail:
             self.detail = next((task for task in self.tasks()
                                 if task.heading == self.detail.heading), None)
+        if self.cut:
+            # Track the held task across peer writes so its recorded line stays
+            # current; a task that left the ledger cannot be moved from here.
+            tasks = self.watcher.snapshot.tasks if self.watcher.snapshot else []
+            self.cut = next((task for task in tasks if task.heading == self.cut.heading), None)
+            if self.cut is None:
+                self.message = ("The held task is no longer in the ledger. "
+                                "Nothing was moved.")
+
+    def selected_task(self) -> Task | None:
+        rows = self.rows()
+        if self.detail:
+            return self.detail
+        if self.view == "tasks" and rows:
+            return rows[self.selected][1]
+        return None
+
+    def paste_target(self) -> str | None:
+        """The owner a paste would hand the held task to, from the current row."""
+        rows = self.rows()
+        if self.view == "agents":
+            return rows[self.selected][0] if rows else None
+        if self.owner is not None:
+            return self.owner
+        task = self.selected_task()
+        return owner_name(task) if task else None
+
+    def move_task(self, label: str) -> None:
+        """Reassign the held task with a compare-and-swap against the read revision."""
+        task, snapshot = self.cut, self.watcher.snapshot
+        if task is None or snapshot is None:
+            self.message = "No task is held. Press x on a task first."
+            return
+        title = fit(task_title(task), 46)
+        if label == owner_name(task):
+            self.cut = None
+            self.message = f"'{title}' is already recorded to {label}. Nothing was moved."
+            return
+        if not self.watcher.path.is_file():
+            self.message = f"Nothing was moved: no ledger at {self.watcher.path}."
+            return
+        owner = None if label == UNASSIGNED else label
+        try:
+            result = swap_ledger(
+                self.watcher.path, snapshot.version,
+                lambda text: reassign_task(text, task.line, task.heading, owner,
+                                           move_note(task, label)),
+            )
+        except (OSError, UnicodeError, ValueError, RuntimeError) as error:
+            self.message = f"Nothing was moved: {error}"
+            return
+        if result["status"] == "applied":
+            self.cut = None
+            self.message = (f"Moved '{title}' to {label}. That agent now owns it; "
+                            "tell them, and record the takeover in their status.")
+        elif result["status"] == "conflict":
+            self.cut = None
+            self.message = ("The ledger changed while this view held the task, so nothing "
+                            "was moved. Reloaded; check the new entries and cut again.")
+        else:
+            self.message = "Nothing was moved: " + "; ".join(
+                str(error) for error in (result.get("errors") or ["write refused"]))
+            return
+        self.refresh()
+
+    def handle_prompt(self, key: int, curses) -> bool:
+        """Read one owner name for a task whose new agent has no ledger entry yet."""
+        if key in (27, 3):
+            self.prompt = None
+            self.message = "Naming cancelled. The task is still held; press x to release it."
+        elif key in (10, 13, curses.KEY_ENTER):
+            name, self.prompt = self.prompt.strip(), None
+            problem = owner_label_error(name) if name else "no name was typed"
+            if problem:
+                self.message = f"Nothing was moved: {problem}."
+            else:
+                self.move_task(name)
+        elif key in (curses.KEY_BACKSPACE, 127, 8):
+            self.prompt = self.prompt[:-1]
+        elif 32 <= key < 127 and len(self.prompt) < 60:
+            self.prompt += chr(key)
+        return True
+
+    def handle_move_key(self, key: int) -> bool:
+        """Handle the cut and paste keys; return False when the key was not one."""
+        if key not in (ord("x"), ord("X"), ord("p"), ord("P")):
+            return False
+        if self.read_only:
+            self.message = "Moves are disabled in read-only mode."
+            return True
+        task = self.selected_task()
+        if key in (ord("x"), ord("X")):
+            if task is None:
+                self.message = "Open the Tasks view and select a task to cut it."
+            elif self.cut is not None and self.cut.heading == task.heading:
+                self.cut = None
+                self.message = "Released. Nothing is held."
+            else:
+                self.cut = task
+                self.message = (f"Cut '{fit(task_title(task), 46)}'. Press p on the receiving "
+                                "agent or task, P to type a name, x to put it back.")
+            return True
+        if self.cut is None:
+            self.message = "Nothing is held. Press x on a task first."
+        elif key == ord("P"):
+            self.prompt = ""
+        else:
+            target = self.paste_target()
+            if target is None:
+                self.message = "No agent is selected to receive the task."
+            else:
+                self.move_task(target)
+        return True
 
     def handle_key(self, key: int, curses, page: int) -> bool:
+        if self.prompt is not None:
+            return self.handle_prompt(key, curses)
+        if key != -1:
+            self.message = None
+        if self.handle_move_key(key):
+            return True
         if key in (ord("q"), ord("Q"), 3):
             return False
         if key in (27, ord("b"), curses.KEY_BACKSPACE, 127):
@@ -373,7 +516,7 @@ class Dashboard:
         write(5, " [Agents]   Tasks    Enter: owner's tasks" if self.view == "agents" else
               f" Agents   [Tasks]    Owner: {self.owner or 'all'}", curses.A_BOLD)
         content_start = 7
-        available = max(1, height - content_start - 3)
+        available = max(1, height - content_start - 4)
         rows = self.rows()
         if self.detail:
             lines = self.detail_lines(width - 3)
@@ -393,17 +536,20 @@ class Dashboard:
                 self.offset = self.selected - available + 1
             for i, (label, value) in enumerate(rows[self.offset:self.offset + available]):
                 selected = self.offset + i == self.selected
+                held = False
                 if self.view == "agents":
                     line = owner_row(label, value, width - 3)
                 else:
+                    held = self.cut is not None and self.cut.heading == value.heading
                     checked = sum(done for done, _ in value.steps)
                     line = (f"{task_state(value):13}  {checked:2}/{len(value.steps):<2}  "
                             f"{task_title(value)} / {owner_name(value)}")
-                write(content_start + i, (">" if selected else " ") + line,
+                write(content_start + i, ("*" if held else ">" if selected else " ") + line,
                       curses.A_REVERSE if selected else 0)
             if not rows:
                 write(content_start, " No entries to display. Waiting for ledger changes.")
 
+        write(height - 4, self.banner(), curses.A_BOLD)
         snapshot = self.watcher.snapshot
         if self.watcher.error:
             stamp = f"STALE (last read {snapshot.read_at:%H:%M:%S})" if snapshot else "WAITING"
@@ -412,12 +558,24 @@ class Dashboard:
             write(height - 3, f" Read {snapshot.read_at:%H:%M:%S} | revision {snapshot.version[:12]}"
                   f" | {len(rows)} {self.view} | automatic refresh", curses.A_DIM)
         write(height - 2, " Checkbox counts only; owner labels do not prove authorship or live activity.", curses.A_DIM)
-        write(height - 1, " q quit | Tab a/t views | j/k arrows | PgUp/Dn | Enter open | b back | r reload")
+        write(height - 1, " q quit | Tab a/t views | j/k arrows | Enter open | b back | r reload"
+              + ("" if self.read_only else " | x cut | p give"))
         screen.refresh()
         return available
 
+    def banner(self) -> str:
+        """One line for the pending move: the prompt, the last outcome, or what is held."""
+        if self.prompt is not None:
+            return f" Give to agent: {self.prompt}_   Enter: confirm | Esc: cancel"
+        if self.message:
+            return " " + self.message
+        if self.cut is not None:
+            return (f" HOLDING '{fit(task_title(self.cut), 46)}' from {owner_name(self.cut)}"
+                    " | p: give to selected | P: type a name | x: release")
+        return ""
 
-def run_live(watcher: Watcher, interval: float) -> int:
+
+def run_live(watcher: Watcher, interval: float, read_only: bool = False) -> int:
     try:
         import curses
     except ImportError:
@@ -430,7 +588,7 @@ def run_live(watcher: Watcher, interval: float) -> int:
         except curses.error:
             pass
         screen.keypad(True)
-        dashboard = Dashboard(watcher)
+        dashboard = Dashboard(watcher, read_only=read_only)
         next_poll = 0.0
         while True:
             now = time.monotonic()
@@ -473,11 +631,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--interval", type=refresh_interval, default=1.0,
                         help="Refresh seconds, 0.1 to 60 (default: 1)")
     parser.add_argument("--once", action="store_true", help="Print a snapshot and exit")
+    parser.add_argument("--read-only", action="store_true",
+                        help="Disable the live view's cut and paste keys, so it never writes")
     parser.add_argument("--bar", action="store_true",
                         help="Print one status-line row; reads host JSON on stdin for the directory")
-    parser.add_argument("--no-color", action="store_true", help="Omit ANSI colour from --bar")
+    parser.add_argument("--no-color", action="store_true", help="Omit colour from --bar or --codex")
+    parser.add_argument("--codex", nargs=argparse.REMAINDER,
+                        help="Run Codex with a live bottom bar (tmux 3.2+); remaining arguments go to Codex")
     args = parser.parse_args(argv)
     use_utf8_stdout()
+    if args.codex is not None and (args.bar or args.once):
+        parser.error("--codex cannot be combined with --bar or --once")
     root = args.root
     if args.bar and not args.file and not sys.stdin.isatty():
         # A host status line pipes session JSON in; prefer the directory it reports.
@@ -486,6 +650,11 @@ def main(argv: list[str] | None = None) -> int:
             root = reported
     path = args.file.resolve() if args.file else find_repo_root(root) / "HANDOFF.md"
     watcher = Watcher(path)
+    if args.codex is not None:
+        from handoff_codex import run_codex
+        arguments = args.codex[1:] if args.codex[:1] == ["--"] else args.codex
+        return run_codex(watcher, args.file.resolve().parent if args.file else root.resolve(),
+                         arguments, args.interval, color=not args.no_color)
     if args.bar:
         # A status line must never break the host: no ledger means no row.
         if not path.is_file():
@@ -500,7 +669,7 @@ def main(argv: list[str] | None = None) -> int:
         watcher.poll()
         print(plain_report(watcher), end="")
         return 1 if watcher.error or (watcher.snapshot and any(task.errors for task in watcher.snapshot.tasks)) else 0
-    return run_live(watcher, args.interval)
+    return run_live(watcher, args.interval, read_only=args.read_only)
 
 
 if __name__ == "__main__":

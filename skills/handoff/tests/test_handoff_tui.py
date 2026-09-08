@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
+import handoff_guard as guard
 import handoff_tui as tui
 sys.path.pop(0)
 
@@ -349,3 +350,192 @@ class StatusLineRootTests(unittest.TestCase):
     def test_unusable_payloads_return_none(self):
         for payload in ("", "not json", "[]", "{}", '{"cwd": 4}', '{"workspace": null}'):
             self.assertIsNone(tui.status_line_root(payload), payload)
+
+
+class MoveTests(unittest.TestCase):
+    """Handing a task to another agent is a ledger write, so each case checks the
+    file on disk, not only the view."""
+
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.path = Path(self.directory.name) / "HANDOFF.md"
+        self.write(entry("First") + entry("Second", owner="Agent B"))
+
+    def write(self, text):
+        self.path.write_text(text, encoding="utf-8")
+
+    def read(self):
+        return self.path.read_text(encoding="utf-8")
+
+    def dashboard(self, read_only=False):
+        watcher = tui.Watcher(self.path)
+        watcher.poll()
+        dashboard = tui.Dashboard(watcher, read_only=read_only)
+        dashboard.view = "tasks"
+        return dashboard
+
+    def press(self, dashboard, *keys):
+        for key in keys:
+            dashboard.handle_key(key, FakeCurses, 5)
+        return dashboard
+
+    def owners(self):
+        return [task.owner for task in tui.parse_tasks(self.read())]
+
+    def test_cut_and_paste_hands_one_task_to_the_agent_selected_in_agents_view(self):
+        dashboard = self.press(self.dashboard(), ord("x"), ord("a"))
+        self.assertIsNotNone(dashboard.cut)
+        dashboard.selected = [row[0] for row in dashboard.rows()].index("Agent B")
+        self.press(dashboard, ord("p"))
+        self.assertEqual(self.owners(), ["Agent B", "Agent B"])
+        self.assertIsNone(dashboard.cut)
+        self.assertIn("Moved", dashboard.banner())
+
+    def test_a_move_changes_ownership_only(self):
+        before = tui.parse_tasks(self.read())[0]
+        self.press(self.dashboard(), ord("x"), ord("a"))
+        dashboard = self.dashboard()
+        self.press(dashboard, ord("x"))
+        dashboard.selected = 1
+        self.press(dashboard, ord("p"))
+        after = tui.parse_tasks(self.read())[0]
+        self.assertEqual(after.owner, "Agent B")
+        self.assertEqual((after.line, after.steps, after.state), (before.line, before.steps, before.state))
+        self.assertEqual(tui.parse_tasks(self.read())[1].owner, "Agent B")
+        self.assertEqual(guard.structure_findings(self.read()), [])
+
+    def test_the_move_is_recorded_in_the_status_the_new_owner_reads(self):
+        dashboard = self.dashboard()
+        self.press(dashboard, ord("x"))
+        dashboard.selected = 1
+        self.press(dashboard, ord("p"))
+        status = tui.parse_snapshot(self.read()).statuses[0]
+        self.assertIn("Recorded status.", status)
+        self.assertIn("moved from Agent A to Agent B", status)
+        self.assertNotIn("Reassigned", tui.parse_snapshot(self.read()).statuses[1])
+
+    def test_pasting_onto_unassigned_clears_the_owner_label(self):
+        self.write(entry("First") + entry("Second", owner=None))
+        dashboard = self.press(self.dashboard(), ord("x"), ord("a"))
+        dashboard.selected = [row[0] for row in dashboard.rows()].index("unassigned")
+        self.press(dashboard, ord("p"))
+        self.assertEqual(self.owners(), [None, None])
+        self.assertNotIn("(owner:", self.read())
+
+    def test_a_typed_name_reaches_an_agent_with_no_ledger_entry_yet(self):
+        dashboard = self.dashboard()
+        self.press(dashboard, ord("x"), ord("P"))
+        self.press(dashboard, *[ord(character) for character in "Agent C"])
+        self.assertEqual(dashboard.prompt, "Agent C")
+        self.press(dashboard, FakeCurses.KEY_BACKSPACE, ord("D"), 10)
+        self.assertEqual(self.owners(), ["Agent D", "Agent B"])
+        self.assertIsNone(dashboard.prompt)
+
+    def test_the_prompt_swallows_keys_that_would_otherwise_quit_or_navigate(self):
+        dashboard = self.press(self.dashboard(), ord("x"), ord("P"))
+        self.assertTrue(dashboard.handle_key(ord("q"), FakeCurses, 5))
+        self.assertTrue(dashboard.handle_key(ord("b"), FakeCurses, 5))
+        self.assertEqual(dashboard.prompt, "qb")
+        self.press(dashboard, 27)
+        self.assertIsNone(dashboard.prompt)
+        self.assertIsNotNone(dashboard.cut)
+        self.assertEqual(self.owners(), ["Agent A", "Agent B"])
+
+    def test_a_name_no_heading_can_carry_is_refused_without_writing(self):
+        dashboard = self.dashboard()
+        self.press(dashboard, ord("x"), ord("P"))
+        self.press(dashboard, *[ord(character) for character in "A (b)"], 10)
+        self.assertEqual(self.owners(), ["Agent A", "Agent B"])
+        self.assertIn("Nothing was moved", dashboard.banner())
+
+    def test_a_peer_write_after_the_cut_moves_nothing(self):
+        dashboard = self.dashboard()
+        self.press(dashboard, ord("x"))
+        peer = entry("First") + entry("Second", owner="Agent B") + entry("Third", owner="Agent C")
+        self.write(peer)
+        dashboard.selected = 1
+        self.press(dashboard, ord("p"))
+        self.assertEqual(self.read(), peer)
+        self.assertIsNone(dashboard.cut)
+        self.assertIn("ledger changed", dashboard.banner())
+
+    def test_a_task_a_peer_removed_is_dropped_instead_of_moved(self):
+        dashboard = self.dashboard()
+        self.press(dashboard, ord("x"))
+        self.write(entry("Second", owner="Agent B"))
+        dashboard.refresh()
+        self.assertIsNone(dashboard.cut)
+        self.assertIn("no longer in the ledger", dashboard.banner())
+
+    def test_read_only_mode_never_writes(self):
+        dashboard = self.dashboard(read_only=True)
+        self.press(dashboard, ord("x"))
+        self.assertIsNone(dashboard.cut)
+        dashboard.selected = 1
+        self.press(dashboard, ord("p"), ord("P"))
+        self.assertEqual(self.owners(), ["Agent A", "Agent B"])
+        self.assertIsNone(dashboard.prompt)
+        self.assertIn("read-only", dashboard.banner())
+
+    def test_paste_without_a_cut_and_cut_without_a_task_write_nothing(self):
+        dashboard = self.dashboard()
+        dashboard.selected = 1
+        self.press(dashboard, ord("p"))
+        self.assertIn("Nothing is held", dashboard.banner())
+        self.press(dashboard, ord("a"), ord("x"))
+        self.assertIn("select a task", dashboard.banner())
+        self.assertEqual(self.owners(), ["Agent A", "Agent B"])
+
+    def test_cutting_the_same_task_twice_releases_it(self):
+        dashboard = self.dashboard()
+        self.press(dashboard, ord("x"), ord("X"))
+        self.assertIsNone(dashboard.cut)
+        self.press(dashboard, ord("p"))
+        self.assertEqual(self.owners(), ["Agent A", "Agent B"])
+
+    def test_pasting_a_task_onto_its_own_owner_writes_nothing(self):
+        version = tui.ledger_version(self.read())
+        dashboard = self.dashboard()
+        self.press(dashboard, ord("x"), ord("p"))
+        self.assertEqual(tui.ledger_version(self.read()), version)
+        self.assertIn("already recorded", dashboard.banner())
+        self.assertIsNone(dashboard.cut)
+
+    def test_a_missing_ledger_reports_instead_of_creating_one(self):
+        dashboard = self.dashboard()
+        self.press(dashboard, ord("x"))
+        self.path.unlink()
+        dashboard.selected = 1
+        self.press(dashboard, ord("p"))
+        self.assertFalse(self.path.exists())
+        self.assertIn("no ledger", dashboard.banner())
+
+    def test_an_owners_task_list_pastes_to_that_owner(self):
+        self.write(entry("First") + entry("Second", owner="Agent B") + entry("Third", owner="Agent B"))
+        dashboard = self.dashboard()
+        self.press(dashboard, ord("x"))
+        dashboard.view, dashboard.owner, dashboard.selected = "tasks", "Agent B", 0
+        self.press(dashboard, ord("p"))
+        self.assertEqual(self.owners(), ["Agent B", "Agent B", "Agent B"])
+
+    def test_a_task_open_in_details_can_be_cut(self):
+        dashboard = self.dashboard()
+        self.press(dashboard, 10)
+        self.assertIsNotNone(dashboard.detail)
+        self.press(dashboard, ord("x"))
+        self.assertEqual(dashboard.cut.heading, dashboard.detail.heading)
+
+    def test_the_held_task_and_the_pending_move_are_visible_on_screen(self):
+        dashboard = self.dashboard()
+        self.press(dashboard, ord("x"))
+        screen = Screen(24, 100)
+        dashboard.draw(screen, FakeCurses)
+        frame = screen.frames[-1]
+        self.assertIn("*", frame.splitlines()[7][:1])
+        self.assertIn("Cut 'First'", frame)
+        self.press(dashboard, FakeCurses.KEY_DOWN)
+        dashboard.draw(screen, FakeCurses)
+        self.assertIn("HOLDING 'First' from Agent A", screen.frames[-1])
+        self.assertIn("x cut", frame)
+        self.assertNotIn("x cut", self.dashboard(read_only=True).banner())

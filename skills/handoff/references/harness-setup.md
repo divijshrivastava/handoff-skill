@@ -15,7 +15,7 @@ found at that version", not as a permanent limit; re-check after upgrades.
 | Claude Code | 2.1.260 | Yes, `statusLine` command | `workspace.current_dir`, `cwd` |
 | Grok CLI | 1.0.13 | Yes, `[ui.status_line] type = "command"` (verified) | `workspace.current_dir`, `cwd` |
 | Kimi Code | 0.41.0 | Yes, `[status_line] command` in `tui.toml` (verified) | flat `cwd` |
-| Codex CLI | 0.153.4 | No command hook found | — |
+| Codex CLI | 0.153.4 | No command hook found; use `handoff-tui --codex` | Private tmux footer |
 | opencode | 1.18.3 | Built-in segments only | — |
 | Cursor agent | 2026.09.02 | None found | — |
 
@@ -33,6 +33,7 @@ terminal, which needs nothing from the host.
 | `handoff_tui.py --once` and `--bar` | Yes | Yes, neither path imports curses |
 | `handoff_tui.py` live dashboard | Yes | **No.** Stdlib Python has no `curses` on Windows; use WSL |
 | `handoff-bar` | Yes | **No.** Needs POSIX `sh`, `sed`, `cksum` |
+| `handoff-tui --codex` | Yes, tmux 3.2+ required | Use WSL with Codex and tmux installed inside WSL |
 
 On Windows, point the status line at the viewer directly, which needs only
 Python:
@@ -52,6 +53,48 @@ is a POSIX fast path, not the portable one.
 Everything here needs Python 3.9+. Nothing needs Node: most agent harnesses
 ship native binaries, and an npm-delivered one usually vendors a compiled
 binary rather than running from source.
+
+## Codex CLI
+
+```sh
+handoff-tui --codex
+handoff-tui --root /path/to/repo --interval 2 --codex
+handoff-tui --root /path/to/repo --codex resume --last
+```
+
+Run these in your terminal. Codex CLI and tmux 3.2+ must be on PATH. From a
+checkout, use `./skills/handoff/scripts/handoff-tui` before installing the
+launcher. No Codex configuration edit is needed.
+
+The current [Codex configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference)
+defines `tui.status_line` as a list of built-in footer item identifiers. No
+custom command hook was found in Codex CLI 0.153.4. This wrapper reserves one
+bottom row through tmux and runs the normal Codex TUI above it. It cannot add
+a bar to the Codex desktop app or a CLI session that is already running.
+
+Put Handoff options before `--codex`; the rest are passed literally to Codex.
+`--root` sets the starting directory and selects its repository ledger;
+`--file` selects an exact ledger and starts Codex in its parent directory.
+The bar stays pinned to that ledger. Use `--root` to select the project, and
+choose the same project when resuming; a forwarded Codex `-C`/`--cd` or a
+resume-time directory switch does not retarget the bar.
+
+The bar polls once a second by default, including while Codex is idle. Missing
+ledgers show a waiting row; unreadable files label retained counts as stale.
+All counts remain recorded progress, not completion evidence.
+
+Each invocation owns a private tmux socket, ignores `~/.tmux.conf`, and removes
+its server when Codex exits or the wrapper stops. It does not modify an existing
+tmux server. Prefix shortcuts are disabled in the private server so keys reach
+Codex; when launched inside tmux, the outer session's prefix still belongs to
+the outer session. Exit Codex normally; the wrapper returns its exit code.
+Detaching or stopping the wrapper closes its Codex process too.
+
+Verification: argument forwarding, refresh, stale data, format escaping,
+failure cleanup, and packaged loading have regression tests. The optional
+real-tmux test exercises a stand-in CLI's input and exit status. A live Codex
+session has not been observed with this wrapper: the development sandbox
+denies tmux server sockets.
 
 ## Setup
 

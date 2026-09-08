@@ -27,6 +27,7 @@ class PackageTests(unittest.TestCase):
             self.assertIn(hashlib.sha256(first[0].read_bytes()).hexdigest(), first[2].read_text())
             with ZipFile(first[0]) as archive:
                 self.assertIn("handoff/scripts/handoff_tui.py", archive.namelist())
+                self.assertIn("handoff/scripts/handoff_codex.py", archive.namelist())
                 self.assertIn("handoff/scripts/handoff-tui", archive.namelist())
                 self.assertIn("handoff/scripts/handoff-bar", archive.namelist())
                 self.assertIn("handoff/references/harness-setup.md", archive.namelist())
@@ -69,6 +70,13 @@ class PackageTests(unittest.TestCase):
             def content(text):
                 return [line for line in text.splitlines() if "Revision:" not in line]
             self.assertEqual(content(forwarded.stdout), content(report.stdout))
+            codex = subprocess.run(
+                [sys.executable, str(launcher), "--codex"],
+                cwd=base, capture_output=True, text=True, encoding="utf-8",
+            )
+            self.assertEqual(codex.returncode, 1)
+            self.assertIn("WSL" if sys.platform == "win32" else "interactive terminal", codex.stderr)
+            self.assertNotIn("Traceback", codex.stderr)
             # The packaged status-line front-end runs from the extracted tree.
             # POSIX only; Windows uses the viewer's own --bar, exercised above.
             if sys.platform == "win32" or shutil.which("sh") is None:

@@ -127,6 +127,27 @@ picked up the remaining verification step after the user requested
 finish-first and <prior owner> was no longer active.
 ```
 
+When the user directs a takeover of another agent's bucket, move every entry
+that owner still owns, rewrite each heading's owner label, and record the
+transfer where the returning owner will see it:
+
+```md
+## YYYY-MM-DD - Task name (owner: <your agent name>)
+
+Status: In progress. Taken over by <your agent name> from <prior owner> on
+YYYY-MM-DD at the user's direction; <prior owner>'s uncommitted work is
+preserved at <recovery point>. Originally owned by <prior owner>.
+```
+
+A returning agent that finds its own name in the transfer note treats the task
+as moved: it reports the transfer instead of resuming the entry.
+
+A user moving one task in the live viewer writes the same record mechanically:
+the heading's owner label is rewritten and a dated line naming the previous
+owner is appended to that task's status. The receiving agent still audits the
+entry and records its own takeover; the note reports the reassignment, not the
+work.
+
 When another owner remains active:
 
 ```md

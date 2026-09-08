@@ -17,11 +17,11 @@ from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import date
 from pathlib import Path
-from typing import Iterable
+from typing import Callable, Iterable
 
 
 HEADING_RE = re.compile(r"^##\s+(.+?)\s*$")
-OWNER_RE = re.compile(r"\((?:owner|agent):\s*([^)]+)\)", re.IGNORECASE)
+OWNER_RE = re.compile(r"\((?P<label>owner|agent):\s*(?P<name>[^)]+)\)", re.IGNORECASE)
 BOX_RE = re.compile(r"^\s*-\s+\[([ xX])\]\s+(.+?)\s*$")
 FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 
@@ -182,7 +182,7 @@ def parse_tasks(text: str) -> list[Task]:
         tasks.append(
             Task(
                 heading=heading,
-                owner=owner_match.group(1).strip() if owner_match else None,
+                owner=owner_match.group("name").strip() if owner_match else None,
                 line=start + 1,
                 modern=modern,
                 in_progress=in_progress,
@@ -350,6 +350,63 @@ def insert_entry(text: str, entry: str) -> str:
     return "\n\n".join(part for part in parts if part) + "\n"
 
 
+def owner_label_error(owner: str) -> str | None:
+    """Reject an owner name a heading cannot carry back out unchanged."""
+    if not owner.strip():
+        return "owner name is empty"
+    if any(character in owner for character in "()\n\r"):
+        return "owner name cannot contain parentheses or line breaks"
+    if len(owner) > 80:
+        return "owner name is longer than 80 characters"
+    return None
+
+
+def replace_owner(heading: str, owner: str | None) -> str:
+    """Swap one heading's recorded owner, keeping its own `owner`/`agent` wording."""
+    match = OWNER_RE.search(heading)
+    if match is None:
+        return f"{heading.rstrip()} (owner: {owner})" if owner else heading
+    if owner is None:
+        remainder = heading[: match.start()] + heading[match.end() :]
+        return re.sub(r"\s{2,}", " ", remainder).strip()
+    return f"{heading[: match.start()]}({match.group('label')}: {owner}){heading[match.end() :]}"
+
+
+def reassign_task(text: str, line: int, heading: str, owner: str | None,
+                  note: str | None = None) -> str:
+    """Rewrite one task's owner label in place, optionally recording a status note.
+
+    The entry keeps its position: ledger order records when work was raised, while
+    the heading label records who holds it, so moving a task between agents must not
+    reorder history. `line` and `heading` together identify the entry, and a mismatch
+    raises rather than editing whichever entry now sits at that line.
+    """
+    if owner is not None:
+        problem = owner_label_error(owner)
+        if problem:
+            raise ValueError(problem)
+        owner = owner.strip()
+    lines = text.splitlines()
+    match = HEADING_RE.match(lines[line - 1]) if 0 < line <= len(lines) else None
+    if match is None or match.group(1) != heading:
+        raise ValueError(f"line {line} no longer holds the task '{heading}'")
+    lines[line - 1] = lines[line - 1][: match.start(1)] + replace_owner(heading, owner)
+
+    if note:
+        masked = outside_fence_lines(lines)
+        following = [index for index, _ in outside_fence_headings(lines) if index >= line]
+        end = following[0] if following else len(lines)
+        status = next((index for index in range(line, end)
+                       if masked[index].strip().startswith("Status:")), None)
+        if status is not None:
+            # Append inside the status paragraph so the note travels with the status
+            # text every reader and the viewer already show.
+            while status + 1 < end and masked[status + 1].strip():
+                status += 1
+            lines.insert(status + 1, note)
+    return "\n".join(lines) + "\n"
+
+
 def atomic_write(path: Path, text: str) -> None:
     """Replace the ledger through a sibling temp file so no reader sees a partial write.
 
@@ -436,6 +493,85 @@ def ledger_lock(ledger: Path, timeout: float = LOCK_TIMEOUT_SECONDS):
         os.close(handle)
 
 
+def swap_ledger(ledger: Path, expect_version: str, build: Callable[[str], str], *,
+                allow_structure_errors: bool = False, dry_run: bool = False) -> dict[str, object]:
+    """Apply `build(current_text)` to the ledger as one compare-and-swap.
+
+    Every writer goes through here so the read, the version check, and the replace
+    stay inside a single held lock; `build` runs on text whose hash already matched
+    the caller's version, so a caller may locate an entry by the position it read.
+    """
+    try:
+        with ledger_lock(ledger):
+            # Re-read under the lock. The version read outside it is not a
+            # compare-and-swap; only this read/check/replace sequence is.
+            current = ledger.read_text(encoding="utf-8")
+            current_version = ledger_version(current)
+            if not version_matches(current_version, expect_version):
+                return {
+                    "status": "conflict",
+                    "expected_version": expect_version,
+                    "current_version": current_version,
+                    "errors": ["HANDOFF.md changed since this writer read it"],
+                    "note": (
+                        "Another writer changed the ledger. Re-read it, redo the progressive "
+                        "audit against the new entries, then apply again with the current "
+                        "version. Do not retry with the stale version."
+                    ),
+                }
+
+            updated = build(current)
+            if not updated.endswith("\n"):
+                updated += "\n"
+
+            known = {(heading, error) for heading, error, _ in structure_findings(current)}
+            introduced = [
+                message
+                for heading, error, message in structure_findings(updated)
+                if (heading, error) not in known
+            ]
+            if introduced and not allow_structure_errors:
+                return {
+                    "status": "rejected",
+                    "current_version": current_version,
+                    "errors": introduced,
+                    "note": (
+                        "The write would introduce structural errors and was not applied. "
+                        "Fix the entry without falsifying task state, or pass "
+                        "--allow-structure-errors when the ledger is being repaired."
+                    ),
+                }
+
+            new_version = ledger_version(updated)
+            if dry_run:
+                return {
+                    "status": "dry-run",
+                    "current_version": current_version,
+                    "new_version": new_version,
+                    "errors": introduced,
+                    "note": "Nothing was written.",
+                }
+
+            atomic_write(ledger, updated)
+    except TimeoutError as error:
+        return {
+            "status": "error",
+            "errors": [str(error)],
+            "note": (
+                "Another writer held the ledger lock past the timeout. Nothing was "
+                "written; retry once that writer finishes."
+            ),
+        }
+
+    return {
+        "status": "applied",
+        "current_version": current_version,
+        "new_version": new_version,
+        "errors": introduced,
+        "note": "Pass the new version to the next apply from this session.",
+    }
+
+
 def read_source(source: str) -> str:
     if source == "-":
         return sys.stdin.read()
@@ -487,81 +623,16 @@ def apply_command(args: argparse.Namespace) -> int:
     # indefinitely, and holding the lock while it does would stall every peer.
     payload = read_source(args.entry if args.entry else args.content)
 
-    try:
-        with ledger_lock(ledger):
-            # Re-read under the lock. The version read outside it is not a
-            # compare-and-swap; only this read/check/replace sequence is.
-            current = ledger.read_text(encoding="utf-8")
-            current_version = ledger_version(current)
-            if not version_matches(current_version, args.expect_version):
-                return emit({
-                    **base,
-                    "status": "conflict",
-                    "expected_version": args.expect_version,
-                    "current_version": current_version,
-                    "errors": ["HANDOFF.md changed since this writer read it"],
-                    "note": (
-                        "Another writer changed the ledger. Re-read it, redo the progressive "
-                        "audit against the new entries, then apply again with the current "
-                        "version. Do not retry with the stale version."
-                    ),
-                })
+    def build(current: str) -> str:
+        return insert_entry(current, payload) if args.entry else payload
 
-            if args.entry:
-                updated = insert_entry(current, payload)
-            else:
-                updated = payload if payload.endswith("\n") else payload + "\n"
-
-            known = {(heading, error) for heading, error, _ in structure_findings(current)}
-            introduced = [
-                message
-                for heading, error, message in structure_findings(updated)
-                if (heading, error) not in known
-            ]
-            if introduced and not args.allow_structure_errors:
-                return emit({
-                    **base,
-                    "status": "rejected",
-                    "current_version": current_version,
-                    "errors": introduced,
-                    "note": (
-                        "The write would introduce structural errors and was not applied. "
-                        "Fix the entry without falsifying task state, or pass "
-                        "--allow-structure-errors when the ledger is being repaired."
-                    ),
-                })
-
-            new_version = ledger_version(updated)
-            if args.dry_run:
-                return emit({
-                    **base,
-                    "status": "dry-run",
-                    "current_version": current_version,
-                    "new_version": new_version,
-                    "errors": introduced,
-                    "note": "Nothing was written.",
-                })
-
-            atomic_write(ledger, updated)
-    except TimeoutError as error:
-        return emit({
-            **base,
-            "status": "error",
-            "errors": [str(error)],
-            "note": (
-                "Another writer held the ledger lock past the timeout. Nothing was "
-                "written; retry once that writer finishes."
-            ),
-        })
-
-    return emit({
-        **base,
-        "status": "applied",
-        "current_version": current_version,
-        "new_version": new_version,
-        "errors": introduced,
-        "note": "Pass the new version to the next apply from this session.",
-    })
+    return emit({**base, **swap_ledger(
+        ledger,
+        args.expect_version,
+        build,
+        allow_structure_errors=args.allow_structure_errors,
+        dry_run=args.dry_run,
+    )})
 
 
 def read_command(args: argparse.Namespace) -> int:

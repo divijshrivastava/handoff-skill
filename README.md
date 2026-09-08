@@ -43,7 +43,7 @@ npx skills add divijshrivastava/handoff-skill --skill handoff
 
 Add `-g` to install globally.
 
-**Requirements:** Git, an agent with repository read/edit access, and Python 3.9+ for the optional helper (no Node; the live dashboard additionally needs a POSIX terminal). Handoff needs no API key, external service, Python package, or background process.
+**Requirements:** Git, an agent with repository read/edit access, and Python 3.9+ for the optional helper. The live dashboard needs a POSIX terminal; the optional Codex bar also needs tmux 3.2+. Handoff needs no API key, external service, or third-party Python package.
 
 ## Use it
 
@@ -110,6 +110,19 @@ updates. The Agents view shows completed tasks and checked steps per owner;
 press Enter to browse an owner's tasks and inspect their steps and status.
 Use Tab to switch views, arrow keys to navigate, and `q` to quit.
 
+When an agent is about to run out of context, its task can be handed over from
+the live view: select the task, press `x` to cut it, then press `p` on the
+receiving agent (or `P` to type a name). That rewrites the task's owner label
+and records the change in its status, using the same locked compare-and-swap as
+the writer helper, and leaves state, steps, and ledger order untouched. Pass
+`--read-only` for a terminal that must never write.
+
+You can also hand one agent another agent's whole bucket: tell the receiving
+agent to take over, naming the prior owner. It preserves the prior owner's
+uncommitted work, moves every open entry in one locked ledger write, and
+records the transfer in each entry's status, so the prior owner sees the move
+the next time it audits the ledger and reports it instead of resuming.
+
 Add `--once` for a plain-text snapshot, `--interval 2` to change the refresh
 rate, or `--file /path/to/handoff.md` for an explicit ledger filename. Live mode
 uses Python's standard-library curses module on macOS/Linux; snapshot mode also
@@ -130,6 +143,29 @@ rather than symlinking, so it does not point back into a version-pinned path.
 Percentages reflect recorded checkboxes and heading owners. They do not measure
 effort or verify who performed a step; stale entries still need an audit.
 See [controls and counting rules](skills/handoff/references/progress-viewer.md).
+
+### Codex with the bar
+
+Run Codex and keep a live Handoff progress bar at the bottom of the same terminal:
+
+```bash
+./skills/handoff/scripts/handoff-tui --codex
+# Or, after copying the launcher onto PATH:
+handoff-tui --root /path/to/your/repo --codex
+handoff-tui --root /path/to/your/repo --codex resume --last
+```
+
+Requires Codex CLI and tmux 3.2+ on PATH (macOS/Linux or WSL). Put viewer
+options such as `--root`, `--file`, `--interval 2`, and `--no-color` before
+`--codex`; everything after it goes to Codex. The bar refreshes while idle and
+shows recorded task and step counts plus open owners.
+
+Codex's native footer exposes built-in items; this mode supplies the Handoff
+row through a private tmux session. Exit Codex normally to return to your shell.
+The launcher also discovers project `.agents/skills/handoff` and
+`.codex/skills/handoff`, global `~/.agents/skills/handoff`, and
+`$CODEX_HOME/skills/handoff` (default `~/.codex/skills/handoff`). See
+[Codex setup and limits](skills/handoff/references/harness-setup.md#codex-cli).
 
 ## Slash commands
 
@@ -162,13 +198,13 @@ shapes all of these send, so the same script works unchanged:
 | Claude Code 2.1.260 | Yes | `~/.claude/settings.json` → `statusLine` |
 | Grok CLI 1.0.13 | Yes | `~/.grok/config.toml` → `[ui.status_line]` |
 | Kimi Code 0.41.0 | Yes | `~/.kimi-code/tui.toml` → `[status_line]` |
+| Codex CLI 0.153.4 | Via tmux wrapper | `handoff-tui --codex` |
+| opencode 1.18.3 | Built-in segments only | — |
+| Cursor agent | None found | — |
 
 Claude Code, Grok, and Kimi rows were each confirmed in a live session. Grok
 refreshes on session events, so its row appears once you interact rather than
 on the first empty frame.
-| Codex CLI 0.153.4 | No command hook found | — |
-| opencode 1.18.3 | Built-in segments only | — |
-| Cursor agent | None found | — |
 
 Harnesses without a status-line hook still get the full dashboard: run
 `handoff-tui` in a second terminal, which needs nothing from the host. Exact

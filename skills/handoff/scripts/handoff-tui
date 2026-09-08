@@ -9,9 +9,10 @@ unchanged.
 Resolution order:
   1. $HANDOFF_TUI                     explicit path to handoff_tui.py
   2. a sibling handoff_tui.py         running in place inside a skill directory
-  3. installed_plugins.json           the registered plugin install, newest first
-  4. the plugin cache and marketplace directories, if that registry is stale
-  5. $HANDOFF_SKILL_REPO              a checkout of the source repository
+  3. project and user skills          .agents/skills and .codex/skills
+  4. installed_plugins.json           the registered plugin install, newest first
+  5. the plugin cache and marketplace directories, if that registry is stale
+  6. $HANDOFF_SKILL_REPO              a checkout of the source repository
 
 A launcher copied onto PATH has no sibling, so it resolves dynamically and keeps
 working across upgrades. One run in place inside a skill directory uses that
@@ -52,8 +53,15 @@ def rank(path: Path):
 
 
 def newest(candidates) -> Path | None:
-    found = [path for path in candidates if path.is_file()]
+    found = [path for path in candidates if usable(path)]
     return max(found, key=rank) if found else None
+
+
+def usable(path: Path) -> bool:
+    # An older dashboard may exist alongside an updated install. It cannot
+    # service Codex mode, even though ordinary snapshots still work there.
+    return path.is_file() and ("--codex" not in sys.argv[1:]
+                               or path.with_name("handoff_codex.py").is_file())
 
 
 def from_registry(plugins: Path) -> Path | None:
@@ -72,17 +80,41 @@ def from_registry(plugins: Path) -> Path | None:
     return newest(installs)
 
 
+def from_skills() -> Path | None:
+    """Find project skills up to the repository root, then global Codex skills."""
+    current = Path.cwd().resolve()
+    for directory in (current, *current.parents):
+        for host in (".agents", ".codex"):
+            candidate = directory / host / "skills" / "handoff" / "scripts" / VIEWER
+            if usable(candidate):
+                return candidate
+        if (directory / ".git").exists():
+            break
+    codex_home = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex").expanduser()
+    for directory in (Path.home() / ".agents" / "skills", codex_home / "skills"):
+        candidate = directory / "handoff" / "scripts" / VIEWER
+        if usable(candidate):
+            return candidate
+    return None
+
+
 def resolve() -> Path:
     override = os.environ.get("HANDOFF_TUI")
     if override:
         path = Path(override).expanduser()
         if not path.is_file():
             sys.exit("handoff-tui: $HANDOFF_TUI is not a file: %s" % path)
+        if not usable(path):
+            sys.exit("handoff-tui: $HANDOFF_TUI lacks Codex bar support; update that skill copy.")
         return path
 
     sibling = Path(__file__).resolve().with_name(VIEWER)
-    if sibling.is_file():
+    if usable(sibling):
         return sibling
+
+    found = from_skills()
+    if found:
+        return found
 
     plugins = plugin_root()
     found = from_registry(plugins)
@@ -100,12 +132,12 @@ def resolve() -> Path:
     checkout = os.environ.get("HANDOFF_SKILL_REPO")
     if checkout:
         path = Path(checkout).expanduser() / SUFFIX
-        if path.is_file():
+        if usable(path):
             return path
 
     sys.exit(
         "handoff-tui: no %s found.\n"
-        "Install the handoff plugin, or set $HANDOFF_TUI to that script\n"
+        "Install or update the handoff skill/plugin, or set $HANDOFF_TUI to that script\n"
         "or $HANDOFF_SKILL_REPO to a checkout of the handoff-skill repository." % VIEWER
     )
 

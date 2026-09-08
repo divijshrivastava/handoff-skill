@@ -503,5 +503,136 @@ Status: Complete.
         self.assertEqual(task.state, "in_progress")
 
 
+class ReassignTests(unittest.TestCase):
+    """The heading label is the only record of who holds a task, so moving one
+    between agents must change that label and nothing else."""
+
+    def test_owner_label_is_replaced_and_the_entry_keeps_its_place(self) -> None:
+        text = handoff_guard.reassign_task(
+            MINIMAL_LEDGER, 3, "2026-09-06 - Existing task (owner: Codex)", "Claude"
+        )
+        task = handoff_guard.parse_tasks(text)[0]
+        self.assertEqual(task.owner, "Claude")
+        self.assertEqual(task.line, 3)
+        self.assertEqual(task.state, "in_progress")
+        self.assertEqual(task.steps, [(False, "Finish the work.")])
+        self.assertEqual(handoff_guard.structure_findings(text), [])
+
+    def test_the_headings_own_agent_wording_survives_the_move(self) -> None:
+        text = MINIMAL_LEDGER.replace("owner: Codex", "agent: Codex")
+        moved = handoff_guard.reassign_task(
+            text, 3, "2026-09-06 - Existing task (agent: Codex)", "Claude"
+        )
+        self.assertIn("## 2026-09-06 - Existing task (agent: Claude)", moved)
+
+    def test_an_unlabelled_task_gains_a_label_and_can_lose_it_again(self) -> None:
+        plain = MINIMAL_LEDGER.replace(" (owner: Codex)", "")
+        labelled = handoff_guard.reassign_task(plain, 3, "2026-09-06 - Existing task", "Claude")
+        self.assertIn("## 2026-09-06 - Existing task (owner: Claude)", labelled)
+        cleared = handoff_guard.reassign_task(
+            labelled, 3, "2026-09-06 - Existing task (owner: Claude)", None
+        )
+        self.assertIn("## 2026-09-06 - Existing task\n", cleared)
+        self.assertIsNone(handoff_guard.parse_tasks(cleared)[0].owner)
+
+    def test_a_note_joins_the_status_paragraph_it_belongs_to(self) -> None:
+        text = MINIMAL_LEDGER.replace(
+            "Status: In progress.", "Status: In progress.\nNext action is the CLI."
+        )
+        moved = handoff_guard.reassign_task(
+            text, 3, "2026-09-06 - Existing task (owner: Codex)", "Claude",
+            "Reassigned: Codex to Claude.",
+        )
+        lines = moved.splitlines()
+        self.assertEqual(lines[lines.index("Next action is the CLI.") + 1],
+                         "Reassigned: Codex to Claude.")
+        self.assertEqual(handoff_guard.structure_findings(moved), [])
+
+    def test_a_moved_task_between_others_leaves_its_neighbours_alone(self) -> None:
+        second = MINIMAL_LEDGER.replace("# Handoff\n\n", "").replace(
+            "Existing task (owner: Codex)", "Older task (owner: Kimi)")
+        text = MINIMAL_LEDGER + "\n" + second
+        task = handoff_guard.parse_tasks(text)[1]
+        moved = handoff_guard.reassign_task(text, task.line, task.heading, "Claude",
+                                            "Reassigned: Kimi to Claude.")
+        owners = [entry.owner for entry in handoff_guard.parse_tasks(moved)]
+        self.assertEqual(owners, ["Codex", "Claude"])
+        self.assertNotIn("Reassigned", moved[: moved.index("Older task")])
+
+    def test_a_stale_position_refuses_to_edit_whatever_now_sits_there(self) -> None:
+        with self.assertRaises(ValueError):
+            handoff_guard.reassign_task(MINIMAL_LEDGER, 3, "2026-09-06 - Renamed task", "Claude")
+        with self.assertRaises(ValueError):
+            handoff_guard.reassign_task(MINIMAL_LEDGER, 900, "2026-09-06 - Existing task", "Claude")
+
+    def test_a_name_a_heading_cannot_carry_is_refused(self) -> None:
+        for name in ("", "   ", "Age(nt)", "line\nbreak", "x" * 81):
+            self.assertIsNotNone(handoff_guard.owner_label_error(name))
+            with self.assertRaises(ValueError):
+                handoff_guard.reassign_task(
+                    MINIMAL_LEDGER, 3, "2026-09-06 - Existing task (owner: Codex)", name
+                )
+        self.assertIsNone(handoff_guard.owner_label_error("Claude session 01LD89UW"))
+
+    def test_a_fenced_example_is_never_mistaken_for_the_task_to_move(self) -> None:
+        text = MINIMAL_LEDGER + """
+```md
+## 2026-09-06 - Template (owner: agent)
+
+Status: Example.
+```
+"""
+        moved = handoff_guard.reassign_task(
+            text, 3, "2026-09-06 - Existing task (owner: Codex)", "Claude",
+            "Reassigned: Codex to Claude.",
+        )
+        # The note belongs to the real task, not to the fenced example below it.
+        self.assertLess(moved.index("Reassigned:"), moved.index("```md"))
+        self.assertIn("## 2026-09-06 - Template (owner: agent)", moved)
+
+
+class SwapLedgerTests(unittest.TestCase):
+    """Every writer shares one compare-and-swap, so a viewer's move is refused on
+    the same terms as an apply."""
+
+    def setUp(self) -> None:
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.ledger = Path(self.directory.name) / "HANDOFF.md"
+        self.ledger.write_text(MINIMAL_LEDGER, encoding="utf-8")
+
+    def version(self) -> str:
+        return handoff_guard.ledger_version(self.ledger.read_text(encoding="utf-8"))
+
+    def test_a_stale_version_conflicts_and_writes_nothing(self) -> None:
+        stale = self.version()
+        self.ledger.write_text(MINIMAL_LEDGER + "\nA peer wrote this.\n", encoding="utf-8")
+        peer = self.ledger.read_text(encoding="utf-8")
+        result = handoff_guard.swap_ledger(self.ledger, stale, lambda text: "# Wiped\n")
+        self.assertEqual(result["status"], "conflict")
+        self.assertEqual(self.ledger.read_text(encoding="utf-8"), peer)
+
+    def test_a_write_that_would_break_structure_is_refused(self) -> None:
+        result = handoff_guard.swap_ledger(
+            self.ledger, self.version(),
+            lambda text: text.replace("- [ ] Finish the work.", "- [x] Finish the work.")
+                             .replace("- [ ] Completed", "- [x] Completed")
+                             .replace("- [x] In progress", "- [ ] In progress"),
+        )
+        self.assertEqual(result["status"], "rejected")
+        self.assertTrue(result["errors"])
+        self.assertEqual(self.ledger.read_text(encoding="utf-8"), MINIMAL_LEDGER)
+
+    def test_an_applied_swap_reports_the_version_the_next_writer_needs(self) -> None:
+        result = handoff_guard.swap_ledger(
+            self.ledger, self.version(),
+            lambda text: handoff_guard.reassign_task(
+                text, 3, "2026-09-06 - Existing task (owner: Codex)", "Claude"),
+        )
+        self.assertEqual(result["status"], "applied")
+        self.assertEqual(result["new_version"], self.version())
+        self.assertIn("(owner: Claude)", self.ledger.read_text(encoding="utf-8"))
+
+
 if __name__ == "__main__":
     unittest.main()

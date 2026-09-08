@@ -3,7 +3,7 @@ name: handoff
 description: "Coordinate progressive repository work across agents with a shared HANDOFF.md ledger. Use before starting, continuing, checking, pausing, handing off, or committing a repository task whenever HANDOFF.md exists, multiple agents may be involved, the user mentions unfinished tasks or another agent, or work must be split into trackable steps. Audits later work and current code before treating old unchecked boxes as unfinished. Do not use for read-only questions that require no task tracking or repository mutation."
 license: MIT
 metadata:
-  version: "1.9.1"
+  version: "1.11.0"
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
 ---
 
@@ -184,6 +184,37 @@ when possible, and treat unrecognized uncommitted changes as someone else's
 regardless. The existence of unfinished work is never authority to adopt an
 active owner's task.
 
+### Authorized takeover of another agent's bucket
+
+A takeover begins only when the user explicitly directs it and names the prior
+owner ("take over Codex's tasks"). That direction supplies the authority the
+rules above otherwise withhold; without it, this protocol does not apply.
+
+Taking over:
+
+1. Confirm the prior owner is stopped: its process has exited and neither its
+   files nor the ledger have changed while you watched. If it is still active,
+   stop and report instead of taking over.
+2. Preserve its uncommitted work before any edit: copy the changed and
+   untracked files to a recovery point outside the tree, so nothing it did can
+   be lost by your edits or its own return.
+3. Move the whole bucket, not a cherry-picked task: transfer every entry the
+   prior owner still owns that is not recorded complete. For each, rewrite the
+   `(owner: ...)` label to your name and append a dated status sentence naming
+   the prior owner, the user's direction, and the recovery point. Move the
+   bucket in one locked `apply --content` write so no reader ever sees it
+   half-moved; the viewer's `x`/`p` move and the helper's `reassign_task`
+   cover the single-task case.
+4. Audit each adopted entry under Step 2 before resuming it: a transferred
+   entry arrives assigned, not explained. The prior owner's preserved work is
+   now yours to review and build on, never to silently discard.
+
+Coming back: when your preflight or audit finds entries you owned now carrying
+another owner and a transfer note naming your session, the bucket has moved.
+Do not resume, re-edit, or take those entries back. Report the move and start
+only genuinely new work as a new task; if the transfer looks wrong, say so and
+let the user decide.
+
 ## Step 4: Keep state recoverable while working
 
 Update the ledger at real transitions, not after reconstructing them from
@@ -268,10 +299,14 @@ repository alone, without this conversation.
 ## Optional live progress viewer
 
 Users can run `python3 "$SKILL_DIR/scripts/handoff_tui.py" --root /absolute/repo/path`
-in a separate terminal to watch recorded task and per-owner progress. The viewer
-is read-only and refreshes as the ledger changes. Counts reflect checkboxes and
-heading owners; they do not replace the progressive audit or establish live
-activity or per-step authorship. Because that install path is version-pinned,
+in a separate terminal to watch recorded task and per-owner progress. It
+refreshes as the ledger changes. Counts reflect checkboxes and heading owners;
+they do not replace the progressive audit or establish live activity or per-step
+authorship. The live view also lets the user hand one task to another agent
+(`x` to cut, `p` to give), which rewrites that heading's owner label and
+appends a dated note to its status through the same compare-and-swap as `apply`;
+`--read-only` disables it. A task that arrives this way is assigned, not
+explained: audit it and record the takeover in its status before working on it. Because that install path is version-pinned,
 `scripts/handoff-tui` is a launcher users can copy onto PATH once; it resolves
 the viewer at run time and takes the same arguments. See
 `references/progress-viewer.md` for controls, snapshot mode, and counting rules,
@@ -286,6 +321,8 @@ status line, including which harnesses expose one.
   annotating how later work resolved it.
 - **Silent takeover:** editing a task or files still owned by an active agent
   without an explicit handoff.
+- **Silent reclaim:** resuming or re-editing a task the ledger shows
+  transferred to another owner, instead of reporting the move.
 - **Lost queued request:** finishing older work without preserving the user's
   newer request as a pending entry.
 - **Premature completion:** checking `Completed` before required verification,
@@ -303,7 +340,10 @@ status line, including which harnesses expose one.
 When effective unfinished work exists, resolve the pickup choice before
 implementation unless the user has already supplied the ordering. In every
 case, ownership and file overlap must be safe, the selected task must be marked
-`In progress`, and any newer queued work must remain visible in the ledger.
+`In progress`, and any newer queued work must remain visible in the ledger. A
+takeover needs the user's explicit direction, a stopped prior owner, preserved
+uncommitted work, and one ledger write that moves the whole bucket with the
+transfer recorded where the returning owner will see it.
 
 Do not declare success until every claimed step has evidence, required
 verification ran, the validator passes, and only genuinely unfinished outcomes

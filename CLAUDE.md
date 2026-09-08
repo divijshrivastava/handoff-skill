@@ -36,9 +36,11 @@ CI (`.github/workflows/ci.yml`) runs exactly those on Python 3.9 and 3.12, so ru
 
 ### Helper command surface
 
-`doctor`, `validate`, `read`, and `template` never write; `apply` is the only writer. `read` returns ledger text *and* its version hash from a single snapshot, because two separate reads bind an audit of old text to a newer version and lose a peer's entry.
+`doctor`, `validate`, `read`, and `template` never write; `apply` is the only writing subcommand. `read` returns ledger text *and* its version hash from a single snapshot, because two separate reads bind an audit of old text to a newer version and lose a peer's entry.
 
-`apply` is a compare-and-swap: payload is read first (so blocking stdin cannot stall peers), then an exclusive lock on the `HANDOFF.md.lock` sidecar wraps re-read, version check, and atomic replace. The hash check alone is not a CAS — without the lock two writers can both pass against the same revision. The lock lives in a sidecar rather than the ledger because `os.replace` swaps the ledger's inode. `atomic_write` restores the original file mode so collaborator access survives. Any change to `apply` must keep read, check, and replace inside one held lock.
+`swap_ledger` is the one compare-and-swap, and every writer goes through it: `apply` on the CLI, and the viewer's task move. The payload is read first (so blocking stdin cannot stall peers), then an exclusive lock on the `HANDOFF.md.lock` sidecar wraps re-read, version check, and atomic replace. The hash check alone is not a CAS — without the lock two writers can both pass against the same revision. The lock lives in a sidecar rather than the ledger because `os.replace` swaps the ledger's inode. `atomic_write` restores the original file mode so collaborator access survives. Any change here must keep read, check, and replace inside one held lock, and a second write path must not grow beside it.
+
+The viewer (`handoff_tui.py`) is otherwise a reader. Its one edit is reassigning a task's owner: `reassign_task` rewrites that heading's label and appends a dated note to the task's status, identifying the entry by line *and* heading so a stale position raises instead of editing its neighbour. It never moves an entry — ledger order records when work was raised, the label records who holds it. `--read-only` disables the keys.
 
 Exit codes: `0` applied, `3` version conflict (the audit behind the edit is stale — re-audit, do not retry), `4` write would introduce structural errors, `1` usage or missing ledger.
 

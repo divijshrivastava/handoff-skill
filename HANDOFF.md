@@ -1,5 +1,164 @@
 # Handoff
 
+## 2026-09-08 - Commit and release 1.11.0 (owner: Claude session handoff-skill-b5)
+
+State:
+
+- [x] In progress
+- [ ] Completed
+
+Steps:
+
+- [x] Confirm the takeover-protocol entry is complete and its owner has verified it.
+- [ ] Commit the finished work with each change attributed to the session that wrote it.
+- [ ] Run the release checks and push the `v1.11.0` tag.
+
+Status: In progress. The blocker recorded when this entry was queued has cleared: the takeover-protocol entry was adopted from Kimi session bb679340 by Claude session 01Gjkh6S, verified, and recorded complete, and no `kimi-code` process remains in this tree. The user asked to proceed. Re-verified against the current tree before staging anything: 125 helper, viewer, launcher, bar, and codex tests and 5 repository tests pass, versions agree at 1.11.0, `validate --root .` exits 0, and `git diff --check` is clean. Current step: stage explicit paths and commit. Note on attribution: `skills/handoff/scripts/handoff_tui.py` carries both the Codex bar work and the viewer task-move work interleaved in one file, so splitting the release into one commit per authoring session would require rewriting hunks rather than recording history; the release is therefore a single commit that credits each session in its trailers and body. `scripts/demo/handoff-opt.gif` stays untracked, because no completed entry claims it as a deliverable and no owner has said what it is.
+## 2026-09-08 - Hand a task to another agent from the viewer (owner: Claude session 01Gjkh6S)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Add cut and paste keys that reassign a task through one shared compare-and-swap.
+- [x] Cover moves, refusals, and concurrent writes with regression tests.
+- [x] Document the move, the read-only flag, and the viewer's changed write surface.
+- [x] Run repository checks and record the handoff.
+
+Status: Complete. The viewer can now hand one task to another agent: `x` cuts
+the selected task, `p` gives it to the agent selected in the Agents view, to the
+owner of the task under the cursor, or to the owner whose task list is open, and
+`P` gives it to a typed name so a task can reach an agent with no ledger entry
+yet. The write goes through `swap_ledger`, extracted from `apply` so both
+writers share one lock, one version check, and one structural refusal rather
+than growing a second write path; `apply`'s behaviour is unchanged and its
+existing tests still pass. `reassign_task` rewrites only that heading's owner
+label and appends a dated note naming the previous owner, and it identifies the
+entry by line and heading together, so a stale position raises instead of
+editing a neighbouring entry. Entries never move: ledger order records when work
+was raised, the label records who holds it. A peer write after the cut is
+refused as a conflict, the view reloads, and nothing is written; a task a peer
+deleted is dropped rather than moved. `--read-only` disables the keys for a
+terminal that must never write, and `--once`, `--bar` and `--codex` remain
+read-only. Verified: 125 helper/viewer/launcher/bar/codex tests and 5 repository
+tests pass on Python 3.9.10 and 3.12, versions agree at 1.11.0, ledger
+validation, archive build, and whitespace checks pass; the cut, hold, type-a-
+name, and applied-move frames were rendered and the resulting ledger re-parsed
+to confirm state, steps, and order were untouched. Not verified: no run inside a
+real curses terminal, so key delivery for `P` and Backspace is covered by the
+fake-screen tests rather than a live session. Concurrent context: another
+session was editing this working tree throughout, bumped the version triple to
+1.11.0, and added a takeover convention to `ledger-contract.md`; this entry's
+note wording was aligned to that convention and its uncommitted work was left
+untouched. Next action: none for this task. Nothing here is committed; the tree
+holds this work alongside that session's.
+
+## 2026-09-08 - Write an agent takeover protocol (owner: Claude session 01Gjkh6S)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Define the takeover flow: user-authorized adoption of another agent's tasks and uncommitted work, building on the viewer handover (skills/handoff/SKILL.md).
+- [x] Add a transfer annotation format so the moved-from owner sees the move when it returns (skills/handoff/references/ledger-contract.md).
+- [x] Verify with repository checks and record the handoff.
+
+Status: Complete. Adopted from Kimi session bb679340 at the user's direction and
+finished by Claude session 01Gjkh6S; the transfer record is the paragraph above.
+Audit at adoption, against the tree rather than the boxes: steps 1 and 2 were
+already satisfied by the prior owner's uncommitted work and are checked here on
+that evidence, not redone. `SKILL.md` carries `Authorized takeover of another
+agent's bucket` with the four-step flow, and the `Coming back` rule telling a
+returning owner that finds a transfer note naming it to report the move instead
+of resuming. `references/ledger-contract.md` carries the transfer annotation
+format and the returning-agent rule. Only the third step was outstanding. That
+step's own protocol was exercised on itself while closing it, which is the
+strongest evidence this entry has: the owner was not assumed stopped but
+observed, its process (pid 10770) found alive, idle at its prompt in this
+repository with `AGENTS.md` open, and its files and the ledger watched unchanged
+for 80 seconds; this session stopped and reported the conflict rather than
+adopting, exactly as step 1 requires, and resumed only after the user directed
+the session to be ended and its exit was confirmed twice. The uncommitted work
+was copied to a recovery point outside the tree before any edit, at
+/private/tmp/claude-502/-Users-divij-code-handoff-skill/e270a92e-5b1d-494a-a9a1-5bd60bb447f1/scratchpad/recovery-2026-09-08-0853
+(21 files, a 1739-line patch of tracked changes, and HEAD dc827ca), and the
+bucket - one entry, enumerated rather than assumed - was moved in one locked
+compare-and-swap using the helper's own `reassign_task`. One defect found and
+fixed while verifying, outside this entry's steps and disclosed rather than
+folded in: `CONTRIBUTING.md` still said the viewer and its launcher were
+read-only and that `apply` was the one writer, which the viewer's task move had
+falsified; it now names both write paths, `swap_ledger` as the single
+compare-and-swap, and `--read-only`. The ledger records this same file drifting
+the same way once before, so it is a recurring gap rather than a one-off.
+Verified against the tree as it now stands: 125 helper, viewer, launcher, bar
+and codex tests and 5 repository tests pass on Python 3.9.10 and 3.12, versions
+agree at 1.11.0, `validate --root .` exits 0 with no structural errors, archives
+build, and `git diff --check` is clean. Verified specifically for this entry,
+because its deliverables ship: `dist/handoff.zip` contains 12 files and its
+`SKILL.md` and `references/ledger-contract.md` carry the takeover section, the
+`Coming back` rule, and the transfer format, so the protocol reaches an
+installed copy rather than only this tree. Not done: nothing is committed, so
+HEAD is still dc827ca and no installed copy has any of it. Next action: none for
+this entry; the pending `Commit and release 1.11.0` entry above records the
+release the user deferred, and its first step - confirming this entry complete
+and verified - is now satisfied.
+
+Taken over by Claude session 01Gjkh6S from Kimi session bb679340 on 2026-09-08
+at the user's explicit direction, after Kimi session bb679340's process (pid
+10770) was confirmed exited; that session's uncommitted work is preserved at
+/private/tmp/claude-502/-Users-divij-code-handoff-
+skill/e270a92e-5b1d-494a-a9a1-5bd60bb447f1/scratchpad/recovery-2026-09-08-0853.
+Originally owned by Kimi session bb679340. Adopted assigned, not explained: its
+two documentation steps are checked here against the tree they produced, and
+only the verification step was outstanding at transfer.
+
+Prior status, recorded by Kimi session bb679340 before the transfer and
+restored here after this session's first closing write deleted it: "In
+progress. Audited the ledger on intake: the Codex bar task was completed by
+Claude session handoff-skill-b5 after the user stopped the Codex session, and
+the ledger-reassignment feature it left behind is pending and unassigned;
+neither blocks this documentation task. Current step: define the takeover flow
+in SKILL.md." That reading was stale by the time of the transfer: the step it
+names as current was already done in the working tree.
+
+
+## 2026-09-08 - Test and document the ledger reassignment feature (owner: Claude session handoff-skill-b5)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Cover `reassign_task`, `replace_owner`, `owner_label_error`, `swap_ledger`, and the viewer's cut/paste move with regression tests.
+- [x] Document the `x`/`p`/`P` keys and `--read-only` in `references/progress-viewer.md`.
+- [x] Correct the three statements the feature falsified in that reference.
+- [x] Run repository checks and record verification.
+
+Status: Superseded as a task, kept as the verification record. Read `Hand a task to another agent from the viewer` (owner: Claude session 01Gjkh6S) above as the authoritative entry for this feature: that session requested and built it, and its entry carries the reason the user asked for it. This entry is not a competing claim. It was opened by this session at 07:45 on 2026-09-08, when the reassignment code sat uncommitted in the working tree with no ledger entry of any kind, having been left by the stopped Codex bar session; recording it was the only way to keep it from being read as part of the Codex bar task or lost at release. Session 01Gjkh6S recorded its own entry afterwards, which makes the two overlap, and that one wins on history. What is genuinely this session's and is not duplicated anywhere: the verification. Run against the tree after the tests and documentation landed, 125 helper, viewer, launcher, bar, and codex tests and 5 repository tests pass, versions agree at 1.11.0, `validate --root .` exits 0, archives build, and `git diff --check` is clean. That evidence satisfies the remaining step of the entry above, whose box is deliberately left unchecked here because it belongs to its owner, not to this session. Also corrected for the record: the third statement in this entry's step 3 needed no edit, because the minimum terminal height returned to 14 rows in `dashboard.draw`, which is what `references/progress-viewer.md` already said. Nothing here is committed; none of it reaches an installed copy until 1.11.0 is released.
+## 2026-09-08 - Add a live Handoff bar around Codex (owner: Claude session handoff-skill-b5)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Check Codex's status-line surface and choose an integration.
+- [x] Add Codex launch mode with a refreshing bottom bar and Codex skill discovery.
+- [x] Cover launching, rendering, cleanup, and packaged execution with regression tests.
+- [x] Document setup, run repository checks, and record verification.
+
+Status: Complete. Implemented by the Codex bar session, which holds authorship of `skills/handoff/scripts/handoff_codex.py`, `skills/handoff/tests/test_handoff_codex.py`, and the launcher, viewer, packaging, and documentation changes this entry covers. That session was stopped at the user's explicit direction and this session took the task over on 2026-09-08 at 07:42, after confirming its process had exited and that no other writer held the tree; its uncommitted work was copied to a recovery point before any edit and none of it was rewritten. `handoff-tui --codex` runs Codex inside a private tmux server on its own socket, with `TMUX` and `TMUX_PANE` cleared so it nests inside an existing session, the prefix disabled so keys reach Codex, arguments passed base64-encoded through a Python `execv` shim so tmux's `;` parser cannot reinterpret them, and `remain-on-exit` set so Codex's own exit status is returned rather than the attach client's. The launcher gained `.agents` and `.codex` skill discovery, walking up to the first Git root, and a `usable()` gate so `--codex` skips installs that predate `handoff_codex.py`. Verification added by this session, closing the gap the previous status recorded: that session reported its sandbox rejected tmux sockets, but the failure reproduced here was only a socket path over the macOS length limit, and tmux 3.6a works normally in this session. `TmuxIntegrationTests`, which had been skipping, passes against a real pane, covering argument forwarding, typed input reaching the child, `#` format escaping, and exit status 7 propagating. A full end-to-end run with a stand-in `codex` on PATH rendered `handoff █████████░ 22/24 tasks · 90/96 steps · Codex, Codex bar session` on the bottom row while the child ran above it, with `resume --last` forwarded intact. Verified: 97 helper, viewer, launcher, bar, and codex tests and 5 repository tests pass, versions agree at 1.10.0, and `validate --root .` exits 0. Not done: nothing is committed or released, so no installed copy has `--codex`. Separately, that session had also begun a ledger-reassignment feature that none of this entry's steps covers; it is recorded as its own pending entry above rather than folded in here, because it is untested and its documentation is wrong. Next action: release 1.10.0, after deciding the reassignment entry.
+
 ## 2026-09-08 - Verify Grok and Kimi status lines and stop the bar waiting on stdin (owner: Claude session 01LD89UW)
 
 State:

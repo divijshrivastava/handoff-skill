@@ -19,6 +19,7 @@ RUNTIME_FILES = (
     "references/progress-viewer.md",
     "scripts/handoff-bar",
     "scripts/handoff-tui",
+    "scripts/handoff_codex.py",
     "scripts/handoff_guard.py",
     "scripts/handoff_tui.py",
 )

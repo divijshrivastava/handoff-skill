@@ -43,10 +43,12 @@ def which(base: Path, script: Path | None = None, **environment) -> subprocess.C
     env.pop("HANDOFF_TUI", None)
     env.pop("HANDOFF_SKILL_REPO", None)
     env["CLAUDE_CONFIG_DIR"] = str(base / "claude")
+    env["HOME"] = env["USERPROFILE"] = str(base / "home")
+    env["CODEX_HOME"] = str(base / "home" / ".codex")
     env.update(environment)
     return subprocess.run(
         [sys.executable, str(script or installed_copy(base)), "--which"],
-        capture_output=True, text=True, encoding="utf-8", env=env,
+        capture_output=True, text=True, encoding="utf-8", env=env, cwd=base,
     )
 
 
@@ -130,6 +132,57 @@ class ResolutionTests(unittest.TestCase):
             self.assertEqual(result.returncode, 1)
             self.assertIn("$HANDOFF_TUI", result.stderr)
             self.assertIn("$HANDOFF_SKILL_REPO", result.stderr)
+
+
+class CodexSkillsTests(unittest.TestCase):
+    def test_global_agents_skill_without_claude_plugin(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            viewer = viewer_at(base, "home", ".agents")
+            result = which(base)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(Path(result.stdout.strip()).resolve(), viewer.resolve())
+
+    def test_custom_codex_home(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            viewer = viewer_at(base, "custom codex")
+            result = which(base, CODEX_HOME=str(base / "custom codex"))
+            self.assertEqual(Path(result.stdout.strip()).resolve(), viewer.resolve())
+
+    def test_project_skill_precedes_global_and_plugin_installs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            project = viewer_at(base, ".agents")
+            viewer_at(base, "home", ".agents")
+            viewer_at(base, "claude", "plugins", "cache", "market", "handoff", "9.9.9")
+            self.assertEqual(Path(which(base).stdout.strip()).resolve(), project.resolve())
+
+    def test_parent_project_skill_and_repository_boundary(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            parent = viewer_at(base, ".agents")
+            child = base / "child"
+            child.mkdir()
+            self.assertEqual(Path(which(child).stdout.strip()).resolve(), parent.resolve())
+            (child / ".git").mkdir()
+            self.assertEqual(which(child).returncode, 1)
+
+    def test_codex_mode_skips_a_stale_skill_in_favor_of_an_updated_plugin(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            viewer_at(base, ".agents")
+            updated = viewer_at(base, "claude", "plugins", "cache", "market", "handoff", "1.10.0")
+            updated.with_name("handoff_codex.py").write_text("# Codex support\n", encoding="utf-8")
+            script = installed_copy(base)
+            env = {**os.environ, "CLAUDE_CONFIG_DIR": str(base / "claude"),
+                   "HOME": str(base / "home"), "USERPROFILE": str(base / "home"),
+                   "CODEX_HOME": str(base / "home" / ".codex")}
+            env.pop("HANDOFF_TUI", None)
+            result = subprocess.run([sys.executable, str(script), "--which", "--codex"],
+                                    env=env, cwd=base, capture_output=True, text=True, encoding="utf-8")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(Path(result.stdout.strip()).resolve(), updated.resolve())
 
 
 class InPlaceTests(unittest.TestCase):
