@@ -1,4 +1,5 @@
 ---
+name: handoff-init
 description: Initialise handoff tracking for this repository and session
 argument-hint: [repository path]
 ---

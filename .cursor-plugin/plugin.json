@@ -6,5 +6,8 @@
   "homepage": "https://github.com/divijshrivastava/handoff-skill#readme",
   "repository": "https://github.com/divijshrivastava/handoff-skill",
   "license": "MIT",
-  "keywords": ["handoff", "ledger", "multi-agent", "task-tracking"]
+  "keywords": ["handoff", "ledger", "multi-agent", "task-tracking"],
+  "skills": "skills/handoff",
+  "commands": "commands",
+  "agents": "skills/handoff/agents"
 }

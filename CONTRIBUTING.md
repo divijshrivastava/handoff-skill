@@ -18,7 +18,10 @@ The release bundle deliberately includes only `SKILL.md`, `agents/openai.yaml`, 
 
 ## Publish a release
 
-1. Update `metadata.version` in `skills/handoff/SKILL.md` and document user-visible changes in the GitHub release notes.
+1. Update `metadata.version` in `skills/handoff/SKILL.md` and the matching
+   version in `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`,
+   `.cursor-plugin/plugin.json`, and `.cursor-plugin/marketplace.json`. Document
+   user-visible changes in the GitHub release notes.
 2. Run the checks above, inspect the archive, and commit the release changes.
 3. Push a tag matching the version, for example `v1.1.0` for version `1.1.0`.
 4. The release workflow validates and builds before publishing `handoff.zip`, `handoff.skill`, and `SHA256SUMS`.

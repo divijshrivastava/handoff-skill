@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Assert the skill, plugin, and marketplace all declare the same version.
+"""Assert the skill and every plugin marketplace manifest declare the same version.
 
 A plugin whose version never changes is never offered as an update, so a version
-that drifts between these three files silently strands every installed copy.
+that drifts between these files silently strands every installed copy.
 """
 
 from __future__ import annotations
@@ -21,32 +21,46 @@ def skill_version(root: Path) -> str:
     return match.group(1)
 
 
+def marketplace_entry_version(path: Path, plugin_name: str) -> str:
+    marketplace = json.loads(path.read_text(encoding="utf-8"))
+    entries = [entry for entry in marketplace["plugins"] if entry["name"] == plugin_name]
+    if len(entries) != 1:
+        raise SystemExit(f"{path} must list {plugin_name} exactly once")
+    return entries[0]["version"]
+
+
 def main() -> int:
     root = Path(__file__).resolve().parents[1]
-    plugin = json.loads((root / ".claude-plugin/plugin.json").read_text(encoding="utf-8"))
-    marketplace = json.loads((root / ".claude-plugin/marketplace.json").read_text(encoding="utf-8"))
-    entries = [p for p in marketplace["plugins"] if p["name"] == plugin["name"]]
-    if len(entries) != 1:
-        raise SystemExit(f"marketplace.json must list {plugin['name']} exactly once")
+    plugin_name = "handoff"
+    claude_plugin = json.loads((root / ".claude-plugin/plugin.json").read_text(encoding="utf-8"))
+    cursor_plugin = json.loads((root / ".cursor-plugin/plugin.json").read_text(encoding="utf-8"))
+    if claude_plugin["name"] != plugin_name or cursor_plugin["name"] != plugin_name:
+        raise SystemExit("plugin.json manifests must name the handoff plugin")
 
     versions = {
         "skills/handoff/SKILL.md": skill_version(root),
-        ".claude-plugin/plugin.json": plugin["version"],
-        ".claude-plugin/marketplace.json": entries[0]["version"],
+        ".claude-plugin/plugin.json": claude_plugin["version"],
+        ".claude-plugin/marketplace.json": marketplace_entry_version(
+            root / ".claude-plugin/marketplace.json", plugin_name
+        ),
+        ".cursor-plugin/plugin.json": cursor_plugin["version"],
+        ".cursor-plugin/marketplace.json": marketplace_entry_version(
+            root / ".cursor-plugin/marketplace.json", plugin_name
+        ),
     }
     if len(set(versions.values())) != 1:
         for name, value in versions.items():
             print(f"  {value}  {name}", file=sys.stderr)
-        raise SystemExit("Version mismatch across skill, plugin, and marketplace manifests")
+        raise SystemExit("Version mismatch across skill and marketplace manifests")
 
     version = next(iter(versions.values()))
     if len(sys.argv) > 1:
         tag = sys.argv[1]
         if tag != "v" + version:
             raise SystemExit(f"Tag {tag} does not match version {version}")
-        print(f"Tag {tag} matches version {version} in all three files")
+        print(f"Tag {tag} matches version {version} in all manifests")
     else:
-        print(f"Version {version} agrees across all three files")
+        print(f"Version {version} agrees across all manifests")
     return 0
 
 

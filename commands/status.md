@@ -1,4 +1,5 @@
 ---
+name: handoff-status
 description: Show a live handoff progress bar in the status line, or a snapshot
 argument-hint: [off | repository path]
 ---

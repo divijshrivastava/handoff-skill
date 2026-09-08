@@ -6,7 +6,7 @@ Handoff is an agent skill for repositories where work continues across multiple 
 
 ![Handoff demo](scripts/demo/handoff.gif)
 
-**Version:** 1.16.0
+**Version:** 1.18.0
 
 ## Why Handoff?
 
@@ -37,6 +37,17 @@ Reload plugins or start a new Claude Code session after installation:
 ```bash
 /reload-plugins
 ```
+
+### Cursor
+
+Import this repository as a marketplace, then install the **handoff** plugin:
+
+1. **Team marketplace:** [Cursor dashboard](https://cursor.com/dashboard) → **Settings** → **Plugins** → **Team Marketplaces** → **Import Marketplace**, then paste `https://github.com/divijshrivastava/handoff-skill`
+2. **In the IDE:** open **Customize** in the sidebar, search for **Handoff**, and **Install** (user or project scope). You can also type `/add-plugin` in the editor to reach the same panel.
+
+The repo ships `.cursor-plugin/marketplace.json` and `.cursor-plugin/plugin.json` alongside the Claude Code manifests. Both marketplaces share the `divij-skills` name and the same version triple as `skills/handoff/SKILL.md`.
+
+To publish on the public [Cursor Marketplace](https://cursor.com/marketplace/publish), submit the repository link after pushing these manifests.
 
 ### Other agent hosts
 

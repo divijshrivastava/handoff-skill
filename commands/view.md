@@ -1,4 +1,5 @@
 ---
+name: handoff-view
 description: Open the live handoff progress viewer
 argument-hint: [repository path]
 ---

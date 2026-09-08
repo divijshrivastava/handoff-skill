@@ -46,7 +46,7 @@ Exit codes: `0` applied, `3` version conflict (the audit behind the edit is stal
 
 ### Two invariants CI enforces
 
-**Version triple.** The version string appears in `skills/handoff/SKILL.md` (`metadata.version`), `.claude-plugin/plugin.json`, and `.claude-plugin/marketplace.json`. `check_versions.py` fails on any drift, and on a release tag that is not `v<version>`. A version that does not change is never offered as an update to installed copies, so bump all three together.
+**Version triple.** The version string appears in `skills/handoff/SKILL.md` (`metadata.version`), `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `.cursor-plugin/plugin.json`, and `.cursor-plugin/marketplace.json`. `check_versions.py` fails on any drift, and on a release tag that is not `v<version>`. A version that does not change is never offered as an update to installed copies, so bump all five together.
 
 **Packaging allowlist.** `RUNTIME_FILES` in `scripts/package_skill.py` explicitly lists what ships. Adding a runtime resource to the skill means adding it there and to `tests/test_package.py`, or it silently will not reach users. Archives are byte-reproducible (`ZIP_STORED`, fixed timestamps, fixed modes); do not introduce nondeterminism.
 

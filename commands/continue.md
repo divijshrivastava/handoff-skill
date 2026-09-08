@@ -1,4 +1,5 @@
 ---
+name: handoff-continue
 description: Audit HANDOFF.md and resume the work that is actually unfinished
 argument-hint: [task name or hint]
 ---
