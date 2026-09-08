@@ -1,5 +1,43 @@
 # Handoff
 
+## 2026-09-08 - Commit and release 1.12.0 (owner: Zahhak)
+
+State:
+
+- [x] In progress
+- [ ] Completed
+
+Steps:
+
+- [ ] Rebase or merge origin/main into bar-viewer-key-and-session-names and bump the version triple to 1.12.0.
+- [ ] Push the branch, open a pull request, and merge after CI passes.
+- [ ] Tag v1.12.0 and confirm the published release.
+- [ ] Run the repository checks and record the handoff.
+
+Status: In progress. Started at the user's direction after the audit found the branch unmerged; current step is merging origin/main into bar-viewer-key-and-session-names and bumping the version triple to 1.12.0.
+
+## 2026-09-08 - Make the viewer key work without the tmux wrapper (owner: Zahhak)
+
+State:
+
+- [ ] In progress
+- [ ] Completed
+
+Steps:
+
+- [ ] Add a /handoff:view slash command that opens the viewer with no setup and no wrapper (commands/view.md).
+- [ ] Replace --install-viewer-key with an installer that writes a binding that actually fires, per emulator (skills/handoff/scripts/handoff_keys.py).
+- [ ] Cover the installer and the refusals with regression tests.
+- [ ] Document the shortcut honestly and run the repository checks.
+
+Status: Pending. No work has started.
+Reassigned 2026-09-08: moved from Sobek to Chiron in the handoff viewer at the
+user's direction. No state or step boxes were changed, and the entry keeps its
+place in ledger order.
+Reassigned 2026-09-08: moved from Chiron to Zahhak in the handoff viewer at the
+user's direction. No state or step boxes were changed, and the entry keeps its
+place in ledger order.
+
 ## 2026-09-08 - Open the viewer with Ctrl-G from any agent session (owner: Chiron)
 
 State:
