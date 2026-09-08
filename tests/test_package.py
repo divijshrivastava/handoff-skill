@@ -1,5 +1,6 @@
 import hashlib
 import os
+import shutil
 import importlib.util
 from pathlib import Path
 import subprocess
@@ -69,6 +70,9 @@ class PackageTests(unittest.TestCase):
                 return [line for line in text.splitlines() if "Revision:" not in line]
             self.assertEqual(content(forwarded.stdout), content(report.stdout))
             # The packaged status-line front-end runs from the extracted tree.
+            # POSIX only; Windows uses the viewer's own --bar, exercised above.
+            if sys.platform == "win32" or shutil.which("sh") is None:
+                return
             bar = subprocess.run(
                 ["sh", str(helper.with_name("handoff-bar")), "--file", str(ledger)],
                 input="", capture_output=True, text=True,

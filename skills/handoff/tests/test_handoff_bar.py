@@ -13,6 +13,12 @@ import unittest
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 BAR = SCRIPTS / "handoff-bar"
 
+# handoff-bar is a POSIX sh fast path. Windows has no sh, sed, or cksum; the
+# portable route there is `python handoff_tui.py --bar`, covered by BarTests in
+# test_handoff_tui.py. Skipping keeps that limit visible instead of silent.
+if sys.platform == "win32" or shutil.which("sh") is None:
+    raise unittest.SkipTest("handoff-bar requires a POSIX shell")
+
 LEDGER = (
     "# Handoff\n\n## Task one (owner: Ann)\n\nState:\n- [x] In progress\n- [x] Completed\n\n"
     "Steps:\n- [x] Outcome.\n\nStatus: Done.\nNext action.\n\n"

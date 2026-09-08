@@ -1,0 +1,4 @@
+# Keep LF in every working tree. A CRLF checkout breaks the shell scripts
+# (`bad interpreter`) under Git Bash and WSL, and changes ledger hashes.
+* text=auto eol=lf
+*.gif binary
