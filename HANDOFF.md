@@ -1,5 +1,34 @@
 # Handoff
 
+## 2026-09-09 - Let an existing ledger activate the skill (owner: Daedalus) (harness: Claude Code)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Narrow the Activation section and description so a repository that already keeps HANDOFF.md activates the skill (skills/handoff/SKILL.md).
+- [x] Run the repository checks and record the handoff, including what the change leaves inconsistent.
+
+Status: In progress. The gate committed as e3a024a suppresses all handoff work until explicit activation, including in a repository that already keeps a ledger. The user reports that init was meant for repositories with no ledger, and directs that an existing HANDOFF.md activate the skill on its own. Narrowing it accordingly: the ledger's presence becomes a trigger, while multiple agents or unfinished-looking work in a repository without one stay non-triggers. This edits the section the Enkidu session is actively rewriting, at the user's explicit direction; its other uncommitted files are left alone. Complete. An existing HANDOFF.md is now the first listed trigger, with the reason recorded: someone put it there to track work this way, and a ledger nobody reads is worse than none. The description says the skill is active in any repository that keeps a ledger and starts on explicit activation elsewhere. What stays a non-trigger is narrower and truer: multiple agents, or work that merely looks unfinished, in a repository that keeps no ledger. init is now described as how a repository without a ledger becomes one, and as reporting recorded state where a ledger already exists. Enkidu's newer lazy-load paragraph was preserved. SKILL.md had been quiet from 02:45:03 through the edit, verified by a 90-second watch whose only change was this session's own ledger write. Verified: 222 helper tests and 5 repository tests pass, versions agree at 1.16.0, archives build, ledger validation and git diff --check pass. Left inconsistent on purpose, because it belongs to a live owner: skills/handoff/evals/evals.json is uncommitted work of the Enkidu session, and its new scenario 6 grades the opposite of this change, expecting no handoff work in a repository that has a HANDOFF.md and no init. That scenario now contradicts the shipped contract and needs rewriting by its owner or by explicit direction. README.md, agents/openai.yaml and the untracked commands/init.md are also that session's and were not touched; they may describe the wider gate. Next action: none here; the eval and those documents need reconciling before a release.
+
+## 2026-09-09 - Clarify that handoff:init lazy-loads the full workflow (owner: Enkidu) (harness: Kimi Code)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] State lazy-load semantics in the Activation section (skills/handoff/SKILL.md).
+- [x] Say the same in the README Use it section and commands/init.md.
+- [x] Run the repository checks and record the handoff.
+
+Status: Complete. The user clarified the gate's intent: once /handoff:init (or "initialise the handoff") is invoked, the whole repository works with full handoff functionality for the rest of the session — init is a lazy load, not a per-request ritual. The Activation section now says the whole contract governs every repository task after any trigger, with no further handoff mention needed, and that init only turns it on; the README Use it section and commands/init.md say the same. Prose-only change on top of e3a024a. Also recorded here, per Daedalus's annotation on the earlier init-gate entry: f3443f4 was split at the user's direction into 2c50f00 (Daedalus's harness work) and e3a024a (this session's SKILL.md gate, committed unchanged by Daedalus with attribution), and the uncommitted README.md edits interleaved with this task's belong to a cursor-agent session that ran 02:34:35-02:36:05 under "update the readme with as much detail as possible", not to Daedalus. Verified: 222 helper tests and 5 repository tests pass, validate exits 0, git diff --check is clean. Left uncommitted: this change's SKILL.md/README/init.md edits plus the earlier entry's openai.yaml and evals.json changes; committing README.md waits on the cursor session's work being claimed or set aside by the user. Next action: none.
+
 ## 2026-09-09 - Start handoff only on handoff:init or 'initialise the handoff' (owner: Enkidu) (harness: Kimi Code)
 
 State:

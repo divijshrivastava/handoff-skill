@@ -1,6 +1,6 @@
 ---
 name: handoff
-description: "Coordinate progressive repository work across agents with a shared HANDOFF.md ledger, starting only on explicit activation: the /handoff:init command, the phrase 'initialise the handoff' (the Codex prompt), or an explicit handoff request such as /handoff:continue, /handoff:status, /handoff:view, or 'use handoff'. Once active, use for starting, continuing, checking, pausing, handing off, or committing tracked repository work. Audits later work and current code before treating old unchecked boxes as unfinished. An existing HANDOFF.md, multiple agents, or unfinished-looking work are not triggers on their own. Do not use for read-only questions that require no task tracking or repository mutation."
+description: "Coordinate progressive repository work across agents with a shared HANDOFF.md ledger. Active in any repository that already keeps a HANDOFF.md, which is itself the record that this repository tracks work this way; where none exists, it starts on explicit activation: the /handoff:init command, the phrase 'initialise the handoff' (the Codex prompt), or an explicit handoff request such as /handoff:continue, /handoff:status, /handoff:view, or 'use handoff'. Use for starting, continuing, checking, pausing, handing off, or committing tracked repository work. Audits later work and current code before treating old unchecked boxes as unfinished. Multiple agents, or unfinished-looking work in a repository that keeps no ledger, are not triggers on their own. Do not use for read-only questions that require no task tracking or repository mutation."
 license: MIT
 metadata:
   version: "1.16.0"
@@ -20,24 +20,34 @@ rules, ownership boundaries, verification requirements, or safety policy.
 
 ## Activation
 
-Handoff work starts only when the user asks for it. The triggers are:
+Handoff work starts in a repository that already keeps a ledger, and elsewhere
+only when the user asks for it. The triggers are:
 
+- an existing `HANDOFF.md` in the repository. Someone put it there to track
+  work this way, and a ledger nobody reads is worse than none: entries go
+  stale, and the next agent trusts checkboxes no one has audited;
 - the `/handoff:init` command, or the phrase "initialise the handoff" in a
   host without slash commands (Codex's default prompt supplies it);
 - another explicit handoff request: `/handoff:continue`, `/handoff:status`,
   `/handoff:view`, or a direct instruction such as "use handoff", "record
   this in the ledger", or "take over <owner>'s tasks".
 
-Until one of these arrives, do none of this skill's work: no session name, no
-preflight, no ledger read or write, no task entry. An existing `HANDOFF.md`,
-multiple agents sharing the tree, or unfinished-looking work are not triggers.
-Answer the user's request under the repository's own instructions instead.
+In a repository with no ledger and no such request, do none of this skill's
+work: no session name, no preflight, no ledger creation, no task entry.
+Multiple agents sharing the tree, or work that merely looks unfinished, do not
+by themselves make a repository one that tracks work this way. Answer the
+user's request under the repository's own instructions instead.
 
-Activation establishes tracking; it starts no task. On `/handoff:init` or
-"initialise the handoff", run the preflight below, create `HANDOFF.md` from
-`references/ledger-contract.md` when the repository prescribes no ledger and
-mutation is authorized, report the recorded state, and wait for the user's
-next request. Every later request in the session follows the steps below.
+Activation is a lazy load, not a per-request ritual. Once any trigger
+arrives, the whole contract below governs every repository task for the rest
+of the session — preflight, intake, audit, ownership, safe writes, commit
+discipline — with no further handoff mention needed. `/handoff:init` (or
+"initialise the handoff") is how a repository without a ledger becomes one:
+run the preflight, create `HANDOFF.md` from `references/ledger-contract.md`
+when the repository prescribes no ledger and mutation is authorized, report
+the recorded state, and start no task. Where a ledger already exists, it has
+done that job already and init only reports the recorded state. A later
+session activates the same way.
 
 ## Output discipline
 
