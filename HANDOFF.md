@@ -1,5 +1,21 @@
 # Handoff
 
+## 2026-09-09 - Commit and release 1.14.0 (owner: Daedalus)
+
+State:
+
+- [x] In progress
+- [ ] Completed
+
+Steps:
+
+- [ ] Bump the version triple to 1.14.0 and run the release checks.
+- [ ] Commit the release change and push main.
+- [ ] Tag v1.14.0, push it, and confirm the published release.
+- [ ] Record the handoff.
+
+Status: In progress. The user asked to tag and push. main is ahead of origin/main by b969f18 (Ctrl+Alt+H viewer shortcut) and f12fea2 (name claimed first at preflight), both user-visible and both in shipped files, so they reach installed copies only through a release. 1.13.0 is already tagged at 2a257ea, so the triple moves to 1.14.0. Next action: bump the triple and run the release checks.
+
 ## 2026-09-09 - Claim the session name as the first preflight step (owner: Daedalus)
 
 State:
