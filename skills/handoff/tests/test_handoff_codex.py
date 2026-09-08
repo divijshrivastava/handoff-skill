@@ -78,7 +78,8 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(Path(status), session.status_file)
         call.assert_any_call("set-option", "-t", "handoff", "prefix", "None")
         call.assert_any_call("set-option", "-t", "handoff", "status-format[0]", "bar")
-        self.assertEqual(session.command[2:4], ["-S", "/tmp/private/s"])
+        self.assertEqual(session.command[2], "-S")
+        self.assertEqual(Path(session.command[3]), Path("/tmp/private/s"))
         self.assertIn(os.devnull, session.command)
 
     def test_exit_status_is_codex_status_not_attach_status(self):
