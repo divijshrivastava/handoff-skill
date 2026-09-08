@@ -131,6 +131,20 @@ Percentages reflect recorded checkboxes and heading owners. They do not measure
 effort or verify who performed a step; stale entries still need an audit.
 See [controls and counting rules](skills/handoff/references/progress-viewer.md).
 
+## Slash commands
+
+Installed as a Claude Code plugin, the skill adds two commands:
+
+| Command | Purpose |
+| --- | --- |
+| `/handoff:status` | Print recorded progress overall and per owner, read-only |
+| `/handoff:continue` | Audit the ledger and resume what is actually unfinished |
+
+`/handoff:status` prints a snapshot rather than the live dashboard, because a
+command session has no terminal to draw into. Run `handoff-tui` yourself in a
+separate terminal for the refreshing view. It reports *recorded* progress;
+`/handoff:continue` is the one that runs the progressive audit.
+
 ## Multi-agent safety
 
 For normal sequential work—or separate Git worktrees—editing `HANDOFF.md` directly is fine.

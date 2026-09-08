@@ -1,5 +1,20 @@
 # Handoff
 
+## 2026-09-08 - Add a /handoff:status command for recorded progress (owner: Claude session 01LD89UW)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Add the command that reports recorded overall and per-owner progress.
+- [x] Document it alongside the existing continue command.
+- [x] Run repository checks and record the handoff.
+
+Status: Complete. Added `commands/status.md`, giving `/handoff:status` next to the existing `/handoff:continue`. It runs the viewer's snapshot mode through the `handoff-tui` launcher, falling back to `$SKILL_DIR/scripts/handoff_tui.py`, and trims the output at the `TASKS (ledger order)` heading so the command returns the totals and the per-owner table rather than the whole ledger; unfiltered, this repository's snapshot is roughly 32KB. The command is read-only by construction: it forbids edits, `apply`, and starting work, and stops rather than creating a missing ledger. It states that the figures are recorded rather than effective, and points at `/handoff:continue` for the progressive audit, so the command cannot be read as contradicting the skill's central claim that a checkbox is not evidence. Deliberately not live: a command session has no controlling terminal, so curses cannot draw into it; the command says so and tells the user to run `handoff-tui` in their own terminal for the refreshing view with drilldown. Commands ship through the plugin rather than the `.skill` archive, so `RUNTIME_FILES` is unchanged; the version triple moved to 1.6.0 so installed copies are offered the update. Verified: 52 helper/viewer/launcher tests and 5 repository tests pass, versions agree at 1.6.0, `claude plugin validate .` passes, `validate --root .` exits 0, archives build, `git diff --check` is clean, and the documented pipeline was run against this repository, returning 17 lines. Not done: nothing is committed, tagged, or released, so the command does not yet exist in any installed copy. Next action: commit, push, and tag v1.6.0, then update the plugin, if the user wants the command available.
+
 ## 2026-09-08 - Ship a PATH-stable launcher for the progress viewer (owner: Claude session 01LD89UW)
 
 State:
