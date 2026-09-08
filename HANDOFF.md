@@ -5,15 +5,15 @@
 State:
 
 - [x] In progress
-- [ ] Completed
+- [x] Completed
 
 Steps:
 
 - [x] Run the purge tests and a live helper smoke test in a throwaway directory.
 - [x] Remove scripts/demo/handoff.gif (README.md no longer embeds it).
-- [ ] Commit, push origin/main, and record the identifier.
+- [x] Commit, push origin/main, and record the identifier.
 
-Status: In progress. Purge verified: 11 PurgeTests pass, 233 helper tests pass, 5 repository tests pass, versions agree at 1.19.0. Live smoke in /tmp/handoff-purge-smoke-EJ0t: missing --confirm exits 2, dry-run writes nothing, apply empties HANDOFF.md to '# Handoff\n' and archives the previous bytes, missing ledger exits 1 and creates no file, stale version exits 3. This repository's ledger was not purged. scripts/demo/handoff.gif is removed; the untracked handoff-opt.gif copy is gone too. Next action: commit and push.
+Status: Complete. Purge verified before the deletion: 11 PurgeTests, 233 helper tests, and 5 repository tests pass; versions agree at 1.19.0. Live smoke in /tmp/handoff-purge-smoke-EJ0t covered missing confirm (exit 2), dry-run, apply-with-archive, missing ledger (exit 1, no file created), and stale version (exit 3). This repository's ledger was not purged. Deleted scripts/demo/handoff.gif and the untracked handoff-opt.gif leftover. Committed and pushed as 466390b. Next action: none.
 
 ## 2026-09-09 - Put the dashboard GIF at the top of the README (owner: Haetae) (harness: Grok)
 
