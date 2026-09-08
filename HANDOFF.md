@@ -1,5 +1,80 @@
 # Handoff
 
+## 2026-09-09 - Claim the session name as the first preflight step (owner: Daedalus)
+
+State:
+
+- [ ] In progress
+- [ ] Completed
+
+Steps:
+
+- [ ] Move name claiming to the first Step 0 item and renumber the rest (skills/handoff/SKILL.md).
+- [ ] Align the wording that describes when a session claims its name (README.md, skills/handoff/references/ledger-contract.md).
+- [ ] Run the repository checks, validate the ledger, and record the handoff.
+
+Status: Pending. The user asked that a session claim its handoff name before anything else; today SKILL.md claims it at item 6 of 7 in Step 0, after the ledger read, the doctor, and git status, so any earlier report or write is unattributed. Not started: the two files this would edit, skills/handoff/SKILL.md and README.md, both carry uncommitted changes from Cernunnos, whose Codex session (pids 80950/80951, cwd this repository, started 00:24:41) was writing them at 00:31 and is still running; an earlier note in this entry named pid 34851, which is a different Codex session in the same directory. Awaiting the user's decision on editing those files while that owner is live. Next action: reorder Step 0 once that is resolved. This session claimed the name Daedalus before recording this entry.
+
+## 2026-09-09 - Move the viewer shortcut off Codex image paste (owner: Daedalus)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Support Ctrl+Alt+H in the iTerm2 installer and replace previous Handoff keys for the same repository.
+- [x] Update shortcut guidance and verify migration with regression tests and repository checks.
+- [x] Apply the local shortcut change and record the handoff.
+
+Status: In progress. Ctrl+V currently opens the Handoff iTerm2 profile and intercepts Codex image paste. The user requests a different shortcut. Implement Ctrl+Alt+H (Control+Option+H on macOS), preserving unrelated bindings and removing the old binding only for this repository's viewer. Prior tasks are complete or superseded by later entries and releases; Bakunawa's completed uncommitted installer work is the starting point, preserved in /tmp/handoff-shortcut-cernunnos. No other agent is active in this thread; the demo GIF remains untouched. Transferred 2026-09-09 from Cernunnos to Daedalus at the user's explicit direction, because Cernunnos reached its context limit and can no longer continue. Cernunnos was not observed writing after 00:31:55; its Codex process (pids 80950/80951) was still resident when the transfer was recorded. Its uncommitted work is preserved at /tmp/handoff-takeover-daedalus-20260909-004135 (working copies, the full diff, git status, HEAD, and a copy of Cernunnos's own /tmp/handoff-shortcut-cernunnos). Completed 2026-09-09 by Daedalus. The installer work Cernunnos left in the working tree was audited rather than redone: handoff_keys.py labels and encodes C-M-<letter> as Control+Option (0xc0000), and retires only global mappings whose action opens this repository's own viewer profile, so switching the key releases the previous one. Applied it with HANDOFF_VIEWER_KEY=C-M-h against this checkout. Verified by reading macOS preferences back: GlobalKeyMap now holds 0x68-0xc0000 -> Action 26 for profile 78db3b8a-002d-59be-891a-52375a4c34ad, the former 0x76-0x40000 (Ctrl+V) mapping is gone so Codex image paste is free, and the unrelated 0xd-0x20000-0x24 binding is unchanged. The profile's exact command, /usr/local/bin/python3 /Users/divij/.local/bin/handoff-tui --root /Users/divij/code/handoff-skill, rendered the live ledger when run directly. Verified: 200 helper tests and 5 repository tests pass, versions agree at 1.13.0, archives build, ledger validation and git diff --check pass. Not verified: the physical keystroke in the user's running iTerm2, which may need an iTerm2 restart to reload its keymap. Source changes remain uncommitted and no release was requested; a release would need the version triple bumped.
+
+## 2026-09-09 - Fix the viewer shortcut opening Cursor in Codex (owner: Bakunawa)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Correct the iTerm2 shortcut installer and the Codex shortcut guidance.
+- [x] Apply a working viewer shortcut to the local setup.
+- [x] Verify the key path, run the repository checks, and record the handoff.
+
+Status: Complete. The user reported Ctrl+V opening Cursor from plain Codex
+0.153.4. Codex documents Ctrl+G as its external-editor key and ~/.zshrc sets
+VISUAL to cursor --wait; no clarification arrived, so the installed shortcut
+uses the requested Ctrl+V. The former iTerm2 installer only wrote an invalid,
+unimported preset with Action 12 (Send Text). It now creates a dynamic viewer
+profile and merges Action 26 (New Window with Profile) into GlobalKeyMap,
+using valid numeric key encoding. It saves a private preference backup,
+preserves existing shortcuts, refuses conflicting bindings or malformed input,
+and writes a valid .itermkeymap fallback. README, SKILL.md, and harness setup
+now state that plain Codex claims Ctrl+G and that the skill alone binds no key.
+
+Applied the corrected installer from this checkout with HANDOFF_VIEWER_KEY=C-v
+and --root /Users/divij/code/handoff-skill. The key is pinned to this repository.
+Backup: ~/.config/handoff/iterm2-before-viewer-key.plist. The dynamic profile
+uses explicit Python to run ~/.local/bin/handoff-tui, which resolves the
+installed viewer across skill upgrades. Reading macOS preferences back proved
+0x76-0x40000 selects the generated profile and every pre-existing global
+shortcut remains identical. macOS preference writes required elevated execution
+because the sandbox denied them; the authorized install succeeded.
+
+Verified: 195 helper tests and 5 repository tests pass, versions agree at
+1.13.0, archives build, ledger validation and git diff --check pass. The exact
+profile command rendered the live ledger in a tool-managed terminal, and q
+exited with status 0. An earlier hand-built PTY test rendered the ledger but
+stalled during exit; the managed-terminal check verified input and clean exit.
+Not verified: the physical shortcut in the user's running iTerm2 window,
+because desktop automation denies iTerm2 access. An existing window may need
+an iTerm2 restart to reload its keymap; no user sessions were restarted.
+Source changes are uncommitted; no release was requested. The previous tasks
+are completed or superseded by later releases, and the untracked demo GIF is
+untouched. No further implementation work remains for this fix.
+
 ## 2026-09-08 - Commit and release 1.13.0 (owner: Airavata)
 
 State:

@@ -184,15 +184,22 @@ handoff-tui --root /path/to/your/repo --with grok -p "what is left?"
 `--codex` is simply `--with codex`. No harness can bind a key to an arbitrary
 command of its own - Claude Code's `keybindings.json` accepts only its own fixed
 actions - so the key is bound in tmux's root table, which resolves it before the
-agent sees it. In an *unwrapped* Claude Code session `ctrl+g` is still its own
-`chat:externalEditor`, which opens an editor; run
+agent sees it. In an *unwrapped* session, both Codex and Claude Code use
+`Ctrl-G` for their external editor. Installing the skill does not intercept it.
+To install the viewer key in a supported terminal, run:
 
 ```bash
 handoff-tui --install-viewer-key
 ```
 
-once to release it there and move that action to `ctrl+e`. It merges into
-`~/.claude/keybindings.json` without disturbing your other bindings. See
+The installer detects the terminal. In iTerm2 it creates a dedicated Handoff
+profile and merges a global shortcut that opens the viewer in a new window.
+Set `HANDOFF_VIEWER_KEY=C-M-h` before the iTerm2 install command to use
+`Ctrl+Alt+H` (`Control+Option+H` on macOS). Keep `Ctrl+V` for Codex image paste.
+Changing the key removes previous shortcuts to the same repository's viewer.
+The shortcut selects the repository where the installer runs; use `--root` to
+choose another. The Claude-only path releases `Ctrl-G` and moves its editor
+action to `Ctrl-E`, but cannot launch the viewer itself. See
 [the key and its host override](skills/handoff/references/harness-setup.md#releasing-the-key-in-the-host).
 The launcher also discovers project `.agents/skills/handoff` and
 `.codex/skills/handoff`, global `~/.agents/skills/handoff`, and

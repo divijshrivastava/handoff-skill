@@ -5,11 +5,13 @@ from __future__ import annotations
 import json
 import os
 import platform
+import plistlib
 import re
 import shlex
 import shutil
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 
 DEFAULT_KEY = "C-g"
@@ -29,6 +31,8 @@ def viewer_key() -> str | None:
 
 
 def key_label(key: str) -> str:
+    if re.fullmatch(r"C-M-[a-z]", key, re.IGNORECASE):
+        return "Ctrl+Alt+" + key[-1].upper()
     if len(key) > 2 and key[1] == "-" and key[0] in "cC":
         return "^" + key[2:].upper()
     return key
@@ -158,17 +162,128 @@ def wezterm_snippet(key: str, command: str) -> str:
             f"action = wezterm.action.SpawnCommandInNewWindow {{ args = {{ {args} }} }} }},")
 
 
-def iterm2_snippet(key: str, command: str) -> str:
-    host_key = host_key_name(key)
-    if host_key is None:
+def iterm2_snippet(key: str, profile_guid: str) -> str:
+    """An importable keymap that opens a terminal, never types into the agent."""
+    parsed = re.fullmatch(r"C-(M-)?([a-z])", key, re.IGNORECASE)
+    if parsed is None:
         raise ValueError(f"Cannot express {key_label(key)} as an iTerm2 binding.")
+    # iTermKeyBindingAction.h: 26 = New Window with Profile; 12 = Send Text.
+    # AppKit: Control is 1 << 18; Option (tmux Meta/Alt) is 1 << 19.
+    modifiers = 0x40000 | (0x80000 if parsed[1] else 0)
+    serialized = f"0x{ord(parsed[2].lower()):x}-0x{modifiers:x}"
     return json.dumps({
-        "Guid": "handoff-viewer-key",
-        "Key Combination": host_key.replace("ctrl+", "0x") + " (control)",
-        "Action": 12,
-        "Text": command + "\n",
-        "Tags": ["handoff"],
+        "Key Mappings": {serialized: {"Action": 26, "Text": profile_guid}},
+        "Touch Bar Items": {},
     }, indent=2)
+
+
+def install_iterm2_binding(key: str, root: Path | None = None) -> str:
+    """Install a dynamic viewer profile and merge one global shortcut on macOS."""
+    if platform.system() != "Darwin":
+        return "iTerm2 key installation requires macOS."
+    directory = (root or Path.cwd()).resolve()
+    guid = str(uuid.uuid5(uuid.NAMESPACE_URL, "handoff-tui:" + str(directory)))
+    try:
+        snippet = iterm2_snippet(key, guid)
+    except ValueError as error:
+        return str(error)
+    mapping = json.loads(snippet)["Key Mappings"]
+    serialized = next(iter(mapping))
+    domain = "com.googlecode.iterm2"
+    defaults = "/usr/bin/defaults"
+    try:
+        exported = subprocess.run([defaults, "export", domain, "-"],
+                                  capture_output=True, check=True).stdout
+        settings = plistlib.loads(exported)
+        if not isinstance(settings, dict):
+            raise ValueError("preferences are not a dictionary")
+        global_map = settings.get("GlobalKeyMap", {})
+        if not isinstance(global_map, dict):
+            raise ValueError("GlobalKeyMap is not a dictionary")
+        # A profile binding wins over the global map. Do not claim installation
+        # succeeded when an existing local mapping would still steal this key.
+        for profile in settings.get("New Bookmarks", []):
+            for bound in profile.get("Keyboard Map", {}):
+                if bound == serialized or bound.startswith(serialized + "-"):
+                    return (f"Profile {profile.get('Name', '(unnamed)')!r} already binds "
+                            f"{key_label(key)}; its profile mapping overrides global keys. "
+                            "Choose another HANDOFF_VIEWER_KEY or remove that mapping.")
+        for bound, action in global_map.items():
+            if bound == serialized or bound.startswith(serialized + "-"):
+                if action != mapping[serialized]:
+                    return (f"iTerm2 already binds {key_label(key)} to another action; "
+                            "choose another HANDOFF_VIEWER_KEY or remove that mapping.")
+    except (OSError, ValueError, plistlib.InvalidFileException,
+            subprocess.CalledProcessError) as error:
+        return f"Leaving iTerm2 preferences alone; could not read them ({error})."
+
+    config = Path.home() / ".config/handoff"
+    profiles = Path.home() / "Library/Application Support/iTerm2/DynamicProfiles"
+    target = profiles / f"handoff-viewer-{guid}.json"
+    # Explicit Python avoids relying on the GUI application's PATH for the
+    # launcher's /usr/bin/env shebang. The launcher still resolves skill upgrades.
+    launcher = shutil.which("handoff-tui")
+    command = (" ".join(shlex.quote(part) for part in
+                       [sys.executable, launcher, "--root", str(directory)])
+               if launcher else viewer_command(directory))
+    profile = {"Profiles": [{
+        "Name": "Handoff — " + directory.name, "Guid": guid,
+        "Custom Command": "Yes", "Command": command,
+        "Custom Directory": "Yes", "Working Directory": str(directory),
+        "Close Sessions On End": True,
+    }]}
+    if target.exists():
+        try:
+            previous = json.loads(target.read_text(encoding="utf-8"))
+            if not isinstance(previous, dict) or not isinstance(previous.get("Profiles"), list):
+                raise ValueError("not a dynamic-profile document")
+        except (OSError, ValueError) as error:
+            return f"Leaving {target} alone; it did not parse ({error})."
+    backup = config / "iterm2-before-viewer-key.plist"
+    preset = config / "iterm2-viewer-key.itermkeymap"
+    try:
+        config.mkdir(parents=True, exist_ok=True)
+        profiles.mkdir(parents=True, exist_ok=True)
+        if not backup.exists():
+            with os.fdopen(os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "wb") as stream:
+                stream.write(exported)
+        target.write_text(json.dumps(profile, indent=2) + "\n", encoding="utf-8")
+        preset.write_text(snippet + "\n", encoding="utf-8")
+    except OSError as error:
+        return f"Could not prepare the iTerm2 viewer files ({error}); key not installed."
+    # -dict-add merges only these entries. If no custom map exists, retain the
+    # shipped defaults that creating a GlobalKeyMap would otherwise hide.
+    additions = {}
+    if "GlobalKeyMap" not in settings:
+        bundled = Path("/Applications/iTerm.app/Contents/Resources/DefaultGlobalKeyMap.plist")
+        try:
+            additions.update(plistlib.loads(bundled.read_bytes()))
+        except (OSError, ValueError, plistlib.InvalidFileException) as error:
+            return f"Could not load iTerm2's default shortcuts ({error}); key not installed."
+    additions.update(mapping)
+    # Changing the shortcut must release the previous key (for example Ctrl+V
+    # for image paste). Only retire mappings to this repository's exact viewer
+    # action; another repository's profile and unrelated user shortcuts survive.
+    retired = [bound for bound, action in global_map.items()
+               if bound != serialized and action == mapping[serialized]]
+    operation = "-dict-add"
+    if retired:
+        additions = {bound: action for bound, action in global_map.items()
+                     if bound not in retired}
+        additions.update(mapping)
+        operation = "-dict"
+    arguments = [defaults, "write", domain, "GlobalKeyMap", operation]
+    for bound, action in additions.items():
+        arguments.extend([bound, plistlib.dumps(action).decode("utf-8")])
+    try:
+        subprocess.run(arguments, capture_output=True, check=True)
+    except (OSError, subprocess.CalledProcessError) as error:
+        return (f"Viewer profile prepared, but the shortcut could not be installed ({error}). "
+                f"Import {preset} in iTerm2 Settings → Keys → Key Mappings.")
+    return (f"Installed {key_label(key)} → Handoff in iTerm2 for {directory}. "
+            "The key opens a separate viewer window; q closes it. "
+            "If an existing window keeps the old binding, restart iTerm2 when convenient. "
+            f"Previous preferences: {backup}.")
 
 
 def _config_candidates(emulator: str) -> list[Path]:
@@ -177,8 +292,6 @@ def _config_candidates(emulator: str) -> list[Path]:
         return [home / ".config/kitty/kitty.conf"]
     if emulator == "wezterm":
         return [home / ".wezterm.lua", home / ".config/wezterm/wezterm.lua"]
-    if emulator == "iterm2":
-        return [home / ".config/handoff/iterm2-viewer-key.json"]
     return []
 
 
@@ -204,13 +317,13 @@ def install_terminal_binding(emulator: str, key: str | None, root: Path | None =
     command = viewer_command(root)
     if emulator == "claude":
         return install_claude_release(key)
+    if emulator == "iterm2":
+        return install_iterm2_binding(key, root)
     try:
         if emulator == "kitty":
             snippet = kitty_snippet(key, command)
         elif emulator == "wezterm":
             snippet = wezterm_snippet(key, command)
-        elif emulator == "iterm2":
-            snippet = iterm2_snippet(key, command)
         else:
             return (f"Unknown emulator {emulator!r}; supported: claude, kitty, "
                     "wezterm, iterm2.")
@@ -220,12 +333,6 @@ def install_terminal_binding(emulator: str, key: str | None, root: Path | None =
     if not paths:
         return f"No configuration path is known for {emulator}."
     target = paths[0]
-    if emulator == "iterm2":
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(snippet + "\n", encoding="utf-8")
-        return (f"Wrote an iTerm2 key preset to {target}. Import it from "
-                f"Settings → Keys → Key Mappings, then {key_label(key)} runs "
-                f"{command}.")
     block = "\n".join((MARKER_BEGIN, snippet, MARKER_END))
     _append_marked_block(target, block)
     return f"Wrote {key_label(key)} → viewer into {target}. Reload {emulator} to apply it."

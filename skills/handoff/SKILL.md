@@ -333,7 +333,14 @@ python3 "$SKILL_DIR/scripts/handoff_tui.py" --install-viewer-key
 ```
 
 It writes a binding that actually fires where the terminal emulator allows one,
-and releases the key in Claude Code's own keybindings where it cannot. Use
+and releases the key in Claude Code's own keybindings where it cannot.
+Plain Codex also uses `Ctrl-G` for its external editor; installing the skill
+alone does not intercept it. Respect a user-requested shortcut through
+`HANDOFF_VIEWER_KEY`; suggest `C-M-h` (Ctrl+Alt+H) for iTerm2 so Ctrl+V stays
+available for Codex image paste. The iTerm2 installer creates a dynamic
+viewer profile and merges a global “New Window with Profile” binding for the
+selected root; it reports conflicts instead of replacing existing shortcuts and
+removes previous keys pointing to that same viewer when changing the key. Use
 `/handoff:view` when the harness has no controlling terminal for curses. It
 merges into existing config rather than replacing it, is idempotent, and refuses
 to rewrite files that do not parse. Do not edit a user's keybindings any other

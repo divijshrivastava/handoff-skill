@@ -117,14 +117,15 @@ returns its exit code. Detaching or stopping the wrapper closes its agent too.
 `Ctrl-G` was chosen because it is ASCII BEL: it aliases no terminal key the way
 `Ctrl-H`, `Ctrl-I` and `Ctrl-M` alias Backspace, Tab and Enter, carries no
 signal like `Ctrl-C`, `Ctrl-Z` or `Ctrl-\`, is not flow control like `Ctrl-S`
-and `Ctrl-Q`, and is unused by Codex. Function keys lose to macOS media keys by
+and `Ctrl-Q`, and can be intercepted by tmux. Function keys lose to macOS media keys by
 default and `Alt` keys lose to the terminal's Option handling, which is why
 neither is the default.
 
-One harness does claim it: in Claude Code `ctrl+g` runs `chat:externalEditor`,
-which opens whichever editor is on PATH. Inside a `--with` session that never
-fires, because tmux resolves the key first - but in an unwrapped session it
-does, and the same key then means two different things. To give it one meaning:
+Both Claude Code and Codex claim it: Claude Code runs `chat:externalEditor`,
+and [Codex opens the editor set by VISUAL or EDITOR](https://learn.chatgpt.com/docs/cli-customization).
+Inside a `--with` session tmux resolves the key first. In a plain `codex`
+session, installing the skill alone does not bind the viewer key. Install a
+terminal shortcut to use it without the wrapper:
 
 ```sh
 handoff-tui --install-viewer-key
@@ -136,13 +137,37 @@ rewrites `~/.claude/keybindings.json` to release the key and move
 documentation uses for this rebinding. Claude Code cannot bind a key to run an
 external command, so that step only stops the host from stealing the key; use
 `/handoff:view` or `handoff-tui --with <agent>` for a key that actually opens
-the viewer. For **kitty**, **wezterm**, and **iTerm2** it writes a marked
-config snippet that runs `handoff-tui`; iTerm2 ships a JSON preset to import
-from Settings → Keys. Pass `--emulator` to choose explicitly. It merges rather
+the viewer. For **kitty** and **wezterm** it writes a marked configuration
+snippet. **iTerm2 on macOS** receives a dynamic Handoff profile and a global
+shortcut using “New Window with Profile.” It merges the key into `GlobalKeyMap`,
+backs up previous preferences, and also writes an importable `.itermkeymap`.
+It never sends a command into the running agent. Existing conflicting global
+or profile bindings are reported without overwriting them.
+Pass `--emulator` to choose explicitly. It merges rather
 than replaces where possible, running twice reports that the key is already
 released or installed, and a file that does not parse is left untouched rather
 than replaced. It follows `$HANDOFF_VIEWER_KEY`, and skips with a message for a
-key that has no host spelling, such as a function or `Alt` key.
+key that has no supported spelling. The iTerm2 installer also accepts `C-M-`
+letter combinations for Control+Option; the Claude-only override does not.
+
+Use **Ctrl+Alt+H** (**Control+Option+H** on macOS) in iTerm2, even in a plain
+Codex session. This leaves **Ctrl+V** available for pasting images into Codex:
+
+```sh
+HANDOFF_VIEWER_KEY=C-M-h handoff-tui --install-viewer-key --emulator iterm2 --root /path/to/repo
+```
+
+Changing the key removes previous shortcuts to the same repository's Handoff
+profile, including an earlier Ctrl+V binding. Other shortcuts and other
+repositories' viewer bindings are preserved. The
+[iTerm2 shortcut](https://iterm2.com/documentation-preferences-profiles-keys.html)
+is pinned to that repository. It opens a separate window;
+`q` closes the viewer. If an existing window retains the previous binding,
+restart iTerm2 when convenient. This does not change `VISUAL` or `EDITOR`.
+For a popup inside the same terminal, run
+`HANDOFF_VIEWER_KEY=C-M-h handoff-tui --codex` instead, without an iTerm2
+binding for the same key, and with Option configured to send Esc+ so tmux
+receives it.
 
 Verification: argument forwarding, refresh, stale data, format escaping,
 failure cleanup, and packaged loading have regression tests. The optional
