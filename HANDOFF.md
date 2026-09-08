@@ -5,16 +5,16 @@
 State:
 
 - [x] In progress
-- [ ] Completed
+- [x] Completed
 
 Steps:
 
-- [ ] Bump the version triple to 1.17.0 and run the release checks.
-- [ ] Commit the release change and push main.
-- [ ] Tag v1.17.0, push it, and confirm the published release against a clean-checkout build.
-- [ ] Record the handoff.
+- [x] Bump the version triple to 1.17.0 and run the release checks.
+- [x] Commit the release change and push main.
+- [x] Tag v1.17.0, push it, and confirm the published release against a clean-checkout build.
+- [x] Record the handoff.
 
-Status: In progress. Seven commits sit unpushed and none of their user-visible work is in 1.16.0: the harness field and its display (2c50f00), the activation gate (e3a024a), the narrowing that makes an existing ledger a trigger (adf5a98), the reconciled gate documents and evals (42daeb9), and Enkidu's Codex default prompt (34e0209). All ship in SKILL.md, README, references, handoff_guard.py and handoff_tui.py, so they reach installed copies only through a release. 1.16.0 is tagged at 92da65c, so the triple moves to 1.17.0. Three agent sessions are live in this tree, so the archive will be built from a clean worktree at the release commit and a watch runs before the bump. Next action: confirm the tree is quiet, then bump and run the release checks.
+Status: In progress. Seven commits sit unpushed and none of their user-visible work is in 1.16.0: the harness field and its display (2c50f00), the activation gate (e3a024a), the narrowing that makes an existing ledger a trigger (adf5a98), the reconciled gate documents and evals (42daeb9), and Enkidu's Codex default prompt (34e0209). All ship in SKILL.md, README, references, handoff_guard.py and handoff_tui.py, so they reach installed copies only through a release. 1.16.0 is tagged at 92da65c, so the triple moves to 1.17.0. Three agent sessions are live in this tree, so the archive will be built from a clean worktree at the release commit and a watch runs before the bump. Complete. A watch before the bump reported one write, this session's own release entry, a pure addition with no deletions. Triple moved to 1.17.0 and check_versions.py v1.17.0 agrees. Verified before tagging: 222 helper tests and 5 repository tests pass, validate exits 0, git diff --check is clean, and a clean worktree build at f070e71 carries 13 files, reports 1.17.0, and ships the Activation section, the existing-ledger trigger, detect_harness and harness_label. Pushed 6a19778..f070e71 and tag v1.17.0. Release run 34281140009 succeeded and the release published at 21:32:31Z; the downloaded handoff.zip and handoff.skill hash to e005bf99e6a174eb4da195a3fdb2d2880b9a54d081c69d8109faed6ca44b42f3, identical to that clean build and to the published SHA256SUMS, and opening the published archive confirmed 1.17.0 with both activation rules present. Validate run 34281137712 succeeded on ubuntu and windows for Python 3.9 and 3.12. The user's installed plugin was then updated from 1.16.0 to 1.17.0, its record pointing at f070e71, and the installed copy carries the four commands including init.md; it applies on restart, so this session still runs 1.16.0. Next action: none.
 
 ## 2026-09-09 - Commit the Codex init prompt (owner: Enkidu) (harness: Kimi Code)
 
