@@ -111,7 +111,7 @@ class ViewerKeyTests(unittest.TestCase):
 class SessionTests(unittest.TestCase):
     def test_private_server_forwards_literal_arguments_and_disables_prefix(self):
         with patch.dict(os.environ, {"TMUX": "outer", "TMUX_PANE": "%8"}):
-            session = codex.CodexSession("/usr/bin/tmux", Path("/tmp/private/s"))
+            session = codex.AgentSession("/usr/bin/tmux", Path("/tmp/private/s"))
         self.assertNotIn("TMUX", session.environment)
         self.assertNotIn("TMUX_PANE", session.environment)
         arguments = ["resume", "--last", "a prompt; $(touch sentinel) `false`", ";", "--model", "example"]
@@ -130,7 +130,7 @@ class SessionTests(unittest.TestCase):
         self.assertIn(os.devnull, session.command)
 
     def test_exit_status_is_codex_status_not_attach_status(self):
-        session = codex.CodexSession("tmux", Path("s"))
+        session = codex.AgentSession("tmux", Path("s"))
         with patch.object(session, "call", side_effect=["0:", "1:7", "1:"]):
             self.assertIsNone(session.exit_status())
             self.assertEqual(session.exit_status(), 7)
@@ -140,7 +140,7 @@ class SessionTests(unittest.TestCase):
         # tmux 3.4 reports a dead pane as '1:' with no status. Trusting the
         # format alone reported every Codex run as exit 1 on that version.
         with tempfile.TemporaryDirectory() as directory:
-            session = codex.CodexSession("tmux", Path(directory) / "s")
+            session = codex.AgentSession("tmux", Path(directory) / "s")
             with patch.object(session, "call", return_value="1:"):
                 self.assertEqual(session.exit_status(), 1)
                 session.status_file.write_text("7", encoding="utf-8")
@@ -149,7 +149,7 @@ class SessionTests(unittest.TestCase):
                 self.assertEqual(session.exit_status(), 1)
 
     def test_cleanup_waits_for_attached_client(self):
-        session = codex.CodexSession("tmux", Path("private"))
+        session = codex.AgentSession("tmux", Path("private"))
         session.client = MagicMock()
         with patch.object(session, "call") as call:
             session.close()
@@ -164,7 +164,7 @@ class RunTests(unittest.TestCase):
         stack.enter_context(patch.object(sys.stdin, "isatty", return_value=True))
         stack.enter_context(patch.object(sys.stdout, "isatty", return_value=True))
         stack.enter_context(patch.object(codex.shutil, "which", side_effect=lambda name: "/bin/" + name))
-        session = stack.enter_context(patch.object(codex, "CodexSession")).return_value
+        session = stack.enter_context(patch.object(codex, "AgentSession")).return_value
         return stack, session
 
     @unittest.skipIf(os.name == "nt", "Codex launch mode requires POSIX tmux")
@@ -245,16 +245,17 @@ class RunTests(unittest.TestCase):
 
     def test_viewer_forwards_codex_args_after_options(self):
         with tempfile.TemporaryDirectory() as directory:
-            with patch.object(codex, "run_codex", return_value=0) as run:
+            with patch.object(codex, "run_agent", return_value=0) as run:
                 self.assertEqual(tui.main(["--root", directory, "--interval", "2", "--no-color",
                                            "--codex", "resume", "--last", "--model", "example"]), 0)
             self.assertEqual(run.call_args.args[1:], (Path(directory).resolve(),
                              ["resume", "--last", "--model", "example"], 2.0))
-            self.assertEqual(run.call_args.kwargs, {"color": False, "read_only": False})
+            self.assertEqual(run.call_args.kwargs,
+                             {"color": False, "read_only": False, "agent": "codex"})
 
     def test_read_only_reaches_the_popup_the_codex_bar_opens(self):
         with tempfile.TemporaryDirectory() as directory:
-            with patch.object(codex, "run_codex", return_value=0) as run:
+            with patch.object(codex, "run_agent", return_value=0) as run:
                 self.assertEqual(tui.main(["--root", directory, "--read-only", "--codex"]), 0)
             self.assertIs(run.call_args.kwargs["read_only"], True)
 
@@ -264,12 +265,35 @@ class RunTests(unittest.TestCase):
                 tui.main([mode, "--codex"])
             self.assertEqual(error.exception.code, 2)
 
+    def test_any_agent_can_be_wrapped_and_keeps_its_own_arguments(self):
+        # The bar was Codex-only, but nothing in it is Codex-specific; the user
+        # runs Claude, Kimi and Grok under the same footer and the same key.
+        for agent, extra in (("claude", ["--resume"]), ("kimi", []), ("grok", ["-p", "hi"])):
+            with self.subTest(agent=agent), tempfile.TemporaryDirectory() as directory:
+                with patch.object(codex, "run_agent", return_value=0) as run:
+                    self.assertEqual(tui.main(["--root", directory, "--with", agent, *extra]), 0)
+                self.assertEqual(run.call_args.kwargs["agent"], agent)
+                self.assertEqual(run.call_args.args[2], extra)
+
+    def test_with_needs_an_agent_and_a_missing_one_names_itself(self):
+        with self.assertRaises(SystemExit) as error:
+            tui.main(["--with"])
+        self.assertEqual(error.exception.code, 2)
+        with tempfile.TemporaryDirectory() as directory:
+            watcher = tui.Watcher(Path(directory) / "HANDOFF.md")
+            with ExitStack() as stack:
+                stack.enter_context(patch.object(codex.sys.stdin, "isatty", return_value=True))
+                stack.enter_context(patch.object(codex.sys.stdout, "isatty", return_value=True))
+                stack.enter_context(patch.object(codex.shutil, "which",
+                                                 side_effect=lambda name: None if name == "nope" else "/bin/" + name))
+                self.assertEqual(codex.run_agent(watcher, Path(directory), [], 1, agent="nope"), 1)
+
 
 @unittest.skipIf(os.name == "nt" or not shutil.which("tmux"), "needs POSIX tmux")
 class TmuxIntegrationTests(unittest.TestCase):
-    def server(self, base: Path) -> codex.CodexSession:
+    def server(self, base: Path) -> codex.AgentSession:
         """A private server on this machine's tmux, or a skip when sockets are denied."""
-        session = codex.CodexSession(shutil.which("tmux"), base / "s")
+        session = codex.AgentSession(shutil.which("tmux"), base / "s")
         probe = subprocess.run(session.command + ["new-session", "-d", "-s", "probe"],
                                env=session.environment, capture_output=True, text=True,
                                encoding="utf-8")
@@ -299,7 +323,7 @@ class TmuxIntegrationTests(unittest.TestCase):
     def test_real_pane_input_arguments_format_escaping_and_exit(self):
         with tempfile.TemporaryDirectory(prefix="hc-test-") as directory:
             base = Path(directory)
-            session = codex.CodexSession(shutil.which("tmux"), base / "s")
+            session = codex.AgentSession(shutil.which("tmux"), base / "s")
             probe = subprocess.run(session.command + ["new-session", "-d", "-s", "probe"],
                                    env=session.environment, capture_output=True, text=True, encoding="utf-8")
             if probe.returncode:
@@ -358,6 +382,73 @@ class TmuxIntegrationTests(unittest.TestCase):
             finally:
                 session.close()
             self.assertFalse(session.call("list-sessions", check=False))
+
+
+
+class HostKeybindingTests(unittest.TestCase):
+    """The other half of one key, one meaning: the host must stop claiming it."""
+
+    def path(self) -> Path:
+        directory = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, directory, True)
+        return Path(directory) / "keybindings.json"
+
+    def test_only_control_keys_have_a_host_spelling(self):
+        self.assertEqual(codex.host_key_name("C-g"), "ctrl+g")
+        self.assertEqual(codex.host_key_name("c-k"), "ctrl+k")
+        for unmappable in ("M-g", "F5", "BSpace", "C-Up"):
+            self.assertIsNone(codex.host_key_name(unmappable))
+
+    def test_it_releases_the_key_and_rehomes_the_action_it_displaced(self):
+        target = self.path()
+        message = codex.install_host_keybindings("C-g", target)
+        self.assertIn("ctrl+g", message)
+        written = json.loads(target.read_text(encoding="utf-8"))
+        block = written["bindings"][0]
+        self.assertEqual(block["context"], "Chat")
+        self.assertIsNone(block["bindings"]["ctrl+g"])
+        # Unbinding must not lose the action outright, only move it.
+        self.assertEqual(block["bindings"]["ctrl+e"], "chat:externalEditor")
+
+    def test_it_is_idempotent_and_keeps_every_other_binding(self):
+        target = self.path()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps({"bindings": [
+            {"context": "Global", "bindings": {"ctrl+q": "app:exit"}},
+            {"context": "Chat", "bindings": {"ctrl+s": "chat:stash"}},
+        ]}), encoding="utf-8")
+        codex.install_host_keybindings("C-g", target)
+        again = codex.install_host_keybindings("C-g", target)
+        self.assertIn("already", again)
+        written = json.loads(target.read_text(encoding="utf-8"))
+        self.assertEqual(written["bindings"][0], {"context": "Global",
+                                                  "bindings": {"ctrl+q": "app:exit"}})
+        chat = written["bindings"][1]["bindings"]
+        self.assertEqual(chat["ctrl+s"], "chat:stash")
+        self.assertIsNone(chat["ctrl+g"])
+
+    def test_an_unparseable_or_foreign_file_is_left_alone(self):
+        target = self.path()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        for content in ("{not json", json.dumps({"bindings": "wrong"}), json.dumps([1, 2])):
+            with self.subTest(content=content[:12]):
+                target.write_text(content, encoding="utf-8")
+                message = codex.install_host_keybindings("C-g", target)
+                self.assertIn("Leaving", message)
+                self.assertEqual(target.read_text(encoding="utf-8"), content)
+
+    def test_no_key_and_an_unmappable_key_change_nothing(self):
+        target = self.path()
+        self.assertIn("no host override", codex.install_host_keybindings(None, target))
+        self.assertIn("skipped", codex.install_host_keybindings("F5", target))
+        self.assertFalse(target.exists())
+
+    def test_the_viewer_installs_the_override_and_exits(self):
+        target = self.path()
+        with patch.object(codex, "CLAUDE_KEYBINDINGS", target):
+            self.assertEqual(tui.main(["--install-viewer-key"]), 0)
+        self.assertIsNone(json.loads(target.read_text(encoding="utf-8"))
+                          ["bindings"][0]["bindings"]["ctrl+g"])
 
 
 if __name__ == "__main__":

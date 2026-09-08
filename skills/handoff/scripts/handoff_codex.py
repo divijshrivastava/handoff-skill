@@ -1,4 +1,4 @@
-"""Run Codex in a private tmux session with a Handoff footer and viewer key."""
+"""Run an agent CLI in a private tmux session with a Handoff footer and viewer key."""
 
 from __future__ import annotations
 
@@ -17,13 +17,21 @@ import time
 from handoff_tui import Watcher, bar_line, clean_text, count_tasks
 
 VIEWER_KEY = "C-g"
-# Leave room for the Codex prompt and the bar itself, so the popup reads as an
+# Leave room for the agent's prompt and the bar itself, so the popup reads as an
 # overlay the user is looking through rather than a screen they switched to.
 POPUP_SIZE = ("90%", "85%")
+DEFAULT_AGENT = "codex"
+# Where Claude Code reads user keybindings, and the one default the viewer key
+# collides with: `ctrl+g` runs `chat:externalEditor` there, so pressing it in an
+# unwrapped session opens an editor instead of the ledger. `ctrl+e` is the
+# alternative Claude Code's own documentation uses for exactly this move.
+CLAUDE_KEYBINDINGS = Path.home() / ".claude" / "keybindings.json"
+HOST_CONTEXT = "Chat"
+HOST_DISPLACED = {"ctrl+g": ("chat:externalEditor", "ctrl+e")}
 
 
 def viewer_key() -> str | None:
-    """The one key this session keeps for itself; "none" gives it back to Codex."""
+    """The one key this session keeps for itself; "none" gives it back to the agent."""
     key = os.environ.get("HANDOFF_VIEWER_KEY", VIEWER_KEY).strip()
     if not key or key.lower() == "none":
         return None
@@ -35,6 +43,69 @@ def key_label(key: str) -> str:
     if len(key) > 2 and key[1] == "-" and key[0] in "cC":
         return "^" + key[2:].upper()
     return key
+
+
+def host_key_name(key: str) -> str | None:
+    """Spell a tmux key the way a host harness names it, or None if it cannot.
+
+    Only the control keys map cleanly. tmux's `M-` and function keys have host
+    spellings too, but the harnesses this override targets disagree about them,
+    and guessing wrong writes a binding that silently never fires.
+    """
+    if len(key) == 3 and key[1] == "-" and key[0] in "cC" and key[2].isalpha():
+        return "ctrl+" + key[2].lower()
+    return None
+
+
+def install_host_keybindings(key: str | None, path: Path | None = None) -> str:
+    """Stop the host harness acting on the viewer key, and report what changed.
+
+    The wrapper binds the key in tmux's root table, so inside a wrapped session
+    the host never sees it. Unwrapped, the host still owns it: in Claude Code
+    `ctrl+g` runs `chat:externalEditor`, which opens whichever editor is on PATH.
+    Unbinding it there means one key has one meaning in this repository whether
+    or not the session happens to be wrapped. The displaced action is not
+    dropped - it is moved to the alternative the host already documents - and
+    every other block in the file is preserved untouched.
+    """
+    if key is None:
+        return "No viewer key is bound, so no host override is needed."
+    host_key = host_key_name(key)
+    if host_key is None:
+        return f"Cannot express {key_label(key)} as a host binding; override skipped."
+    target = path or CLAUDE_KEYBINDINGS
+    displaced = HOST_DISPLACED.get(host_key)
+    try:
+        existing = json.loads(target.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        existing = {"bindings": []}
+    except (OSError, ValueError) as error:
+        # Never rewrite a file that failed to parse: the user's own bindings
+        # are in there, and a fresh document would silently discard them.
+        return f"Leaving {target} alone; it did not parse ({error})."
+    if not isinstance(existing, dict) or not isinstance(existing.get("bindings"), list):
+        return f"Leaving {target} alone; it is not a keybindings document."
+    blocks = existing["bindings"]
+    block = next((item for item in blocks
+                  if isinstance(item, dict) and item.get("context") == HOST_CONTEXT
+                  and isinstance(item.get("bindings"), dict)), None)
+    if block is None:
+        block = {"context": HOST_CONTEXT, "bindings": {}}
+        blocks.append(block)
+    if host_key in block["bindings"] and block["bindings"][host_key] is None:
+        return f"{target} already releases {host_key} for the viewer."
+    block["bindings"][host_key] = None
+    if displaced is not None:
+        action, moved_to = displaced
+        # Only relocate the action if the user has not already rehomed it.
+        if action not in block["bindings"].values():
+            block["bindings"][moved_to] = action
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(existing, indent=2) + "\n", encoding="utf-8")
+    if displaced is not None:
+        return (f"Released {host_key} in {target}; "
+                f"{displaced[0]} now answers to {displaced[1]}.")
+    return f"Released {host_key} in {target}."
 
 
 def viewer_command(ledger: Path, interval: float, read_only: bool) -> str:
@@ -63,7 +134,7 @@ def footer(watcher: Watcher, color: bool = True, key: str | None = None) -> str:
     return style + " " + clean_text(row).replace("#", "##") + hint
 
 
-class CodexSession:
+class AgentSession:
     """Own only this invocation's server, never an existing tmux session."""
 
     def __init__(self, tmux: str, socket: Path):
@@ -93,7 +164,7 @@ class CodexSession:
         """Open the viewer in a popup on one key, reporting whether tmux took it.
 
         This session has no prefix, so the binding goes in the root table and this
-        is the only key Codex does not receive. tmux resolves the bound command
+        is the only key the agent does not receive. tmux resolves the bound command
         when the binding is made, so a tmux without display-popup, or a key name
         it does not know, fails here rather than on the first keypress, and the
         bar can then leave the hint off instead of advertising a dead shortcut.
@@ -103,10 +174,10 @@ class CodexSession:
                         "-w", width, "-h", height, "-d", str(cwd),
                         command).returncode == 0
 
-    def start(self, codex: str, arguments: list[str], cwd: Path, row: str) -> None:
+    def start(self, agent: str, arguments: list[str], cwd: Path, row: str) -> None:
         size = shutil.get_terminal_size((100, 30))
         # Keep a placeholder alive until remain-on-exit and the footer are set,
-        # even if Codex will fail immediately. Multiple argv items bypass sh.
+        # even if the agent will fail immediately. Multiple argv items bypass sh.
         self.call("new-session", "-d", "-s", "handoff", "-c", str(self.directory),
                   "-x", str(size.columns), "-y", str(size.lines),
                   sys.executable, "-c", "import time; time.sleep(86400)")
@@ -122,10 +193,10 @@ class CodexSession:
         # tmux treats even an argv item consisting of ';' as a command
         # separator. Encode user arguments so its parser cannot interpret them.
         payload = base64.b64encode(json.dumps(
-            [str(cwd), [codex, *arguments], str(self.status_file)]).encode()).decode()
-        # The shim waits for Codex rather than exec'ing it, so the exit status
+            [str(cwd), [agent, *arguments], str(self.status_file)]).encode()).decode()
+        # The shim waits for the agent rather than exec'ing it, so the exit status
         # survives a tmux that does not report pane_dead_status. It ignores
-        # SIGINT so Ctrl-C reaches Codex alone, as a shell would.
+        # SIGINT so Ctrl-C reaches the agent alone, as a shell would.
         self.call("respawn-pane", "-k", "-t", "handoff:0.0", "-c", str(self.directory),
                   sys.executable, "-c",
                   "import base64,json,os,pathlib,signal,subprocess,sys; "
@@ -164,22 +235,30 @@ class CodexSession:
                     self.client.wait(timeout=3)
 
 
-def run_codex(watcher: Watcher, cwd: Path, arguments: list[str],
-              interval: float, color: bool = True, read_only: bool = False) -> int:
+def run_agent(watcher: Watcher, cwd: Path, arguments: list[str],
+              interval: float, color: bool = True, read_only: bool = False,
+              agent: str = DEFAULT_AGENT) -> int:
+    """Run one agent CLI under the bar, whichever agent the user named.
+
+    Nothing below is specific to Codex: the footer, the viewer key and the exit
+    shim only ever see a command to run, so `claude`, `codex`, `kimi` and `grok`
+    all wrap the same way. The agent name is carried into the diagnostics so a
+    missing binary names the CLI the user asked for rather than a default.
+    """
     if os.name == "nt":
-        print("Codex bar mode needs tmux on macOS/Linux or WSL.", file=sys.stderr)
+        print(f"{agent} bar mode needs tmux on macOS/Linux or WSL.", file=sys.stderr)
         return 1
     if not (sys.stdin.isatty() and sys.stdout.isatty()):
-        print("Codex bar mode needs an interactive terminal; run handoff-tui --codex there.",
-              file=sys.stderr)
+        print(f"{agent} bar mode needs an interactive terminal; "
+              f"run handoff-tui --with {agent} there.", file=sys.stderr)
         return 1
-    tmux, codex = shutil.which("tmux"), shutil.which("codex")
-    if not tmux or not codex:
-        missing = "tmux (3.2+)" if not tmux else "codex"
-        print(f"Codex bar mode needs {missing} on PATH.", file=sys.stderr)
+    tmux, executable = shutil.which("tmux"), shutil.which(agent)
+    if not tmux or not executable:
+        missing = "tmux (3.2+)" if not tmux else agent
+        print(f"{agent} bar mode needs {missing} on PATH.", file=sys.stderr)
         return 1
     if not cwd.is_dir():
-        print(f"Codex working directory does not exist: {cwd}", file=sys.stderr)
+        print(f"{agent} working directory does not exist: {cwd}", file=sys.stderr)
         return 1
 
     def stop(signum, frame) -> None:
@@ -188,12 +267,12 @@ def run_codex(watcher: Watcher, cwd: Path, arguments: list[str],
     previous = signal.signal(signal.SIGTERM, stop)
     try:
         with tempfile.TemporaryDirectory(prefix="hc-") as directory:
-            session = CodexSession(tmux, Path(directory) / "s")
+            session = AgentSession(tmux, Path(directory) / "s")
             try:
                 watcher.poll()
                 key = viewer_key()
                 row = footer(watcher, color, key)
-                session.start(codex, arguments, cwd, row)
+                session.start(executable, arguments, cwd, row)
                 if key and not session.bind_viewer(
                         key, viewer_command(watcher.path, interval, read_only), cwd):
                     # An unusable binding is not worth failing the session over,
@@ -224,7 +303,14 @@ def run_codex(watcher: Watcher, cwd: Path, arguments: list[str],
         return 130
     except (OSError, subprocess.SubprocessError) as error:
         detail = getattr(error, "stderr", None) or str(error)
-        print(f"Cannot start or update Codex bar: {clean_text(detail).strip()}", file=sys.stderr)
+        print(f"Cannot start or update {agent} bar: {clean_text(detail).strip()}", file=sys.stderr)
         return 1
     finally:
         signal.signal(signal.SIGTERM, previous)
+
+
+def run_codex(watcher: Watcher, cwd: Path, arguments: list[str],
+              interval: float, color: bool = True, read_only: bool = False) -> int:
+    """Keep `--codex` meaning what it always did, now that any agent can wrap."""
+    return run_agent(watcher, cwd, arguments, interval, color=color,
+                     read_only=read_only, agent=DEFAULT_AGENT)

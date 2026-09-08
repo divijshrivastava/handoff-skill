@@ -175,10 +175,19 @@ agent](#moving-a-task-to-another-agent). Press `q` to close the popup and return
 to the Codex prompt exactly where it was; Codex keeps running underneath, and
 the ledger is the same one the bar is reporting.
 
+The same key works around any agent, not only Codex: `--with claude`,
+`--with kimi` and `--with grok` all run under this bar, and `--codex` is
+`--with codex`. The key is bound in tmux's root table, so it is resolved before
+the agent it wraps ever sees it - which is why it works even in harnesses that
+cannot bind a key to a command themselves. To stop an unwrapped Claude Code
+session answering `ctrl+g` with its own editor action, run
+`handoff-tui --install-viewer-key` once; see
+[releasing the key in the host](harness-setup.md#releasing-the-key-in-the-host).
+
 The row ends with `^G open` while the key is bound. `Ctrl-G` is the only key
 this mode keeps for itself - the private session has no tmux prefix, so every
-other key still reaches Codex. Set `$HANDOFF_VIEWER_KEY` to any tmux key name
-to move it, or to `none` to give it back to Codex and drop the hint:
+other key still reaches the agent. Set `$HANDOFF_VIEWER_KEY` to any tmux key
+name to move it, or to `none` to give it back to the agent and drop the hint:
 
 ```sh
 HANDOFF_VIEWER_KEY=M-h handoff-tui --root /path/to/repository --codex

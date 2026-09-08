@@ -1,5 +1,75 @@
 # Handoff
 
+## 2026-09-08 - Open the viewer with Ctrl-G from any agent session (owner: Chiron)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Generalise the Codex bar into an any-agent wrapper so claude, codex, kimi and grok all run under it (skills/handoff/scripts/handoff_codex.py, handoff_tui.py).
+- [x] Install a host keybinding override so Ctrl-G stops reaching the host's own action (~/.claude/keybindings.json).
+- [x] Have the skill ensure the override at preflight (skills/handoff/SKILL.md, references/harness-setup.md).
+- [x] Cover the wrapper, the key and the override with regression tests.
+- [x] Document the shortcut and run the repository checks.
+
+Status: Complete. The user pressed `Ctrl-G` in Claude Code and Cursor opened,
+and asked for one key that opens the viewer from Claude, Codex, Kimi or Grok.
+The cause was not a defect: `Ctrl-G` is bound in the private tmux session
+`--codex` creates, so it existed only around Codex, and in Claude Code
+`ctrl+g` is its own `chat:externalEditor`, which launches whatever editor is on
+PATH. No harness can fix this from its own configuration - Claude Code's
+`keybindings.json` accepts only its fixed `chat:`/`app:` actions, with no
+run-a-command action - so the fix is the tmux root table, which resolves the
+key before the wrapped agent sees it, plus releasing the key in the host for
+sessions that are not wrapped.
+
+`Ctrl-G` was kept after checking the alternatives rather than by default: it is
+ASCII BEL, so unlike `Ctrl-H`/`Ctrl-I`/`Ctrl-M` it aliases no terminal key,
+unlike `Ctrl-C`/`Ctrl-Z`/`Ctrl-\` carries no signal, unlike `Ctrl-S`/`Ctrl-Q`
+is not flow control, and Codex does not use it. Function keys lose to macOS
+media keys by default and `Alt` keys to iTerm2's Option handling, so both were
+rejected; `Ctrl-Y` and `Ctrl-K` are free in Claude Code and Codex and remain
+available through `$HANDOFF_VIEWER_KEY`. Kimi and Grok string-match nearly the
+whole control alphabet, which is a bundled keymap table rather than evidence of
+real bindings, so neither was used as a constraint - the wrapper shadows the key
+from them regardless.
+
+Changes: `run_codex` became `run_agent(..., agent=)` and `CodexSession` became
+`AgentSession`, since nothing in the footer, the binding or the exit shim was
+ever Codex-specific; `run_codex` remains as a wrapper so `--codex` keeps
+working, and the diagnostics now name the agent the user asked for. `--with
+<agent>` is the new flag and `--codex` is `--with codex`. `--install-viewer-key`
+writes `~/.claude/keybindings.json`, releasing `ctrl+g` and moving
+`chat:externalEditor` to `ctrl+e`, the alternative Claude Code's own docs use;
+it merges rather than replaces, is idempotent, and refuses to rewrite a file
+that does not parse, because the user's own bindings live there. Only control
+keys get a host spelling: `M-` and function keys have host names too, but the
+harnesses disagree about them and a wrong guess writes a binding that silently
+never fires.
+
+The module keeps the filename `handoff_codex.py` deliberately. Renaming a
+shipped runtime file means moving `RUNTIME_FILES`, `tests/test_package.py`, the
+import and the test module together, which is churn this change does not need;
+the symbols inside it now carry the general names.
+
+Verified: 179 helper, viewer, launcher, bar and codex tests and 5 repository
+tests pass, `validate --root .` exits 0, versions agree at 1.11.1, archives
+build, and `git diff --check` is clean. End to end on tmux 3.6a through a sized
+pty, a stand-in CLI named `myagent` - deliberately not `codex` - ran under
+`--with`, its banner reached the pane, the bar showed `0/1 tasks` and the
+`^G open` hint, a real `Ctrl-G` byte opened the viewer, `q` closed it, and the
+agent was still running afterwards. `--install-viewer-key` was run against the
+user's real `~/.claude/keybindings.json`, which did not previously exist, and
+re-running it reported the key already released. Not verified: no live Claude,
+Kimi or Grok CLI was driven under `--with`, only a stand-in child, and the
+override was not exercised against a pre-existing hand-written keybindings file
+outside the tests. Not done: the version triple is deliberately left at 1.11.1
+for whoever cuts the next release, so this reaches no installed copy until
+then.
+
 ## 2026-09-08 - Give every session a mythological name (owner: Claude session 01N7DGVQ)
 
 State:

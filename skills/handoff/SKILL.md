@@ -324,6 +324,19 @@ the viewer at run time and takes the same arguments. See
 and `references/harness-setup.md` for wiring `scripts/handoff-bar` into a host
 status line, including which harnesses expose one.
 
+`--with <agent>` runs any agent CLI under a live bottom bar whose `Ctrl-G` opens
+that viewer in a popup; `--codex` is `--with codex`. When the user asks for the
+viewer key, or reports that `Ctrl-G` does something else in their harness, run:
+
+```bash
+python3 "$SKILL_DIR/scripts/handoff_tui.py" --install-viewer-key
+```
+
+It releases the key in the host's own keybindings so it means one thing whether
+or not the session is wrapped, merging into the file rather than replacing it.
+It is idempotent, so running it when nothing needs changing is safe and says so.
+Do not edit a user's keybindings any other way, and do not run it unasked.
+
 ## Named failure modes
 
 - **Checkbox literalism:** calling an old unchecked item unfinished without
