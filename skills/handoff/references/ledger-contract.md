@@ -119,6 +119,24 @@ above.
 
 ## Ownership notes
 
+An owner label names one session. Claim yours once, from the helper:
+
+```bash
+python3 "$SKILL_DIR/scripts/handoff_guard.py" name --root /absolute/repo/path
+```
+
+It answers with one of a hundred mythological names, skipping every name an
+owner in this ledger already holds - completed entries included, because
+reusing a retired owner's name makes the ledger's own history ambiguous about
+who did which work. The same session is given the same name each time it asks,
+so an agent that re-runs preflight after recording an entry keeps owning it.
+Write the name exactly as printed; a label the helper did not issue, or a
+second name adopted mid-task, breaks the one thing attribution rests on.
+
+A name identifies a session, not a person or a model, and it proves nothing
+about who performed a step: it is how a later agent tells your entries from a
+peer's, and how the viewer groups them.
+
 When taking over eligible work, preserve prior attribution:
 
 ```md

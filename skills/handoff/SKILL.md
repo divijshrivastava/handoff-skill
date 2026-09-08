@@ -61,7 +61,18 @@ requires.
 
 5. Run `git status` and inspect relevant recent history. If collaboration or
    agent-status tools exist, check which owners are actually active.
-6. Before the first ledger edit, read `references/ledger-contract.md`.
+6. Claim this session's name, and own every entry you write under it:
+
+   ```bash
+   python3 "$SKILL_DIR/scripts/handoff_guard.py" name --root /absolute/repo/path
+   ```
+
+   It prints one name from a hundred mythological figures, never a name an
+   owner in this ledger already holds, and returns the same name every time
+   this session asks. Ask once, remember it, and use it verbatim as the owner
+   label. Do not invent a name, reuse another session's, or rename yourself
+   mid-task: the label is how a later agent tells your work from a peer's.
+7. Before the first ledger edit, read `references/ledger-contract.md`.
 
 The doctor reports structural state only. Never present its raw pending or
 in-progress result as the effective status until the progressive audit below is
@@ -89,7 +100,7 @@ Use the bundled template command to avoid format drift:
 ```bash
 python3 "$SKILL_DIR/scripts/handoff_guard.py" template \
   --title "Task name" \
-  --owner "Agent name" \
+  --owner "$(python3 "$SKILL_DIR/scripts/handoff_guard.py" name --root /absolute/repo/path)" \
   --step "Implement the bounded change (path/to/file)." \
   --step "Verify behavior and update the handoff."
 ```

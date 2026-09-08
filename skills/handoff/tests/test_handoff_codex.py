@@ -5,6 +5,7 @@ import base64
 import json
 import os
 from pathlib import Path
+import shlex
 import shutil
 import subprocess
 import sys
@@ -51,6 +52,23 @@ class FooterTests(unittest.TestCase):
         watcher.snapshot = tui.parse_snapshot(entry("#(touch /tmp/unwanted)"))
         self.assertIn("##(touch /tmp/unwanted", codex.footer(watcher))
 
+    def test_the_key_hint_appears_only_when_a_key_is_bound(self):
+        watcher = tui.Watcher(Path("unused"))
+        watcher.snapshot = tui.parse_snapshot(entry())
+        self.assertNotIn("open", codex.footer(watcher))
+        self.assertIn("\u00b7 ^G open", codex.footer(watcher, key="C-g"))
+        self.assertIn("\u00b7 M-h open", codex.footer(watcher, key="M-h"))
+        self.assertIn("\u00b7 F2 open", codex.footer(watcher, key="F2"))
+
+    def test_a_ledger_owner_cannot_forge_the_hint_into_a_tmux_format(self):
+        # The hint is appended after cleaning, so owner text stays escaped and
+        # cannot close the format the hint is written in.
+        watcher = tui.Watcher(Path("unused"))
+        watcher.snapshot = tui.parse_snapshot(entry("#[fg=red]"))
+        row = codex.footer(watcher, key="C-g")
+        self.assertIn("##[fg=red]", row)
+        self.assertTrue(row.endswith("\u00b7 ^G open"))
+
     def test_missing_and_empty_ledger_show_a_waiting_bar(self):
         with tempfile.TemporaryDirectory() as directory:
             watcher = tui.Watcher(Path(directory) / "HANDOFF.md")
@@ -59,6 +77,35 @@ class FooterTests(unittest.TestCase):
             watcher.path.write_text("# Handoff\n", encoding="utf-8")
             watcher.poll()
             self.assertIn("no tracked tasks", codex.footer(watcher))
+
+
+class ViewerKeyTests(unittest.TestCase):
+    def test_the_key_is_configurable_and_can_be_given_back_to_codex(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("HANDOFF_VIEWER_KEY", None)
+            self.assertEqual(codex.viewer_key(), "C-g")
+        for value, expected in (("M-h", "M-h"), (" F2 ", "F2"),
+                                ("none", None), ("NONE", None), ("", None), ("  ", None)):
+            with self.subTest(value=value), patch.dict(os.environ, {"HANDOFF_VIEWER_KEY": value}):
+                self.assertEqual(codex.viewer_key(), expected)
+
+    @unittest.skipIf(os.name == "nt", "the popup command is quoted for a POSIX shell")
+    def test_the_popup_command_survives_a_shell_and_spaces_in_the_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            ledger = Path(directory) / "a repo" / "HANDOFF.md"
+            ledger.parent.mkdir()
+            ledger.write_text(entry(), encoding="utf-8")
+            command = codex.viewer_command(ledger, 2.0, read_only=False)
+            self.assertIn(shlex.quote(str(ledger)), command)
+            self.assertIn("--interval 2.0", command)
+            self.assertNotIn("--read-only", command)
+            # Running it proves the quoting produces one runnable command line;
+            # --once keeps the snapshot on stdout instead of opening curses.
+            result = subprocess.run(["sh", "-c", command + " --once"],
+                                    capture_output=True, text=True, encoding="utf-8")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("0/1 completed", result.stdout)
+            self.assertIn("--read-only", codex.viewer_command(ledger, 1.0, read_only=True))
 
 
 class SessionTests(unittest.TestCase):
@@ -145,6 +192,50 @@ class RunTests(unittest.TestCase):
         self.assertIn("1/1 tasks", session.call.call_args.args[-1])
         session.close.assert_called_once()
 
+    @unittest.skipIf(os.name == "nt", "Codex launch mode requires POSIX tmux")
+    def test_the_key_opens_the_ledger_the_bar_is_reporting(self):
+        stack, session = self.context()
+        stack.enter_context(patch.dict(os.environ, {"HANDOFF_VIEWER_KEY": "C-g"}))
+        session.exit_status.side_effect = [0]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "HANDOFF.md"
+            path.write_text(entry(), encoding="utf-8")
+            self.assertEqual(codex.run_codex(tui.Watcher(path), Path(directory), [], 2), 0)
+        key, command, cwd = session.bind_viewer.call_args.args
+        self.assertEqual(key, "C-g")
+        self.assertIn(shlex.quote(str(path)), command)
+        self.assertIn("--interval 2", command)
+        self.assertEqual(Path(cwd), Path(directory))
+        self.assertIn("^G open", session.start.call_args.args[-1])
+
+    @unittest.skipIf(os.name == "nt", "Codex launch mode requires POSIX tmux")
+    def test_a_rejected_binding_drops_the_hint_rather_than_the_session(self):
+        # A tmux without display-popup would otherwise leave the bar advertising
+        # a key that does nothing, and must not stop Codex from running.
+        stack, session = self.context()
+        stack.enter_context(patch.dict(os.environ, {"HANDOFF_VIEWER_KEY": "C-g"}))
+        session.bind_viewer.return_value = False
+        session.exit_status.side_effect = [7]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "HANDOFF.md"
+            path.write_text(entry(), encoding="utf-8")
+            self.assertEqual(codex.run_codex(tui.Watcher(path), Path(directory), [], 1), 7)
+        self.assertIn("^G open", session.start.call_args.args[-1])
+        self.assertNotIn("^G open", session.call.call_args.args[-1])
+        session.attach.assert_called_once()
+
+    @unittest.skipIf(os.name == "nt", "Codex launch mode requires POSIX tmux")
+    def test_giving_the_key_back_to_codex_binds_nothing(self):
+        stack, session = self.context()
+        stack.enter_context(patch.dict(os.environ, {"HANDOFF_VIEWER_KEY": "none"}))
+        session.exit_status.side_effect = [0]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "HANDOFF.md"
+            path.write_text(entry(), encoding="utf-8")
+            self.assertEqual(codex.run_codex(tui.Watcher(path), Path(directory), [], 1), 0)
+        session.bind_viewer.assert_not_called()
+        self.assertNotIn("open", session.start.call_args.args[-1])
+
     def test_piped_invocation_has_actionable_error(self):
         result = subprocess.run([sys.executable, str(SCRIPTS / "handoff_tui.py"), "--codex"],
                                 capture_output=True, text=True, encoding="utf-8")
@@ -159,7 +250,13 @@ class RunTests(unittest.TestCase):
                                            "--codex", "resume", "--last", "--model", "example"]), 0)
             self.assertEqual(run.call_args.args[1:], (Path(directory).resolve(),
                              ["resume", "--last", "--model", "example"], 2.0))
-            self.assertEqual(run.call_args.kwargs, {"color": False})
+            self.assertEqual(run.call_args.kwargs, {"color": False, "read_only": False})
+
+    def test_read_only_reaches_the_popup_the_codex_bar_opens(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.object(codex, "run_codex", return_value=0) as run:
+                self.assertEqual(tui.main(["--root", directory, "--read-only", "--codex"]), 0)
+            self.assertIs(run.call_args.kwargs["read_only"], True)
 
     def test_conflicting_modes_fail_before_launch(self):
         for mode in ("--bar", "--once"):
@@ -170,6 +267,35 @@ class RunTests(unittest.TestCase):
 
 @unittest.skipIf(os.name == "nt" or not shutil.which("tmux"), "needs POSIX tmux")
 class TmuxIntegrationTests(unittest.TestCase):
+    def server(self, base: Path) -> codex.CodexSession:
+        """A private server on this machine's tmux, or a skip when sockets are denied."""
+        session = codex.CodexSession(shutil.which("tmux"), base / "s")
+        probe = subprocess.run(session.command + ["new-session", "-d", "-s", "probe"],
+                               env=session.environment, capture_output=True, text=True,
+                               encoding="utf-8")
+        if probe.returncode:
+            if "Operation not permitted" in probe.stderr or "Permission denied" in probe.stderr:
+                self.skipTest("environment disallows tmux sockets: " + probe.stderr.strip())
+            self.fail(probe.stderr)
+        self.addCleanup(session.close)
+        return session
+
+    def test_the_viewer_key_binds_in_the_root_table_and_a_bad_key_is_reported(self):
+        # Codex keeps every other key because this session has no prefix, so the
+        # binding has to land in the root table for the key to reach tmux at all.
+        with tempfile.TemporaryDirectory(prefix="hc-test-") as directory:
+            base = Path(directory)
+            session = self.server(base)
+            command = codex.viewer_command(base / "HANDOFF.md", 1.0, read_only=False)
+            self.assertTrue(session.bind_viewer("C-g", command, base))
+            bound = session.call("list-keys", "-T", "root", "C-g")
+            self.assertIn("display-popup", bound)
+            self.assertIn("handoff_tui.py", bound)
+            self.assertIn(str(base / "HANDOFF.md"), bound)
+            # tmux resolves the key name and the command now, so an unusable
+            # binding is known before the bar advertises it.
+            self.assertFalse(session.bind_viewer("Not-A-Key", command, base))
+
     def test_real_pane_input_arguments_format_escaping_and_exit(self):
         with tempfile.TemporaryDirectory(prefix="hc-test-") as directory:
             base = Path(directory)

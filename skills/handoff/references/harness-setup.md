@@ -86,8 +86,11 @@ All counts remain recorded progress, not completion evidence.
 Each invocation owns a private tmux socket, ignores `~/.tmux.conf`, and removes
 its server when Codex exits or the wrapper stops. It does not modify an existing
 tmux server. Prefix shortcuts are disabled in the private server so keys reach
-Codex; when launched inside tmux, the outer session's prefix still belongs to
-the outer session. Exit Codex normally; the wrapper returns its exit code.
+Codex, with one exception: `Ctrl-G` opens the live viewer in a popup over Codex,
+so a task can be moved to another agent without leaving the session. Set
+`$HANDOFF_VIEWER_KEY` to another tmux key name to move it, or to `none` to give
+that key back to Codex. When launched inside tmux, the outer session's prefix
+still belongs to the outer session. Exit Codex normally; the wrapper returns its exit code.
 Detaching or stopping the wrapper closes its Codex process too.
 
 Verification: argument forwarding, refresh, stale data, format escaping,

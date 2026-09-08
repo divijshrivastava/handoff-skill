@@ -1,4 +1,4 @@
-"""Run Codex in a private tmux session with a read-only Handoff footer."""
+"""Run Codex in a private tmux session with a Handoff footer and viewer key."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import base64
 import json
 import os
 from pathlib import Path
+import shlex
 import shutil
 import signal
 import subprocess
@@ -15,8 +16,38 @@ import time
 
 from handoff_tui import Watcher, bar_line, clean_text, count_tasks
 
+VIEWER_KEY = "C-g"
+# Leave room for the Codex prompt and the bar itself, so the popup reads as an
+# overlay the user is looking through rather than a screen they switched to.
+POPUP_SIZE = ("90%", "85%")
 
-def footer(watcher: Watcher, color: bool = True) -> str:
+
+def viewer_key() -> str | None:
+    """The one key this session keeps for itself; "none" gives it back to Codex."""
+    key = os.environ.get("HANDOFF_VIEWER_KEY", VIEWER_KEY).strip()
+    if not key or key.lower() == "none":
+        return None
+    return key
+
+
+def key_label(key: str) -> str:
+    """Name a tmux key the way a keyboard shows it, so the hint reads as typed."""
+    if len(key) > 2 and key[1] == "-" and key[0] in "cC":
+        return "^" + key[2:].upper()
+    return key
+
+
+def viewer_command(ledger: Path, interval: float, read_only: bool) -> str:
+    """Quote the viewer invocation for the shell tmux runs a popup under."""
+    viewer = Path(__file__).resolve().with_name("handoff_tui.py")
+    parts = [sys.executable, str(viewer), "--file", str(ledger),
+             "--interval", str(interval)]
+    if read_only:
+        parts.append("--read-only")
+    return " ".join(shlex.quote(part) for part in parts)
+
+
+def footer(watcher: Watcher, color: bool = True, key: str | None = None) -> str:
     """Escape tmux formats as well as terminal controls from ledger text."""
     row = bar_line(watcher.snapshot, color=False)
     if watcher.error:
@@ -26,7 +57,10 @@ def footer(watcher: Watcher, color: bool = True) -> str:
     counts = count_tasks(watcher.snapshot.tasks if watcher.snapshot else [])
     shade = "green" if counts.tracked and counts.completed == counts.tracked else "yellow"
     style = f"#[fg={shade}]" if color and not watcher.error else "#[default]"
-    return style + " " + clean_text(row).replace("#", "##")
+    # The hint is this module's own text, so it needs no escaping; appending it
+    # after the cleaning keeps a ledger owner from forging a shortcut.
+    hint = f" \u00b7 {key_label(key)} open" if key else ""
+    return style + " " + clean_text(row).replace("#", "##") + hint
 
 
 class CodexSession:
@@ -44,11 +78,30 @@ class CodexSession:
         self.status_file = socket.parent / "status"
         self.client: subprocess.Popen | None = None
 
+    def run(self, *arguments: str) -> subprocess.CompletedProcess:
+        return subprocess.run(self.command + list(arguments), env=self.environment,
+                              capture_output=True, text=True, encoding="utf-8",
+                              errors="replace")
+
     def call(self, *arguments: str, check: bool = True) -> str:
-        result = subprocess.run(self.command + list(arguments), env=self.environment,
-                                capture_output=True, text=True, encoding="utf-8",
-                                errors="replace", check=check)
+        result = self.run(*arguments)
+        if check:
+            result.check_returncode()
         return result.stdout.strip()
+
+    def bind_viewer(self, key: str, command: str, cwd: Path) -> bool:
+        """Open the viewer in a popup on one key, reporting whether tmux took it.
+
+        This session has no prefix, so the binding goes in the root table and this
+        is the only key Codex does not receive. tmux resolves the bound command
+        when the binding is made, so a tmux without display-popup, or a key name
+        it does not know, fails here rather than on the first keypress, and the
+        bar can then leave the hint off instead of advertising a dead shortcut.
+        """
+        width, height = POPUP_SIZE
+        return self.run("bind-key", "-n", key, "display-popup", "-E",
+                        "-w", width, "-h", height, "-d", str(cwd),
+                        command).returncode == 0
 
     def start(self, codex: str, arguments: list[str], cwd: Path, row: str) -> None:
         size = shutil.get_terminal_size((100, 30))
@@ -112,7 +165,7 @@ class CodexSession:
 
 
 def run_codex(watcher: Watcher, cwd: Path, arguments: list[str],
-              interval: float, color: bool = True) -> int:
+              interval: float, color: bool = True, read_only: bool = False) -> int:
     if os.name == "nt":
         print("Codex bar mode needs tmux on macOS/Linux or WSL.", file=sys.stderr)
         return 1
@@ -138,8 +191,17 @@ def run_codex(watcher: Watcher, cwd: Path, arguments: list[str],
             session = CodexSession(tmux, Path(directory) / "s")
             try:
                 watcher.poll()
-                row = footer(watcher, color)
+                key = viewer_key()
+                row = footer(watcher, color, key)
                 session.start(codex, arguments, cwd, row)
+                if key and not session.bind_viewer(
+                        key, viewer_command(watcher.path, interval, read_only), cwd):
+                    # An unusable binding is not worth failing the session over,
+                    # but the bar must stop promising a key that does nothing.
+                    key = None
+                    row = footer(watcher, color, key)
+                    session.call("set-option", "-t", "handoff",
+                                 "status-format[0]", row, check=False)
                 session.attach()
                 next_poll = time.monotonic() + interval
                 while True:
@@ -150,7 +212,7 @@ def run_codex(watcher: Watcher, cwd: Path, arguments: list[str],
                         return session.client.returncode
                     if time.monotonic() >= next_poll:
                         watcher.poll()
-                        updated = footer(watcher, color)
+                        updated = footer(watcher, color, key)
                         if updated != row:
                             session.call("set-option", "-t", "handoff", "status-format[0]", updated)
                             row = updated

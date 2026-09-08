@@ -79,7 +79,7 @@ Skill auto-selection depends on your host. Installing Handoff does not install h
 Handoff stores project work in a root-level `HANDOFF.md`. Each task records ownership, state, completed steps, evidence, and the next action.
 
 ```md
-## 2026-09-07 — Add search (owner: agent-a)
+## 2026-09-07 — Add search (owner: Amaterasu)
 
 State:
 - [x] In progress
@@ -159,6 +159,12 @@ Requires Codex CLI and tmux 3.2+ on PATH (macOS/Linux or WSL). Put viewer
 options such as `--root`, `--file`, `--interval 2`, and `--no-color` before
 `--codex`; everything after it goes to Codex. The bar refreshes while idle and
 shows recorded task and step counts plus open owners.
+
+Press `Ctrl-G` to open the live viewer in a popup over Codex, hand a task to
+another agent with `x` and `p`, then `q` to drop back to the Codex prompt. The
+row ends with `^G open` while that key is bound; `$HANDOFF_VIEWER_KEY` moves it
+to another tmux key or turns it off with `none`, and `--read-only` opens a
+viewer that cannot write.
 
 Codex's native footer exposes built-in items; this mode supplies the Handoff
 row through a private tmux session. Exit Codex normally to return to your shell.
@@ -257,13 +263,24 @@ python3 skills/handoff/scripts/handoff_guard.py doctor \
 python3 skills/handoff/scripts/handoff_guard.py validate \
   --root /absolute/path/to/repo --json
 
+# Name this session, to own its ledger entries under
+python3 skills/handoff/scripts/handoff_guard.py name \
+  --root /absolute/path/to/repo
+
 # Generate a task-entry template
 python3 skills/handoff/scripts/handoff_guard.py template \
   --title "Add search" \
-  --owner "agent-a" \
+  --owner "Amaterasu" \
   --step "Implement search filtering." \
   --step "Verify behavior and update the handoff."
 ```
+
+Every session in a repository with Handoff installed claims a name at
+preflight, drawn from a hundred mythological figures worldwide, so the ledger
+and the dashboard read as named agents rather than a column of host session
+ids. A name is never one an owner in that ledger already holds, and the same
+session asking twice gets the same name. `$HANDOFF_SESSION` identifies a
+session whose host exposes no id of its own, and `--seed` names one explicitly.
 
 The helper validates ledger structure only. It cannot determine whether a feature is really implemented, whether ownership is active, or whether a requirement is obsolete—those are evidence-based decisions made by the agent.
 

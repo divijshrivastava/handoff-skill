@@ -51,8 +51,9 @@ process or unsaved work.
 
 The live view makes exactly one kind of edit: handing a task to another agent,
 described in [Moving a task to another agent](#moving-a-task-to-another-agent).
-Every other mode - `--once`, `--bar`, `--codex` - only reads, and `--read-only`
-turns the move keys off in the live view as well.
+Every other mode - `--once`, `--bar`, `--codex` - only reads; the Codex bar
+opens that live view on `Ctrl-G` rather than editing anything itself, and
+`--read-only` turns the move keys off in the live view and in that popup.
 
 ## Views and controls
 
@@ -164,6 +165,30 @@ uncoloured row. Exit Codex normally to close the wrapper.
 The ledger path stays fixed for the invocation. Details about directory
 selection, tmux ownership, and verification are in
 [Codex setup](harness-setup.md#codex-cli).
+
+### Opening the viewer from the bar
+
+The bar reports progress but cannot change it, so one key opens the full viewer
+over Codex: press `Ctrl-G` and the live view appears in a popup, with the same
+`x` and `p` keys for [moving a task to another
+agent](#moving-a-task-to-another-agent). Press `q` to close the popup and return
+to the Codex prompt exactly where it was; Codex keeps running underneath, and
+the ledger is the same one the bar is reporting.
+
+The row ends with `^G open` while the key is bound. `Ctrl-G` is the only key
+this mode keeps for itself - the private session has no tmux prefix, so every
+other key still reaches Codex. Set `$HANDOFF_VIEWER_KEY` to any tmux key name
+to move it, or to `none` to give it back to Codex and drop the hint:
+
+```sh
+HANDOFF_VIEWER_KEY=M-h handoff-tui --root /path/to/repository --codex
+HANDOFF_VIEWER_KEY=none handoff-tui --root /path/to/repository --codex
+```
+
+`--read-only` carries into the popup, so a bar started read-only opens a viewer
+that cannot write. A tmux that will not accept the binding - one older than the
+3.2 this mode requires, or an unknown key name - leaves Codex running and drops
+the hint from the row rather than advertising a key that does nothing.
 
 ## Counting rules
 

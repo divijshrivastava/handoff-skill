@@ -666,7 +666,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="Refresh seconds, 0.1 to 60 (default: 1)")
     parser.add_argument("--once", action="store_true", help="Print a snapshot and exit")
     parser.add_argument("--read-only", action="store_true",
-                        help="Disable the live view's cut and paste keys, so it never writes")
+                        help="Disable the cut and paste keys in the live view, including the "
+                             "one Codex mode opens, so it never writes")
     parser.add_argument("--bar", action="store_true",
                         help="Print one status-line row; reads host JSON on stdin for the directory")
     parser.add_argument("--no-color", action="store_true", help="Omit colour from --bar or --codex")
@@ -688,7 +689,8 @@ def main(argv: list[str] | None = None) -> int:
         from handoff_codex import run_codex
         arguments = args.codex[1:] if args.codex[:1] == ["--"] else args.codex
         return run_codex(watcher, args.file.resolve().parent if args.file else root.resolve(),
-                         arguments, args.interval, color=not args.no_color)
+                         arguments, args.interval, color=not args.no_color,
+                         read_only=args.read_only)
     if args.bar:
         # A status line must never break the host: no ledger means no row.
         if not path.is_file():

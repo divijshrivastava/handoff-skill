@@ -7,7 +7,9 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
+import unittest.mock
 from pathlib import Path
 
 
@@ -636,3 +638,129 @@ class SwapLedgerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SessionNameTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.root = Path(self.directory.name)
+        self.ledger = self.root / "HANDOFF.md"
+        self.ledger.write_text(MINIMAL_LEDGER, encoding="utf-8")
+        self.cache = self.root / "names"
+        # In-process calls read the environment too; without this they would
+        # claim names in the developer's own cache directory.
+        patch = unittest.mock.patch.dict(os.environ, {"HANDOFF_NAME_CACHE": str(self.cache)})
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def run_name(self, *args: str, cache: Path | None = None) -> str:
+        environment = dict(os.environ)
+        environment["HANDOFF_NAME_CACHE"] = str(cache or self.cache)
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "name", "--root", str(self.root), *args],
+            capture_output=True, text=True, encoding="utf-8", check=True, env=environment,
+        )
+        return result.stdout.strip()
+
+    def test_the_roster_is_a_hundred_distinct_single_word_names(self) -> None:
+        names = handoff_guard.MYTHIC_NAMES
+        self.assertEqual(len(names), 100)
+        self.assertEqual(len(set(names)), 100)
+        for name in names:
+            with self.subTest(name=name):
+                # A label crosses headings, tmux formats, and clipped columns.
+                self.assertTrue(name.isascii() and name.isalpha(), name)
+                self.assertIsNone(handoff_guard.owner_label_error(name))
+
+    def test_a_session_keeps_its_name_across_calls_and_differs_from_others(self) -> None:
+        first = self.run_name("--seed", "session-one")
+        self.assertEqual(first, self.run_name("--seed", "session-one"))
+        self.assertIn(first, handoff_guard.MYTHIC_NAMES)
+        self.assertNotEqual(first, self.run_name("--seed", "session-two"))
+
+    def test_a_name_is_kept_after_the_session_writes_it_into_the_ledger(self) -> None:
+        # Without the record, an agent re-running preflight after recording its
+        # own entry would be handed a second name for the same session.
+        name = self.run_name("--seed", "session-one")
+        self.ledger.write_text(
+            handoff_guard.make_template("2026-09-08", "Task", name, ["Do the work."]),
+            encoding="utf-8")
+        self.assertEqual(self.run_name("--seed", "session-one"), name)
+
+    def test_a_name_an_owner_already_holds_is_never_handed_out_again(self) -> None:
+        seed = "session-one"
+        wanted = handoff_guard.name_order(seed)[0]
+        self.ledger.write_text(
+            handoff_guard.make_template("2026-09-08", "Task", wanted, ["Do the work."]),
+            encoding="utf-8")
+        chosen = self.run_name("--seed", seed)
+        self.assertNotEqual(chosen, wanted)
+        self.assertEqual(chosen, handoff_guard.name_order(seed)[1])
+
+    def test_a_completed_owner_still_holds_its_name(self) -> None:
+        seed = "session-one"
+        wanted = handoff_guard.name_order(seed)[0]
+        self.ledger.write_text(
+            f"# Handoff\n\n## 2026-09-08 - Done (owner: {wanted})\n\nState:\n\n"
+            "- [x] In progress\n- [x] Completed\n\nSteps:\n\n- [x] Done.\n\n"
+            "Status: Complete.\n", encoding="utf-8")
+        self.assertNotEqual(self.run_name("--seed", seed), wanted)
+
+    def test_two_unrecorded_sessions_do_not_share_one_name(self) -> None:
+        # Both have claimed a name but neither has written an entry yet, so the
+        # ledger cannot separate them; the claim records have to.
+        collide = "shared-first-choice"
+        order = handoff_guard.name_order(collide)
+        with unittest.mock.patch.object(handoff_guard, "name_order", return_value=order):
+            first = handoff_guard.claim_name(collide, self.ledger, set())[0]
+            second = handoff_guard.claim_name("another-session", self.ledger, set())[0]
+        self.assertEqual(first, order[0])
+        self.assertNotEqual(second, first)
+
+    def test_an_exhausted_roster_numbers_repeats_instead_of_failing(self) -> None:
+        order = list(handoff_guard.MYTHIC_NAMES)
+        self.assertEqual(handoff_guard.free_name(order, set(order)), order[0] + " 2")
+        self.assertEqual(
+            handoff_guard.free_name(order, set(order) | {order[0] + " 2"}), order[1] + " 2")
+
+    def test_an_unwritable_cache_still_names_the_session(self) -> None:
+        unwritable = self.root / "missing" / "cache"
+        with unittest.mock.patch.object(Path, "mkdir", side_effect=OSError("read-only")):
+            name, remembered = handoff_guard.claim_name("session-one", self.ledger, set(),)
+        self.assertIn(name, handoff_guard.MYTHIC_NAMES)
+        self.assertFalse(remembered)
+        self.assertFalse(unwritable.exists())
+
+    def test_a_repository_with_no_ledger_still_names_the_session(self) -> None:
+        self.ledger.unlink()
+        self.assertIn(self.run_name("--seed", "session-one"), handoff_guard.MYTHIC_NAMES)
+
+    def test_json_reports_the_ledger_the_name_belongs_to(self) -> None:
+        report = json.loads(self.run_name("--seed", "session-one", "--json"))
+        # Compare resolved paths: macOS reports this temp path under /private.
+        self.assertEqual(Path(report["ledger"]).resolve(), self.ledger.resolve())
+        self.assertEqual(report["roster"], 100)
+        self.assertFalse(report["remembered"])
+        self.assertTrue(json.loads(self.run_name("--seed", "session-one", "--json"))["remembered"])
+
+    def test_the_host_session_id_names_the_session_when_no_seed_is_given(self) -> None:
+        with unittest.mock.patch.dict(os.environ, {"HANDOFF_SESSION": "from-the-host"}):
+            self.assertEqual(handoff_guard.session_seed(), "from-the-host")
+            self.assertEqual(handoff_guard.session_seed("explicit"), "explicit")
+        with unittest.mock.patch.dict(os.environ, {"CLAUDE_CODE_SESSION_ID": "host-id"}):
+            os.environ.pop("HANDOFF_SESSION", None)
+            self.assertEqual(handoff_guard.session_seed(), "host-id")
+        with unittest.mock.patch.dict(os.environ, {}, clear=True):
+            # An unidentified session gets a distinct seed, not a shared one.
+            self.assertNotEqual(handoff_guard.session_seed(), handoff_guard.session_seed())
+
+    def test_a_stale_claim_stops_reserving_its_name(self) -> None:
+        seed = "session-one"
+        wanted = handoff_guard.name_order(seed)[0]
+        self.run_name("--seed", "older-session")
+        stale = next(self.cache.iterdir())
+        stale.write_text(wanted + "\n", encoding="utf-8")
+        aged = time.time() - handoff_guard.NAME_CLAIM_SECONDS - 60
+        os.utime(stale, (aged, aged))
+        self.assertEqual(self.run_name("--seed", seed), wanted)
