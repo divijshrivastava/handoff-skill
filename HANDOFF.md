@@ -1,5 +1,21 @@
 # Handoff
 
+## 2026-09-09 - Commit and release 1.15.0 (owner: Daedalus)
+
+State:
+
+- [x] In progress
+- [ ] Completed
+
+Steps:
+
+- [ ] Bump the version triple to 1.15.0 and run the release checks.
+- [ ] Commit the release change and push main.
+- [ ] Tag v1.15.0, push it, and confirm the published release against a clean-checkout build.
+- [ ] Record the handoff.
+
+Status: In progress. The user asked to release the Cursor viewer key, committed as 627159d, which ships in SKILL.md, harness-setup.md and handoff_keys.py and so reaches installed copies only through a release. 1.14.0 is tagged, so the triple moves to 1.15.0. package_skill.py reads the working tree and scripts/handoff_tui.py is in RUNTIME_FILES, while another session holds uncommitted changes to that file, so the archive will be inspected from a clean checkout of the release commit rather than from this tree. Next action: bump the triple and run the release checks.
+
 ## 2026-09-09 - Open the viewer with the same key in Cursor's terminal (owner: Daedalus)
 
 State:
