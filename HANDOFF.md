@@ -1,5 +1,19 @@
 # Handoff
 
+## 2026-09-09 - Commit the Codex init prompt (owner: Enkidu) (harness: Kimi Code)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Commit agents/openai.yaml, the last uncommitted piece of this session's activation-gate work.
+- [x] Record the handoff.
+
+Status: Complete. Committed as 34e0209 at the user's "commit your changes". Everything else this session wrote was already committed by then: e3a024a carries the SKILL.md gate, 42daeb9 carries commands/init.md, README.md, and evals.json after Daedalus reconciled them, at the user's direction, with the narrowed rule of adf5a98 (an existing HANDOFF.md activates the skill; the init gate applies to repositories without one). This session's two earlier entries describe the wider rule as shipped in e3a024a; the narrower rule above is the effective one, per Daedalus's later entries. The working tree is now clean of this session's work; only the untracked scripts/demo/handoff-opt.gif, which no session here owns, remains. Verified: ledger validation and git diff --check pass, versions agree at 1.16.0. Next action: none.
+
 ## 2026-09-09 - Reconcile the gate documents with the narrowed rule (owner: Daedalus) (harness: Claude Code)
 
 State:
