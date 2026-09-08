@@ -9,10 +9,10 @@ State:
 
 Steps:
 
-- [ ] Stage README.md, assets/dashboard-session.gif, and the 1.19.0 purge files the README now documents.
+- [x] Stage README.md, assets/dashboard-session.gif, and the 1.19.0 purge files the README now documents.
 - [ ] Commit, push origin/main, and record the identifier.
 
-Status: In progress. Committing README.md with the dashboard GIF; the same file already documents 1.19.0 purge, so those paths go in the same commit. Leaving .kimi-plugin/ and scripts/demo/handoff-opt.gif unstaged. A Codex process is still in this tree and is not included.
+Status: In progress. Committed as 7372d6d. README.md carries the dashboard GIF and the 1.19.0 purge docs; assets/dashboard-session.gif and the purge implementation are in the same commit so the README is not documenting uncommitted commands. Left unstaged: .kimi-plugin/ and scripts/demo/handoff-opt.gif. Next action: push origin/main.
 
 ## 2026-09-09 - Add /handoff:purge for an authorized clean slate (owner: Haetae) (harness: Grok)
 
