@@ -185,6 +185,21 @@ class CodexSkillsTests(unittest.TestCase):
             self.assertEqual(Path(result.stdout.strip()).resolve(), updated.resolve())
 
 
+class ExitStatusTests(unittest.TestCase):
+    def test_a_failing_viewer_is_reported_as_a_failure(self):
+        # On Windows os.execv spawns and the launcher exits 0, so a viewer
+        # failure read as success there until the launcher forwarded it.
+        with tempfile.TemporaryDirectory() as directory:
+            viewer = Path(directory) / "handoff_tui.py"
+            viewer.write_text("import sys\nsys.exit(3)\n", encoding="utf-8")
+            result = subprocess.run(
+                [sys.executable, str(LAUNCHER)],
+                env={**os.environ, "HANDOFF_TUI": str(viewer)},
+                capture_output=True, text=True, encoding="utf-8",
+            )
+            self.assertEqual(result.returncode, 3)
+
+
 class InPlaceTests(unittest.TestCase):
     def test_a_sibling_viewer_is_preferred_so_running_in_place_works(self):
         with tempfile.TemporaryDirectory() as directory:

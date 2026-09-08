@@ -25,6 +25,7 @@ from __future__ import annotations
 import glob
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -148,7 +149,13 @@ def main() -> int:
     if "--which" in arguments:
         print(viewer)
         return 0
-    os.execv(sys.executable, [sys.executable, str(viewer)] + arguments)
+    command = [sys.executable, str(viewer)] + arguments
+    if os.name == "nt":
+        # Windows has no exec that replaces the running process: os.execv
+        # spawns and the launcher exits 0, so the viewer's status is lost and
+        # every failure reads as success. Run it and forward the status.
+        return subprocess.run(command).returncode
+    os.execv(sys.executable, command)
 
 
 if __name__ == "__main__":
