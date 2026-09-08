@@ -204,7 +204,16 @@ class TmuxIntegrationTests(unittest.TestCase):
                 deadline = time.monotonic() + 5
                 while session.exit_status() is None and time.monotonic() < deadline:
                     time.sleep(0.02)
-                self.assertEqual(session.exit_status(), 7)
+                # A bare status mismatch cannot tell an unreported
+                # pane_dead_status from a child that really exited 1, and the
+                # two need opposite fixes. Report what tmux actually said.
+                raw = session.call("display-message", "-p", "-t", "handoff:0.0",
+                                   "#{pane_dead}:#{pane_dead_status}", check=False)
+                pane = session.call("capture-pane", "-p", "-t", "handoff:0.0", check=False)
+                version = subprocess.run([shutil.which("tmux"), "-V"], capture_output=True,
+                                         text=True, encoding="utf-8").stdout.strip()
+                detail = f"tmux={version!r} raw_state={raw!r} pane={pane!r}"
+                self.assertEqual(session.exit_status(), 7, detail)
             finally:
                 session.close()
             self.assertFalse(session.call("list-sessions", check=False))
