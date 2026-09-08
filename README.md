@@ -198,8 +198,11 @@ Set `HANDOFF_VIEWER_KEY=C-M-h` before the iTerm2 install command to use
 `Ctrl+Alt+H` (`Control+Option+H` on macOS). Keep `Ctrl+V` for Codex image paste.
 Changing the key removes previous shortcuts to the same repository's viewer.
 The shortcut selects the repository where the installer runs; use `--root` to
-choose another. The Claude-only path releases `Ctrl-G` and moves its editor
-action to `Ctrl-E`, but cannot launch the viewer itself. See
+choose another. In **Cursor** the same key works inside the integrated terminal:
+`--emulator cursor` binds it to a `Handoff viewer` workspace task and adds that
+command to `terminal.integrated.commandsToSkipShell`, so Cursor answers the key
+instead of passing it to the shell. The Claude-only path releases `Ctrl-G` and
+moves its editor action to `Ctrl-E`, but cannot launch the viewer itself. See
 [the key and its host override](skills/handoff/references/harness-setup.md#releasing-the-key-in-the-host).
 The launcher also discovers project `.agents/skills/handoff` and
 `.codex/skills/handoff`, global `~/.agents/skills/handoff`, and

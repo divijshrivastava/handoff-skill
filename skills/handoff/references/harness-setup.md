@@ -164,6 +164,31 @@ repositories' viewer bindings are preserved. The
 is pinned to that repository. It opens a separate window;
 `q` closes the viewer. If an existing window retains the previous binding,
 restart iTerm2 when convenient. This does not change `VISUAL` or `EDITOR`.
+**Cursor** (and any VS Code based editor with Cursor's configuration layout)
+takes a different route, because its integrated terminal is not an emulator with
+a key table of its own:
+
+```sh
+HANDOFF_VIEWER_KEY=C-M-h handoff-tui --install-viewer-key --emulator cursor --root /path/to/repo
+```
+
+That writes three things. A `Handoff viewer` task in the repository's
+`.vscode/tasks.json`, whose command runs the launcher with
+`--root "${workspaceFolder}"`, so the file stays portable and the key opens
+whichever repository the window has open. A keybinding on
+`workbench.action.tasks.runTask` in the user's `keybindings.json`, inserted
+textually so the file's comments and existing bindings survive. And
+`workbench.action.tasks.runTask` in `terminal.integrated.commandsToSkipShell`
+in `settings.json`, without which Cursor forwards the keystroke to the shell
+whenever the terminal has focus - the case this exists for. The task label is
+the same constant in every repository, so one global keybinding serves all of
+them, and a window whose workspace has no such task reports that the task is
+missing rather than opening the wrong ledger. The key runs a task; it never
+sends a command into the running agent. A repository that has not been
+installed into needs its own `--emulator cursor` run, and the generated task
+file names this machine's interpreter, so it belongs in `.gitignore` rather
+than in version control. Reload the window after installing.
+
 For a popup inside the same terminal, run
 `HANDOFF_VIEWER_KEY=C-M-h handoff-tui --codex` instead, without an iTerm2
 binding for the same key, and with Option configured to send Esc+ so tmux

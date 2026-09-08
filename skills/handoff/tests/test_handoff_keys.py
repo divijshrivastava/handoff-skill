@@ -201,6 +201,105 @@ class HandoffKeysTests(unittest.TestCase):
             self.assertEqual(run.call_count, 1)
             self.assertEqual(list(Path(directory).iterdir()), [])
 
+    def cursor_home(self, directory, keybindings=None, settings=None):
+        user = Path(directory) / "Library/Application Support/Cursor/User"
+        user.mkdir(parents=True)
+        if keybindings is not None:
+            (user / "keybindings.json").write_text(keybindings, encoding="utf-8")
+        if settings is not None:
+            (user / "settings.json").write_text(settings, encoding="utf-8")
+        return user
+
+    def cursor_install(self, directory, key="C-M-h", repo_name="repo"):
+        repo = Path(directory) / repo_name
+        repo.mkdir(exist_ok=True)
+        with patch.object(keys.Path, "home", return_value=Path(directory)), \
+                patch.object(keys.platform, "system", return_value="Darwin"), \
+                patch.object(keys.shutil, "which", return_value="/tmp/bin/handoff-tui"):
+            return keys.install_terminal_binding("cursor", key, repo), repo
+
+    def test_cursor_key_runs_a_task_and_never_types_into_the_agent(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            user = self.cursor_home(directory, '// keep me\n[\n    {"key": "cmd+i", "command": "composerMode.agent"}\n]\n', '{"editor.fontSize": 13}')
+            message, repo = self.cursor_install(directory)
+            self.assertIn("Installed Ctrl+Alt+H", message)
+            raw = (user / "keybindings.json").read_text(encoding="utf-8")
+            # The file is JSONC; its comments and existing bindings must survive.
+            self.assertIn("// keep me", raw)
+            bindings = json.loads(keys._strip_jsonc(raw))
+            self.assertEqual(bindings[0]["command"], "composerMode.agent")
+            self.assertEqual(bindings[1], {"key": "ctrl+alt+h",
+                                           "command": "workbench.action.tasks.runTask",
+                                           "args": "Handoff viewer"})
+            task = json.loads((repo / ".vscode/tasks.json").read_text())["tasks"][0]
+            self.assertEqual(task["label"], "Handoff viewer")
+            # Portable across repositories, and it opens a panel rather than
+            # sending a command into whatever agent holds the terminal.
+            self.assertIn('--root "${workspaceFolder}"', task["command"])
+            self.assertNotIn(str(repo), task["command"])
+            self.assertEqual(task["presentation"]["panel"], "dedicated")
+            configuration = json.loads((user / "settings.json").read_text())
+            self.assertEqual(configuration["editor.fontSize"], 13)
+            self.assertIn("workbench.action.tasks.runTask",
+                          configuration["terminal.integrated.commandsToSkipShell"])
+
+    def test_cursor_install_is_idempotent(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            user = self.cursor_home(directory, "[]\n", "{}")
+            self.cursor_install(directory)
+            message, repo = self.cursor_install(directory)
+            self.assertIn("already present", message)
+            bindings = json.loads(keys._strip_jsonc((user / "keybindings.json").read_text()))
+            self.assertEqual(len(bindings), 1)
+            tasks = json.loads((repo / ".vscode/tasks.json").read_text())["tasks"]
+            self.assertEqual(len(tasks), 1)
+            skip = json.loads((user / "settings.json").read_text())[
+                "terminal.integrated.commandsToSkipShell"]
+            self.assertEqual(skip.count("workbench.action.tasks.runTask"), 1)
+
+    def test_cursor_refuses_a_key_another_command_already_owns(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            user = self.cursor_home(directory, '[{"key": "ctrl+alt+h", "command": "editor.action.format"}]', "{}")
+            message, repo = self.cursor_install(directory)
+            self.assertIn("already binds", message)
+            self.assertFalse((repo / ".vscode").exists())
+            self.assertEqual(json.loads((user / "settings.json").read_text()), {})
+
+    def test_cursor_leaves_configuration_that_does_not_parse_alone(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            user = self.cursor_home(directory, "[ this is not json", "{}")
+            message, repo = self.cursor_install(directory)
+            self.assertIn("did not parse", message)
+            self.assertFalse((repo / ".vscode").exists())
+            self.assertEqual((user / "keybindings.json").read_text(), "[ this is not json")
+
+    def test_cursor_preserves_other_skipped_shell_commands(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            user = self.cursor_home(directory, "[]", '{"terminal.integrated.commandsToSkipShell": ["workbench.action.quickOpen"]}')
+            self.cursor_install(directory)
+            skip = json.loads((user / "settings.json").read_text())[
+                "terminal.integrated.commandsToSkipShell"]
+            self.assertEqual(skip, ["workbench.action.quickOpen",
+                                    "workbench.action.tasks.runTask"])
+
+    def test_cursor_key_names_and_detection(self) -> None:
+        self.assertEqual(keys.vscode_key_name("C-M-h"), "ctrl+alt+h")
+        self.assertEqual(keys.vscode_key_name("C-g"), "ctrl+g")
+        self.assertIsNone(keys.vscode_key_name("F5"))
+        with tempfile.TemporaryDirectory() as directory:
+            self.cursor_home(directory)
+            with patch.object(keys.Path, "home", return_value=Path(directory)), \
+                    patch.object(keys.platform, "system", return_value="Darwin"), \
+                    patch.dict(keys.os.environ, {"TERM_PROGRAM": "vscode"}, clear=True):
+                self.assertIn("cursor", keys.detect_emulators())
+
+    def test_cursor_refuses_a_key_it_cannot_spell(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            self.cursor_home(directory, "[]", "{}")
+            message, repo = self.cursor_install(directory, key="F5")
+            self.assertIn("Cannot express", message)
+            self.assertFalse((repo / ".vscode").exists())
+
     def test_unmappable_keys_are_refused(self) -> None:
         self.assertIn("skipped", keys.install_claude_release("F5", self.path()))
         with self.assertRaises(ValueError):

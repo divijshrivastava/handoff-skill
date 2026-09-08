@@ -79,6 +79,8 @@ def detect_emulators() -> list[str]:
         found.append("kitty")
     if os.environ.get("ITERM_SESSION_ID") or term_program == "iterm.app":
         found.append("iterm2")
+    if term_program == "vscode" and cursor_user_dir().is_dir():
+        found.append("cursor")
     if os.environ.get("CLAUDE_CODE_SESSION_ID") or term_program == "claude":
         found.append("claude")
     return found
@@ -286,6 +288,171 @@ def install_iterm2_binding(key: str, root: Path | None = None) -> str:
             f"Previous preferences: {backup}.")
 
 
+TASK_LABEL = "Handoff viewer"
+RUN_TASK = "workbench.action.tasks.runTask"
+
+
+def cursor_user_dir() -> Path:
+    """Where Cursor keeps the user's keybindings and settings on this platform."""
+    home = Path.home()
+    system = platform.system()
+    if system == "Darwin":
+        return home / "Library/Application Support/Cursor/User"
+    if system == "Windows":
+        base = os.environ.get("APPDATA")
+        return (Path(base) if base else home / "AppData/Roaming") / "Cursor/User"
+    return home / ".config/Cursor/User"
+
+
+def vscode_key_name(key: str) -> str | None:
+    """Spell a tmux key the way VS Code and Cursor name it, or None."""
+    parsed = re.fullmatch(r"C-(M-)?([a-z])", key, re.IGNORECASE)
+    if parsed is None:
+        return None
+    return ("ctrl+alt+" if parsed[1] else "ctrl+") + parsed[2].lower()
+
+
+def _strip_jsonc(text: str) -> str:
+    """Drop // and /* */ comments so a VS Code config parses as JSON."""
+    out, index, length = [], 0, len(text)
+    while index < length:
+        char = text[index]
+        if char == '"':
+            end = index + 1
+            while end < length:
+                if text[end] == "\\":
+                    end += 2
+                    continue
+                if text[end] == '"':
+                    break
+                end += 1
+            out.append(text[index:end + 1])
+            index = end + 1
+            continue
+        if text.startswith("//", index):
+            end = text.find("\n", index)
+            index = length if end == -1 else end
+            continue
+        if text.startswith("/*", index):
+            end = text.find("*/", index + 2)
+            index = length if end == -1 else end + 2
+            continue
+        out.append(char)
+        index += 1
+    return "".join(out)
+
+
+def _load_jsonc(path: Path, default):
+    """Parse a VS Code config, or raise ValueError describing why it cannot be."""
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return default
+    stripped = _strip_jsonc(raw).strip()
+    if not stripped:
+        return default
+    return json.loads(stripped)
+
+
+def _insert_binding(path: Path, binding: dict) -> None:
+    """Append one binding, keeping the file's own comments and formatting."""
+    entry = json.dumps(binding, indent=4)
+    entry = "\n".join("    " + line for line in entry.splitlines())
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        raw = ""
+    close = raw.rfind("]")
+    if close == -1:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("[\n" + entry + "\n]\n", encoding="utf-8")
+        return
+    head = raw[:close].rstrip()
+    separator = "\n" if head.endswith("[") else ",\n"
+    path.write_text(head + separator + entry + "\n" + raw[close:], encoding="utf-8")
+
+
+def cursor_task(directory: Path) -> dict:
+    """A workspace task that opens the viewer in its own terminal panel."""
+    launcher = shutil.which("handoff-tui")
+    # viewer_command with no root omits --root, which the task supplies itself.
+    command = (" ".join(shlex.quote(part) for part in [sys.executable, launcher])
+               if launcher else viewer_command(None))
+    return {
+        "label": TASK_LABEL,
+        "type": "shell",
+        # ${workspaceFolder} keeps this file portable: the same task opens
+        # whichever repository the window has open.
+        "command": command + ' --root "${workspaceFolder}"',
+        "presentation": {"reveal": "always", "panel": "dedicated", "focus": True,
+                         "clear": True},
+        "problemMatcher": [],
+    }
+
+
+def install_cursor_binding(key: str, root: Path | None = None) -> str:
+    """Bind the viewer key in Cursor, running a task rather than typing a command."""
+    binding_key = vscode_key_name(key)
+    if binding_key is None:
+        return f"Cannot express {key_label(key)} as a Cursor binding."
+    directory = (root or Path.cwd()).resolve()
+    user_dir = cursor_user_dir()
+    keybindings = user_dir / "keybindings.json"
+    settings = user_dir / "settings.json"
+    tasks = directory / ".vscode/tasks.json"
+    try:
+        bindings = _load_jsonc(keybindings, [])
+        configuration = _load_jsonc(settings, {})
+        document = _load_jsonc(tasks, {"version": "2.0.0", "tasks": []})
+    except (OSError, ValueError) as error:
+        return f"Leaving Cursor configuration alone; it did not parse ({error})."
+    if not isinstance(bindings, list):
+        return f"Leaving {keybindings} alone; it is not a keybindings array."
+    if not isinstance(configuration, dict):
+        return f"Leaving {settings} alone; it is not a settings object."
+    if not isinstance(document, dict) or not isinstance(document.get("tasks"), list):
+        return f"Leaving {tasks} alone; it is not a tasks document."
+    wanted = {"key": binding_key, "command": RUN_TASK, "args": TASK_LABEL}
+    for bound in bindings:
+        if not isinstance(bound, dict) or bound.get("key") != binding_key:
+            continue
+        if bound.get("command") == RUN_TASK and bound.get("args") == TASK_LABEL:
+            wanted = None
+            break
+        return (f"Cursor already binds {key_label(key)} to {bound.get('command')!r}; "
+                "choose another HANDOFF_VIEWER_KEY or remove that binding.")
+    task = cursor_task(directory)
+    document["tasks"] = [item for item in document["tasks"]
+                         if not (isinstance(item, dict) and item.get("label") == TASK_LABEL)]
+    document["tasks"].append(task)
+    document.setdefault("version", "2.0.0")
+    # With the terminal focused, Cursor sends keystrokes to the shell unless the
+    # command is listed here, which is exactly the case the user asked about.
+    skip = configuration.get("terminal.integrated.commandsToSkipShell", [])
+    if not isinstance(skip, list):
+        return (f"Leaving {settings} alone; "
+                "terminal.integrated.commandsToSkipShell is not a list.")
+    added_skip = RUN_TASK not in skip
+    try:
+        tasks.parent.mkdir(parents=True, exist_ok=True)
+        tasks.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+        if added_skip:
+            configuration["terminal.integrated.commandsToSkipShell"] = skip + [RUN_TASK]
+            settings.parent.mkdir(parents=True, exist_ok=True)
+            settings.write_text(json.dumps(configuration, indent=2) + "\n", encoding="utf-8")
+        if wanted is not None:
+            _insert_binding(keybindings, wanted)
+    except OSError as error:
+        return f"Could not write the Cursor configuration ({error}); key not installed."
+    already = "" if wanted is not None else " The keybinding was already present."
+    return (f"Installed {key_label(key)} -> Handoff in Cursor for {directory}. "
+            f"It runs the {TASK_LABEL!r} task from {tasks}, which opens the viewer in "
+            f"its own terminal panel; q closes it.{already} "
+            "Reload the Cursor window to pick up the new keybinding. Every repository "
+            "needs its own task file, and the key opens whichever repository the "
+            "window has open.")
+
+
 def _config_candidates(emulator: str) -> list[Path]:
     home = Path.home()
     if emulator == "kitty":
@@ -319,6 +486,8 @@ def install_terminal_binding(emulator: str, key: str | None, root: Path | None =
         return install_claude_release(key)
     if emulator == "iterm2":
         return install_iterm2_binding(key, root)
+    if emulator == "cursor":
+        return install_cursor_binding(key, root)
     try:
         if emulator == "kitty":
             snippet = kitty_snippet(key, command)
@@ -326,7 +495,7 @@ def install_terminal_binding(emulator: str, key: str | None, root: Path | None =
             snippet = wezterm_snippet(key, command)
         else:
             return (f"Unknown emulator {emulator!r}; supported: claude, kitty, "
-                    "wezterm, iterm2.")
+                    "wezterm, iterm2, cursor.")
     except ValueError as error:
         return str(error)
     paths = _config_candidates(emulator)

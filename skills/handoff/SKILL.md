@@ -346,7 +346,9 @@ alone does not intercept it. Respect a user-requested shortcut through
 available for Codex image paste. The iTerm2 installer creates a dynamic
 viewer profile and merges a global “New Window with Profile” binding for the
 selected root; it reports conflicts instead of replacing existing shortcuts and
-removes previous keys pointing to that same viewer when changing the key. Use
+removes previous keys pointing to that same viewer when changing the key.
+`--emulator cursor` covers Cursor's integrated terminal, where the key runs a
+workspace task rather than typing into the agent. Use
 `/handoff:view` when the harness has no controlling terminal for curses. It
 merges into existing config rather than replacing it, is idempotent, and refuses
 to rewrite files that do not parse. Do not edit a user's keybindings any other

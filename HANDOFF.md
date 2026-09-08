@@ -1,5 +1,21 @@
 # Handoff
 
+## 2026-09-09 - Open the viewer with the same key in Cursor's terminal (owner: Daedalus)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Add a cursor target to the key installer that runs the viewer as a workspace task (skills/handoff/scripts/handoff_keys.py).
+- [x] Cover the new target with regression tests (skills/handoff/tests/test_handoff_keys.py).
+- [x] Document the Cursor path (skills/handoff/references/harness-setup.md, README.md, skills/handoff/SKILL.md).
+- [x] Install it locally, verify the key opens the viewer in Cursor, run the repository checks, and record the handoff.
+
+Status: In progress. Ctrl+Alt+H is an iTerm2 GlobalKeyMap entry, so it exists only in iTerm2; Cursor's integrated terminal has no binding and the user asked for the same key there. Cursor is VS Code based, so the equivalent that never types into the running agent is a keybinding on workbench.action.tasks.runTask plus a workspace task that launches the viewer. Planned: a constant task label so one global keybinding serves every repository, ${workspaceFolder} as --root so the task file stays portable, and workbench.action.tasks.runTask added to terminal.integrated.commandsToSkipShell so the key still fires while the terminal has focus. Complete. handoff_keys.py gained a cursor target: vscode_key_name spells C-M-h as ctrl+alt+h, cursor_task writes a Handoff viewer task using --root '${workspaceFolder}' so one constant label serves every repository, and install_cursor_binding merges the keybinding textually so the file keeps its comments, refuses a key another command owns, and leaves configuration that does not parse untouched. detect_emulators reports cursor when TERM_PROGRAM is vscode and Cursor config exists. Seven regression tests cover it. .vscode/tasks.json is gitignored because the generated command names this machine's interpreter. Installed locally for this repository: keybindings.json kept its comment and the existing cmd+i binding, settings.json kept all 41 previous keys unchanged with commandsToSkipShell added, and the task command /usr/local/bin/python3 /Users/divij/.local/bin/handoff-tui --root <workspace> rendered the live ledger. Backups: ~/.config/handoff/cursor-keybindings-before-viewer-key.json and cursor-settings-before-viewer-key.json. Not verified: the physical keystroke inside a Cursor window, which needs a window reload and a human at the keyboard. Verified: 212 helper tests and 5 repository tests pass, versions agree at 1.14.0, ledger validation and git diff --check pass. Note for the next session: skills/handoff/scripts/handoff_tui.py and tests/test_handoff_tui.py carry another session's uncommitted work (owner ordering and gg/G keys, no ledger entry yet); they were excluded from this commit and left alone. Next action: none, unless a release is wanted, which would need the version triple bumped past 1.14.0.
+
 ## 2026-09-09 - Commit and release 1.14.0 (owner: Daedalus)
 
 State:
