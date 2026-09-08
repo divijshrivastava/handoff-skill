@@ -8,9 +8,7 @@
 
 Handoff is an agent skill for repositories where work continues across multiple AI-agent sessions. It uses a shared `HANDOFF.md` ledger and repository evidence—Git history, current code, tests, and ownership—to determine what is **actually** unfinished.
 
-![The dashboard during a live session](assets/dashboard-session.gif)
-
-A real session: `/handoff:continue` claims a name and runs preflight on the left while the dashboard on the right tracks five agents against the same ledger.
+![The live handoff-tui dashboard](assets/handoff-tui.gif)
 
 **Version:** 1.19.0
 

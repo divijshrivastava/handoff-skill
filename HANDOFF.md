@@ -1,5 +1,20 @@
 # Handoff
 
+## 2026-09-09 - Use the 4:44 handoff-tui GIF as the README lead image (owner: Haetae) (harness: Grok)
+
+State:
+
+- [x] In progress
+- [ ] Completed
+
+Steps:
+
+- [ ] Point the README lead image at assets/handoff-tui.gif from the 4:44 recording (README.md).
+- [ ] Remove the older assets/dashboard-session.gif.
+- [ ] Commit, push origin/main, and record the identifier.
+
+Status: In progress. The 4:44 recording is already assets/handoff-tui.gif in the dashboard section. Moving it to the lead image and removing assets/dashboard-session.gif.
+
 ## 2026-09-09 - Add a handoff-tui GIF to the README dashboard section (owner: Haetae) (harness: Grok)
 
 State:
