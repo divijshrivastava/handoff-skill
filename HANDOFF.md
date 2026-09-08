@@ -5,16 +5,16 @@
 State:
 
 - [x] In progress
-- [ ] Completed
+- [x] Completed
 
 Steps:
 
-- [ ] Bump the version triple to 1.14.0 and run the release checks.
-- [ ] Commit the release change and push main.
-- [ ] Tag v1.14.0, push it, and confirm the published release.
-- [ ] Record the handoff.
+- [x] Bump the version triple to 1.14.0 and run the release checks.
+- [x] Commit the release change and push main.
+- [x] Tag v1.14.0, push it, and confirm the published release.
+- [x] Record the handoff.
 
-Status: In progress. The user asked to tag and push. main is ahead of origin/main by b969f18 (Ctrl+Alt+H viewer shortcut) and f12fea2 (name claimed first at preflight), both user-visible and both in shipped files, so they reach installed copies only through a release. 1.13.0 is already tagged at 2a257ea, so the triple moves to 1.14.0. Next action: bump the triple and run the release checks.
+Status: Complete. The user asked to tag and push. main is ahead of origin/main by b969f18 (Ctrl+Alt+H viewer shortcut) and f12fea2 (name claimed first at preflight), both user-visible and both in shipped files, so they reach installed copies only through a release. 1.13.0 is already tagged at 2a257ea, so the triple moves to 1.14.0. Triple moved to 1.14.0 and check_versions.py v1.14.0 agrees. Verified before tagging: 200 helper tests and 5 repository tests pass, validate exits 0, archives build, git diff --check is clean, and the built archive carries 13 files with handoff/SKILL.md reporting 1.14.0 and Step 0 opening on the name claim. Pushed b0d438b..e36189d to main and tag v1.14.0. Release workflow run 34269419130 succeeded and the GitHub release published at 19:31:23Z with handoff.zip, handoff.skill, and SHA256SUMS; the downloaded assets hash to a66240facbec1e8687d4ff7c1eb8b36a406018560038b88b012d83427a0f3343, identical to the local build. Staged by explicit path throughout; the untracked scripts/demo/handoff-opt.gif stays with its earlier entry. Validate run 34269416113 on main succeeded across all four legs (ubuntu and windows, Python 3.9 and 3.12). Status: Complete. Next action: none. An installed plugin copy needs /plugin marketplace update divij-skills before it sees 1.14.0.
 
 ## 2026-09-09 - Claim the session name as the first preflight step (owner: Daedalus)
 
