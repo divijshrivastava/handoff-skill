@@ -7,6 +7,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import unittest
 
 
@@ -142,6 +144,43 @@ class CacheTests(unittest.TestCase):
         (other / "HANDOFF.md").write_text(COMPLETED, encoding="utf-8")
         self.assertIn("1/2 tasks", run(self.payload, self.base).stdout)
         self.assertIn("2/2 tasks", run(json.dumps({"cwd": str(other)}), self.base).stdout)
+
+
+class StdinTests(unittest.TestCase):
+    """A host may write the payload and keep stdin open; waiting for EOF then
+    stalls the row until the host's own timeout kills it."""
+
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "needs a POSIX FIFO")
+    def test_returns_without_waiting_for_end_of_input(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            repo = base / "repo"
+            repo.mkdir()
+            (repo / "HANDOFF.md").write_text(LEDGER, encoding="utf-8")
+            fifo = base / "payload"
+            os.mkfifo(fifo)
+            held = 2.0
+
+            def writer():
+                with open(fifo, "w") as handle:
+                    handle.write(json.dumps({"cwd": str(repo)}) + "\n")
+                    handle.flush()
+                    time.sleep(held)
+
+            thread = threading.Thread(target=writer, daemon=True)
+            thread.start()
+            env = dict(os.environ)
+            env["HANDOFF_BAR_CACHE"] = str(base / "cache")
+            started = time.monotonic()
+            with open(fifo) as handle:
+                result = subprocess.run(
+                    ["sh", str(BAR)], stdin=handle, capture_output=True,
+                    text=True, encoding="utf-8", env=env, cwd=str(base),
+                )
+            elapsed = time.monotonic() - started
+            self.assertIn("1/2 tasks", result.stdout)
+            self.assertLess(elapsed, held, "the bar waited for stdin to close")
+            thread.join(timeout=held + 2)
 
 
 class ViewerResolutionTests(unittest.TestCase):

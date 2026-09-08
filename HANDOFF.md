@@ -1,5 +1,21 @@
 # Handoff
 
+## 2026-09-08 - Verify Grok and Kimi status lines and stop the bar waiting on stdin (owner: Claude session 01LD89UW)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Configure and observe the bar in live Grok and Kimi sessions.
+- [x] Fix the blocking stdin read the verification exposed.
+- [x] Record the verified matrix and the refresh behavior each host shows.
+- [x] Run repository checks and record the handoff.
+
+Status: Complete. Both remaining harnesses are now verified live, closing the gap the previous two entries recorded. Kimi Code 0.41.0: configured `~/.kimi-code/tui.toml` with `[status_line] command`, drove kimi under a pseudo-terminal, and captured the rendered footer, `context: 0% (0/256k) handoff █████████░ 21/22 tasks · 85/88 steps · Codex`; the row joins Kimi's own segments rather than replacing them, and `kimi doctor` reports the file valid. Grok CLI 1.0.13: confirmed by the user in their own terminal, after this session failed to drive Grok's interactive UI synthetically. That failure was diagnosed rather than assumed: a control run with the original config stalled at the same five bytes, so the `[ui.status_line]` block was not the cause, and `grok doctor` ran normally under the same harness, isolating the problem to Grok's interactive startup. The user reported the row appears after a few keypresses rather than on the first frame, which matches Grok's documented model: the row is event-driven on session state changes, with `refresh_interval` adding a timer on top. That observation is now documented, along with the workspace-trust gate, since `grok inspect` reports `Project trusted: no` for this directory. Verification also exposed a real defect: `handoff-bar` read its payload with `payload=$(cat)`, which waits for end of input, so a host that writes the payload and holds stdin open stalls the row until its own timeout. Measured against a FIFO whose writer stayed open six seconds, the old form took 6.1s and reading a single line takes 0.1s; all three hosts document a single-line JSON payload, and the working-directory fallback stays correct because hosts run the command in the session's directory. Added a regression test that fails if the bar waits for stdin to close. Verified: 80 helper/viewer/launcher/bar tests and 5 repository tests pass, versions agree at 1.9.1, ledger validation, archive build, and whitespace checks pass. Left in place on this machine: the status-line configuration in `~/.grok/config.toml` and `~/.kimi-code/tui.toml`, with backups beside each. Outstanding and unrelated: `grok inspect` lists three colliding `handoff` skills from leftover snapshot copies under `~/.agents/skills/handoff-workspace`, which no owner has been asked to remove.
+
 ## 2026-09-08 - Test on Windows and fix what it exposed (owner: Claude session 01LD89UW)
 
 State:

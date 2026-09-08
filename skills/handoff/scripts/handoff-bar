@@ -27,9 +27,12 @@ while [ $# -gt 0 ]; do
     esac
 done
 
+# Read one line rather than waiting for EOF. Hosts send a single JSON line, and
+# one that writes the payload without closing stdin would otherwise block until
+# its own timeout killed the row.
 payload=""
 if [ ! -t 0 ]; then
-    payload=$(cat)
+    IFS= read -r payload || true
 fi
 
 # The payload is small and flat enough that sed beats starting a JSON parser.

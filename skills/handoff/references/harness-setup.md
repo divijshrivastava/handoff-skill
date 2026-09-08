@@ -13,8 +13,8 @@ found at that version", not as a permanent limit; re-check after upgrades.
 | Harness | Version checked | Custom status line | Payload shape |
 | --- | --- | --- | --- |
 | Claude Code | 2.1.260 | Yes, `statusLine` command | `workspace.current_dir`, `cwd` |
-| Grok CLI | 1.0.13 | Yes, `[ui.status_line] type = "command"` | `workspace.current_dir`, `cwd` |
-| Kimi Code | 0.41.0 | Yes, `[status_line] command` in `tui.toml` | flat `cwd` |
+| Grok CLI | 1.0.13 | Yes, `[ui.status_line] type = "command"` (verified) | `workspace.current_dir`, `cwd` |
+| Kimi Code | 0.41.0 | Yes, `[status_line] command` in `tui.toml` (verified) | flat `cwd` |
 | Codex CLI | 0.153.4 | No command hook found | — |
 | opencode | 1.18.3 | Built-in segments only | — |
 | Cursor agent | 2026.09.02 | None found | — |
@@ -90,7 +90,17 @@ refresh_interval = 2
 command = "~/.local/bin/handoff-bar"
 ```
 
-Kimi renders only the first stdout line, which is all the bar prints.
+Kimi renders only the first stdout line, which is all the bar prints. Verified
+in a live session: the row joins Kimi's own footer segments rather than
+replacing them.
+
+Grok's row is event-driven — session start, turn end, a model switch, a HEAD
+move — and `refresh_interval` adds a timer on top. In a live session the row
+appeared after the first interaction rather than on the empty startup screen,
+so expect it to arrive once something happens, not necessarily on the first
+frame. If it never appears, check `grok inspect`: a status-line command is
+gated behind workspace trust, and an untrusted project reports
+`Project trusted: no`.
 
 ## Why a separate script instead of `handoff-tui --bar`
 

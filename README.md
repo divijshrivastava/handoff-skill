@@ -162,6 +162,10 @@ shapes all of these send, so the same script works unchanged:
 | Claude Code 2.1.260 | Yes | `~/.claude/settings.json` → `statusLine` |
 | Grok CLI 1.0.13 | Yes | `~/.grok/config.toml` → `[ui.status_line]` |
 | Kimi Code 0.41.0 | Yes | `~/.kimi-code/tui.toml` → `[status_line]` |
+
+Claude Code, Grok, and Kimi rows were each confirmed in a live session. Grok
+refreshes on session events, so its row appears once you interact rather than
+on the first empty frame.
 | Codex CLI 0.153.4 | No command hook found | — |
 | opencode 1.18.3 | Built-in segments only | — |
 | Cursor agent | None found | — |
