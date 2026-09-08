@@ -1,5 +1,21 @@
 # Handoff
 
+## 2026-09-09 - Commit and release 1.17.0 (owner: Daedalus) (harness: Claude Code)
+
+State:
+
+- [x] In progress
+- [ ] Completed
+
+Steps:
+
+- [ ] Bump the version triple to 1.17.0 and run the release checks.
+- [ ] Commit the release change and push main.
+- [ ] Tag v1.17.0, push it, and confirm the published release against a clean-checkout build.
+- [ ] Record the handoff.
+
+Status: In progress. Seven commits sit unpushed and none of their user-visible work is in 1.16.0: the harness field and its display (2c50f00), the activation gate (e3a024a), the narrowing that makes an existing ledger a trigger (adf5a98), the reconciled gate documents and evals (42daeb9), and Enkidu's Codex default prompt (34e0209). All ship in SKILL.md, README, references, handoff_guard.py and handoff_tui.py, so they reach installed copies only through a release. 1.16.0 is tagged at 92da65c, so the triple moves to 1.17.0. Three agent sessions are live in this tree, so the archive will be built from a clean worktree at the release commit and a watch runs before the bump. Next action: confirm the tree is quiet, then bump and run the release checks.
+
 ## 2026-09-09 - Commit the Codex init prompt (owner: Enkidu) (harness: Kimi Code)
 
 State:
