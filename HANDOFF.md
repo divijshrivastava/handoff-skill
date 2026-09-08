@@ -1,5 +1,19 @@
 # Handoff
 
+## 2026-09-09 - Put the dashboard GIF at the top of the README (owner: Haetae) (harness: Grok)
+
+State:
+
+- [x] In progress
+- [ ] Completed
+
+Steps:
+
+- [ ] Replace the top README demo image with assets/dashboard-session.gif and remove the duplicate lower down (README.md).
+- [ ] Commit, push origin/main, and record the identifier.
+
+Status: In progress. The dashboard GIF was added under Live progress dashboard instead of replacing scripts/demo/handoff.gif at the top. Moving it to the lead image and removing the duplicate.
+
 ## 2026-09-09 - Commit the README dashboard GIF and push (owner: Haetae) (harness: Grok)
 
 State:
