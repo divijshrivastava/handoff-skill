@@ -1,5 +1,107 @@
 # Handoff
 
+## 2026-09-08 - Give every session a mythological name (owner: Claude session 01N7DGVQ)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Add a read-only `name` subcommand to `handoff_guard.py` carrying 100 names from mythologies worldwide.
+- [x] Return a name no ledger owner already holds, stable for a given session seed.
+- [x] Instruct the skill to claim a name at preflight and use it as its owner label (`SKILL.md`, `references/ledger-contract.md`).
+- [x] Cover naming with tests, document it, and run the repository checks.
+
+Status: Complete. Sessions previously invented their own owner labels, which is
+why this ledger carries `Codex`, `Codex TUI session`, and six different `Claude
+session <id>` spellings; the user asked that a repository with the skill
+installed name every session instead. `handoff_guard.py name` is a new
+read-only subcommand carrying 100 single-word ASCII names from nineteen
+traditions worldwide, from Greek and Norse through Mesopotamian, Japanese,
+Pacific, Mesoamerican, Andean and African. ASCII and single-word is a
+constraint, not a preference: the label passes through headings, tmux status
+formats, and clipped viewer columns. The roster is ordered per session by
+`sha256(seed + name)` rather than `random.shuffle`, so the order does not
+depend on a random module's internals staying stable between Python versions,
+and it skips every name an owner in that ledger already holds - completed
+entries included, since reusing a retired owner's name makes the history
+ambiguous. The assignment is remembered in a cache file keyed by seed and
+ledger under `$TMPDIR/handoff-names-<uid>` (`$HANDOFF_NAME_CACHE` moves it):
+without it, an agent re-running preflight after recording its own entry would
+be handed a second name and its own work would read as a peer's. Claims
+younger than 12 hours also reserve their names, so two sessions that have not
+written entries yet cannot pick the same one, while older claims stop
+reserving so a busy machine does not exhaust the roster; an unwritable cache
+costs stability across calls, not the name. The seed is `--seed`, then
+`$HANDOFF_SESSION`, `$CLAUDE_CODE_SESSION_ID`, `$TERM_SESSION_ID`, then random,
+so an unidentified session is distinct rather than sharing everyone's first
+name. Wiring: `SKILL.md` Step 0 gained a numbered claim step and its template
+example now takes the owner from the command; `references/ledger-contract.md`
+carries the rule agents read before writing; the README documents the command
+and its example ledger now shows a named owner; `evals/evals.json` gained
+scenario 5 for the behaviour - a scenario only, not a run or a result. No new
+runtime file, so the packaging allowlist is unchanged. Verified: 171 helper,
+viewer, launcher, bar and codex tests and 5 repository tests pass on Python
+3.9.10 and 3.12.7, `validate --root .` exits 0, versions agree at 1.11.1,
+archives build, and `git diff --check` is clean. End to end in a scratch
+repository, two sessions were named `Jatayu` and `Thoth`, the first kept
+`Jatayu` when it asked again after writing its entry, and the dashboard
+grouped both. One defect was found in my own tests and fixed rather than
+retried: the in-process cases read `$HANDOFF_NAME_CACHE` from the real
+environment and wrote six claim records into the developer's `$TMPDIR`; the
+suite now isolates the variable in `setUp`, and those files were removed. Not
+done: this session's own two entries keep the `Claude session 01N7DGVQ` label
+they were opened under, because renaming mid-task is precisely what the new
+contract forbids - the next session in this repository is the first to be
+named. Committed in `1f84573` on
+`bar-viewer-key-and-session-names`, which is not merged into `main`; the
+version triple is deliberately left at 1.11.1 for whoever cuts the next
+release, so neither this nor the Ctrl-G shortcut reaches an installed copy
+until then.
+
+## 2026-09-08 - Open the viewer from the Codex bar with Ctrl-G (owner: Claude session 01N7DGVQ)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Bind a configurable root-table key in the Codex tmux session that opens the live viewer in a popup (`skills/handoff/scripts/handoff_codex.py`).
+- [x] Advertise the shortcut in the bottom bar and carry `--read-only` into the popup.
+- [x] Cover the binding, its configuration, and the hint with regression tests.
+- [x] Document the shortcut and run the repository checks.
+
+Status: Complete. The bar reported progress but could not change it, so the
+user asked for a key that opens the viewer in the session. `Ctrl-G` now opens
+the live view in a tmux popup over Codex, with the same `x`/`p` move keys, and
+`q` returns to the Codex prompt with Codex still running underneath. The
+binding is a root-table one, which is what the private session's disabled
+prefix requires, and it is the only key Codex no longer receives;
+`$HANDOFF_VIEWER_KEY` moves it to another tmux key name or takes it back with
+`none`. The popup opens the ledger the bar is reporting, at the same
+`--interval`, and `--read-only` now reaches Codex mode so a read-only bar opens
+a viewer that cannot write. `CodexSession.call` was split over a new `run` so
+the binding can be attempted without `check=True` killing the session:
+`bind_viewer` returns whether tmux accepted it, and a tmux that rejects the
+command or the key name leaves Codex running and drops the `^G open` hint
+instead of advertising a dead key. The hint is appended after `clean_text`, so
+a ledger owner label cannot forge one. Verified: 159 helper, viewer, launcher,
+bar and codex tests and 5 repository tests pass, `validate --root .` exits 0,
+versions agree at 1.11.1, and `git diff --check` is clean. Beyond the unit and
+real-tmux tests, the keypress path itself was driven end to end on tmux 3.6a:
+a client attached on a pty, `Ctrl-G` written to it, the viewer confirmed
+running by pid from a popup, `q` confirmed to end that pid, and the Codex pane
+confirmed alive afterwards (`pane_dead` 0). Not verified: no live Codex CLI
+session was driven, only a stand-in child, and the popup was not exercised on
+tmux 3.2 itself. Committed in `1f84573` on
+`bar-viewer-key-and-session-names`, which is not merged into `main`. Not done:
+the version triple is deliberately left at 1.11.1 for whoever cuts the next
+release, so this reaches no installed copy until then.
+
 ## 2026-09-08 - Commit and release 1.11.1 (owner: Claude session 01Gjkh6S)
 
 State:
