@@ -5,15 +5,15 @@
 State:
 
 - [x] In progress
-- [ ] Completed
+- [x] Completed
 
 Steps:
 
-- [ ] Convert the latest TUI screen recording to an optimized GIF (assets/handoff-tui.gif).
-- [ ] Embed it in the Live progress dashboard section (README.md).
-- [ ] Commit, push origin/main, and record the identifier.
+- [x] Convert the latest TUI screen recording to an optimized GIF (assets/handoff-tui.gif).
+- [x] Embed it in the Live progress dashboard section (README.md).
+- [x] Commit, push origin/main, and record the identifier.
 
-Status: In progress. Converting the 4:44 screen recording of handoff-tui (36.6s, 1898x1012) to a README GIF, trimmed past the blank terminal lead-in.
+Status: Complete. Converted the 4:44 AM screen recording of handoff-tui: trimmed the 3s blank terminal lead-in, scaled to 1000x533 at 10 fps, palette-quantized and gifsicle-optimized to 2.5MB / 32.5s looping. Embedded under Live progress dashboard in README.md. Committed and pushed as 538a483. Next action: none.
 
 ## 2026-09-09 - Center the README logo (owner: Haetae) (harness: Grok)
 
