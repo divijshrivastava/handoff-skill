@@ -100,6 +100,14 @@ class ProgressTests(unittest.TestCase):
         self.assertIn("n/a 0/0", tui.summary_lines(snapshot)[0])
         self.assertNotIn("100%", tui.progress(0, 0))
 
+    def test_newest_owner_leads_the_agent_list(self):
+        """Newest entries sit at the top, so the newest owner leads, not "Alpha"."""
+        text = (entry("Newest", owner="Zeta")
+                + entry("Older", owner="Alpha")
+                + entry("Oldest", owner="Zeta", state="completed", steps=(True,)))
+        owners = [owner for owner, _ in tui.owner_counts(tui.parse_snapshot(text).tasks)]
+        self.assertEqual(owners, ["Zeta", "Alpha"])
+
     def test_terminal_text_is_sanitized_and_wide_names_fit(self):
         self.assertNotIn("\x1b", tui.clean_text("Agent\x1b[2J\x00"))
         self.assertNotIn("\u202e", tui.clean_text("Agent\u202e"))
@@ -171,6 +179,39 @@ class DashboardTests(unittest.TestCase):
         dashboard.handle_key(9, FakeCurses, 5)
         self.assertEqual(dashboard.view, "agents")
         self.assertFalse(dashboard.handle_key(ord("q"), FakeCurses, 5))
+
+    def test_vim_gg_and_g_shift_jump_to_the_ends(self):
+        dashboard = self.dashboard()
+        dashboard.view = "tasks"
+        last = len(dashboard.rows()) - 1
+        dashboard.handle_key(ord("G"), FakeCurses, 5)
+        self.assertEqual(dashboard.selected, last)
+        # One g arms the pair and moves nothing; idle polls must not disarm it.
+        dashboard.handle_key(ord("g"), FakeCurses, 5)
+        dashboard.handle_key(-1, FakeCurses, 5)
+        self.assertEqual(dashboard.selected, last)
+        dashboard.handle_key(ord("g"), FakeCurses, 5)
+        self.assertEqual(dashboard.selected, 0)
+
+    def test_a_lone_g_does_not_arm_the_next_keypress(self):
+        dashboard = self.dashboard()
+        dashboard.view = "tasks"
+        dashboard.handle_key(ord("G"), FakeCurses, 5)
+        dashboard.handle_key(ord("g"), FakeCurses, 5)
+        dashboard.handle_key(ord("k"), FakeCurses, 5)
+        dashboard.handle_key(ord("g"), FakeCurses, 5)
+        self.assertEqual(dashboard.selected, 0)
+
+    def test_gg_and_g_shift_scroll_the_detail_view(self):
+        dashboard = self.dashboard()
+        dashboard.handle_key(10, FakeCurses, 5)
+        dashboard.handle_key(10, FakeCurses, 5)
+        self.assertIsNotNone(dashboard.detail)
+        dashboard.handle_key(ord("G"), FakeCurses, 5)
+        self.assertEqual(dashboard.detail_offset, sys.maxsize)
+        dashboard.handle_key(ord("g"), FakeCurses, 5)
+        dashboard.handle_key(ord("g"), FakeCurses, 5)
+        self.assertEqual(dashboard.detail_offset, 0)
 
     def test_new_entry_does_not_move_selection_to_another_task(self):
         dashboard = self.dashboard()
@@ -289,6 +330,13 @@ class BarTests(unittest.TestCase):
         self.assertIn("3/4 steps", line)
         self.assertIn("Bo", line)
         self.assertNotIn("Ann", line)
+
+    def test_open_owners_are_named_newest_first(self):
+        """Ledger order, like the viewer's agent list: not alphabetical, not doubled."""
+        text = ("# Handoff\n\n" + entry(title="C", owner="Zoe")
+                + entry(title="B", owner="Ann") + entry(title="A", owner="Zoe"))
+        line = tui.bar_line(self.snapshot(text), color=False)
+        self.assertTrue(line.endswith(" Zoe, Ann"), line)
 
     def test_no_color_omits_escape_codes(self):
         text = "# Handoff\n\n" + entry(steps=(True, False))

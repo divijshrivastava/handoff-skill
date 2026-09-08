@@ -60,7 +60,9 @@ opens that live view on `Ctrl-G` rather than editing anything itself, and
 Overall completed tasks and checked steps stay visible above the current view.
 The **Agents** view groups totals by the exact owner label in each heading and
 shows completed/total tasks, in-progress tasks, pending tasks, and step progress.
-Unowned entries appear as `unassigned`. Press Enter on an owner to browse their
+Owners appear in ledger order rather than alphabetically, so the agent who most
+recently raised work leads the list; the header says `newest first`. Unowned
+entries appear as `unassigned`. Press Enter on an owner to browse their
 tasks, then Enter on a task to read its steps and full status text.
 
 | Key | Action |
@@ -68,6 +70,7 @@ tasks, then Enter on a task to read its steps and full status text.
 | Tab, a, t | Switch views, or open Agents / Tasks directly |
 | Up/Down, k/j | Select a row or scroll task details |
 | Page Up/Page Down, Home/End | Move through long lists or details |
+| gg, G | Jump to the first or last line, in a list or in details |
 | Enter | Open the selected owner's tasks or task details |
 | b, Escape, Backspace | Close details, then clear the owner filter |
 | r | Refresh immediately |
@@ -142,7 +145,8 @@ ignored rather than fatal. `--no-color` omits the ANSI codes.
 The row is deliberately silent and exits 0 when there is no ledger or nothing
 tracked, so a status bar in an unrelated repository stays empty instead of
 showing an error. Colour is green at full completion and amber otherwise, and
-the trailing names are the owners of entries not recorded complete.
+the trailing names are the owners of entries not recorded complete, listed in
+ledger order like the Agents view so the newest owner comes first.
 
 In Claude Code, `/handoff:status` wires this into `statusLine`; see the README.
 Point any such configuration at the `handoff-tui` launcher rather than a

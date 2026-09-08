@@ -76,10 +76,17 @@ def owner_name(task: Task) -> str:
 
 
 def owner_counts(tasks: list[Task]) -> list[tuple[str, Counts]]:
+    """Group by owner in ledger order, so the newest session leads.
+
+    New entries go at the top of the ledger, so an owner's first appearance is
+    their most recent task: keeping that order puts the agent who last raised
+    work on the first row. An alphabetical list buried a new peer wherever
+    their name happened to sort.
+    """
     groups: dict[str, list[Task]] = {}
     for task in tasks:
         groups.setdefault(owner_name(task), []).append(task)
-    return [(owner, count_tasks(groups[owner])) for owner in sorted(groups, key=str.casefold)]
+    return [(owner, count_tasks(groups[owner])) for owner in groups]
 
 
 def task_state(task: Task) -> str:
@@ -206,7 +213,10 @@ def bar_line(snapshot: Snapshot | None, width: int = 10, color: bool = True,
     if not color:
         shade = reset = dim = ""
     open_tasks = [t for t in (snapshot.tasks if snapshot else []) if t.modern and task_state(t) != "completed"]
-    trailer = f" {dim}{gap}{reset} " + ", ".join(sorted({owner_name(t) for t in open_tasks})) if open_tasks else ""
+    # Ledger order, matching the viewer's agent list: newest entries sit at the
+    # top of the ledger, so the agent who last raised open work is named first.
+    owners = list(dict.fromkeys(owner_name(t) for t in open_tasks))
+    trailer = f" {dim}{gap}{reset} " + ", ".join(owners) if open_tasks else ""
     return (f"{shade}handoff{reset} {shade}{full * filled}{empty * (width - filled)}{reset} "
             f"{counts.completed}/{counts.tracked} tasks {dim}{gap}{reset} "
             f"{counts.checked}/{counts.steps} steps{trailer}")
@@ -243,7 +253,7 @@ def plain_report(watcher: Watcher) -> str:
         if watcher.snapshot:
             lines.append("Showing the last readable snapshot; data is stale.")
     lines.extend(summary_lines(watcher.snapshot))
-    lines.extend(["", "BY RECORDED OWNER | done/tasks, in progress, pending, checked steps",
+    lines.extend(["", "BY RECORDED OWNER (newest first) | done/tasks, in progress, pending, checked steps",
                   "! = invalid; ? = legacy (excluded from totals)"])
     if watcher.snapshot:
         for owner, counts in owner_counts(watcher.snapshot.tasks):
@@ -297,6 +307,8 @@ class Dashboard:
         # The last completed move, kept until the next one: a transient message
         # cannot answer "did it land" when checking costs a keypress.
         self.moved: tuple[str, str] | None = None
+        # Half of a typed "gg", waiting one keypress for its pair.
+        self.pending_g = False
 
     def tasks(self) -> list[Task]:
         snapshot = self.watcher.snapshot
@@ -403,6 +415,15 @@ class Dashboard:
             return
         self.refresh()
 
+    def jump_to_end(self, bottom: bool) -> None:
+        """Go to the first or last line of whatever is being read."""
+        if self.detail:
+            self.detail_offset = sys.maxsize if bottom else 0
+        elif bottom:
+            self.selected = max(0, len(self.rows()) - 1)
+        else:
+            self.selected = self.offset = self.detail_offset = 0
+
     def handle_prompt(self, key: int, curses) -> bool:
         """Read one owner name for a task whose new agent has no ledger entry yet."""
         if key in (27, 3):
@@ -456,8 +477,18 @@ class Dashboard:
     def handle_key(self, key: int, curses, page: int) -> bool:
         if self.prompt is not None:
             return self.handle_prompt(key, curses)
+        pending_g = False
         if key != -1:
             self.message = None
+            # An idle poll passes -1; only a real keypress ends a pending "gg".
+            pending_g, self.pending_g = self.pending_g, False
+        if key in (ord("g"), ord("G")):
+            # vim: G goes to the bottom, gg to the top; a lone g awaits its pair.
+            if key == ord("G") or pending_g:
+                self.jump_to_end(bottom=key == ord("G"))
+            else:
+                self.pending_g = True
+            return True
         if self.handle_move_key(key):
             return True
         if key in (ord("q"), ord("Q"), 3):
@@ -494,13 +525,8 @@ class Dashboard:
                 else:
                     self.selected = min(max(0, len(self.rows()) - 1),
                                         max(0, self.selected + movement[key]))
-            elif key == curses.KEY_HOME:
-                self.detail_offset = self.selected = 0
-            elif key == curses.KEY_END:
-                if self.detail:
-                    self.detail_offset = sys.maxsize
-                else:
-                    self.selected = max(0, len(self.rows()) - 1)
+            elif key in (curses.KEY_HOME, curses.KEY_END):
+                self.jump_to_end(bottom=key == curses.KEY_END)
         return True
 
     def detail_lines(self, width: int) -> list[str]:
@@ -555,7 +581,7 @@ class Dashboard:
                 write(content_start + i, " " + line)
         else:
             if self.view == "agents":
-                write(6, f" {fit('RECORDED OWNER', max(12, width - 55), pad=True)}"
+                write(6, f" {fit('RECORDED OWNER (newest first)', max(12, width - 55), pad=True)}"
                       "  DONE/TASK  WIP WAIT  CHECKED STEPS  !bad ?old", curses.A_DIM)
             else:
                 write(6, " STATE          STEPS    TASK / OWNER (ledger order)", curses.A_DIM)
@@ -587,7 +613,8 @@ class Dashboard:
             write(height - 3, f" Read {snapshot.read_at:%H:%M:%S} | revision {snapshot.version[:12]}"
                   f" | {len(rows)} {self.view} | automatic refresh", curses.A_DIM)
         write(height - 2, " Checkbox counts only; owner labels do not prove authorship or live activity.", curses.A_DIM)
-        write(height - 1, " q quit | Tab a/t views | j/k arrows | Enter open | b back | r reload"
+        write(height - 1, " q quit | Tab a/t views | j/k arrows | gg/G top/end | Enter open"
+              " | b back | r reload"
               + ("" if self.read_only else " | x cut | p give"))
         screen.refresh()
         return available

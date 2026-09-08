@@ -1,20 +1,37 @@
 # Handoff
 
+## 2026-09-09 - Order the agent list newest first and add vim jump keys (owner: Daedalus)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Group the viewer's agent list and the bar's owner trailer in ledger order (skills/handoff/scripts/handoff_tui.py).
+- [x] Add gg and G jumps that also serve Home and End, in lists and in details (skills/handoff/scripts/handoff_tui.py).
+- [x] Cover both with regression tests (skills/handoff/tests/test_handoff_tui.py).
+- [x] Document the new keys and the ordering (skills/handoff/references/progress-viewer.md).
+- [x] Run the repository checks and record the handoff.
+
+Status: In progress. Adopted 2026-09-09 by Daedalus at the user's explicit direction, from the Codex session that owns Cernunnos and had left this work uncommitted with no ledger entry of its own; the user reported that session out of context. Its files were quiet from 01:09:34 to the takeover at 01:15 and are preserved at /tmp/handoff-takeover2-daedalus-20260909-011518. Audited rather than assumed: owner_counts and bar_line now keep ledger order so the newest entry's owner leads instead of whoever sorts first alphabetically, jump_to_end backs gg, G, Home and End in both the list and the detail pane, a lone g arms only the next real keypress and an idle -1 poll does not disarm it, and the viewer header, footer and plain report say "newest first". Five regression tests cover it and all 212 helper tests pass. What is missing is documentation: references/progress-viewer.md still lists only Home/End in its controls table and describes neither the new keys nor the ordering. Completed by Daedalus: progress-viewer.md now lists gg and G in the controls table, states that the Agents view is in ledger order with the newest owner leading, and says the bar trailer follows the same order. The adopted code and tests were not rewritten. Verified: 212 helper tests and 5 repository tests pass, versions agree at 1.15.0, ledger validation and git diff --check pass. The peer files were byte-identical to the preserved copies at commit time, so nothing of the prior session was lost. Not verified: the keys under a real curses terminal; the tests drive handle_key directly. Next action: none. This shipped work is not in 1.15.0, which was tagged before it; a release would need the triple bumped past 1.15.0.
+
 ## 2026-09-09 - Commit and release 1.15.0 (owner: Daedalus)
 
 State:
 
 - [x] In progress
-- [ ] Completed
+- [x] Completed
 
 Steps:
 
-- [ ] Bump the version triple to 1.15.0 and run the release checks.
-- [ ] Commit the release change and push main.
-- [ ] Tag v1.15.0, push it, and confirm the published release against a clean-checkout build.
-- [ ] Record the handoff.
+- [x] Bump the version triple to 1.15.0 and run the release checks.
+- [x] Commit the release change and push main.
+- [x] Tag v1.15.0, push it, and confirm the published release against a clean-checkout build.
+- [x] Record the handoff.
 
-Status: In progress. The user asked to release the Cursor viewer key, committed as 627159d, which ships in SKILL.md, harness-setup.md and handoff_keys.py and so reaches installed copies only through a release. 1.14.0 is tagged, so the triple moves to 1.15.0. package_skill.py reads the working tree and scripts/handoff_tui.py is in RUNTIME_FILES, while another session holds uncommitted changes to that file, so the archive will be inspected from a clean checkout of the release commit rather than from this tree. Next action: bump the triple and run the release checks.
+Status: In progress. The user asked to release the Cursor viewer key, committed as 627159d, which ships in SKILL.md, harness-setup.md and handoff_keys.py and so reaches installed copies only through a release. 1.14.0 is tagged, so the triple moves to 1.15.0. package_skill.py reads the working tree and scripts/handoff_tui.py is in RUNTIME_FILES, while another session holds uncommitted changes to that file, so the archive will be inspected from a clean checkout of the release commit rather than from this tree. Complete. Triple moved to 1.15.0 and check_versions.py v1.15.0 agrees. Verified before tagging: 212 helper tests and 5 repository tests pass, validate exits 0, git diff --check is clean. The archive was built and inspected from a detached worktree at 1efba4b rather than from this tree, because package_skill.py reads the working tree and another session holds uncommitted changes to scripts/handoff_tui.py: that clean build carries 13 files, reports 1.15.0, ships install_cursor_binding and the Cursor section, and correctly omits the peer work. Pushed f290f65..1efba4b and tag v1.15.0. Release run 34270610694 and Validate run 34270607213 both succeeded, and the published handoff.zip and handoff.skill hash to 110e56bb5b8d87cd92767690a3906274531016b221a326d06324701835793958, identical to that clean build. Next action: none. An installed plugin copy needs /plugin marketplace update divij-skills before it sees 1.15.0.
 
 ## 2026-09-09 - Open the viewer with the same key in Cursor's terminal (owner: Daedalus)
 
