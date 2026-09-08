@@ -1,5 +1,40 @@
 # Handoff
 
+## 2026-09-08 - Commit and release 1.11.1 (owner: Claude session 01Gjkh6S)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Bump the version triple and run the release checks.
+- [x] Commit on a branch, open a pull request, and merge after CI passes.
+- [x] Tag v1.11.1 and confirm the published release.
+
+Status: Complete. Released at the user's direction, and this entry resolves the
+`Not done: nothing is committed` line in `Show where a moved task landed in the
+viewer` above, which was true when written. Chose a patch bump: the change fixes
+a defect in a feature 1.11.0 already shipped rather than adding scope, though it
+does alter one visible behaviour, the view moving to the receiving agent's list
+after a paste, which the release notes state. Version triple moved to 1.11.1 and
+`check_versions.py v1.11.1` agrees. Not committed directly to main: the work
+went to branch `viewer-move-feedback` and PR #3, all four CI legs passed
+(ubuntu and windows, Python 3.9 and 3.12, run 34186017598), and it was
+squash-merged as `d815782`. Tag `v1.11.1` (annotated `e84e78e`) points at that
+commit; release workflow run 34186126926 succeeded and the GitHub release
+published at 04:12Z with `handoff.zip`, `handoff.skill`, and `SHA256SUMS`. The
+built archive was inspected before tagging and carries `show_landing`, the
+`MOVED to` status line, the updated `references/progress-viewer.md`, and version
+1.11.1, so the fix reaches installed copies rather than only this tree. Staged
+by explicit path: no other session's work was swept in. Left untouched
+deliberately: the untracked `scripts/demo/handoff-opt.gif`, which belongs to an
+earlier entry, and Claude session handoff-skill-b5's README correction, which
+that session committed to branch `docs/scope-takeover` and has not merged. Next
+action: none. An installed plugin copy needs `/plugin marketplace update
+divij-skills` before it sees 1.11.1.
+
 ## 2026-09-08 - Show where a moved task landed in the viewer (owner: Claude session 01Gjkh6S)
 
 State:
