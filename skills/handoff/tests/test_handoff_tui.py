@@ -390,7 +390,7 @@ class MoveTests(unittest.TestCase):
         self.press(dashboard, ord("p"))
         self.assertEqual(self.owners(), ["Agent B", "Agent B"])
         self.assertIsNone(dashboard.cut)
-        self.assertIn("Moved", dashboard.banner())
+        self.assertIn("Agent B", dashboard.banner())
 
     def test_a_move_changes_ownership_only(self):
         before = tui.parse_tasks(self.read())[0]
@@ -539,3 +539,66 @@ class MoveTests(unittest.TestCase):
         self.assertIn("HOLDING 'First' from Agent A", screen.frames[-1])
         self.assertIn("x cut", frame)
         self.assertNotIn("x cut", self.dashboard(read_only=True).banner())
+
+
+class MoveFeedbackTests(MoveTests):
+    """The user could not tell whether a pasted task reached the target session.
+    Each test here starts from one of the three reasons why."""
+
+    LONG = "2026-09-08 - Add a live Handoff bar around Codex"
+    TARGET = "Claude session 01LD89UW"
+
+    def give(self):
+        """Cut the first task and paste it onto the other agent, as the user did."""
+        self.write(entry(self.LONG, owner="Codex bar session")
+                   + entry("2026-09-07 - Verify Grok status lines", owner=self.TARGET))
+        dashboard = self.press(self.dashboard(), ord("x"), ord("a"))
+        dashboard.selected = [row[0] for row in dashboard.rows()].index(self.TARGET)
+        return self.press(dashboard, ord("p"))
+
+    def test_the_move_lands_on_the_receiving_agents_task_list(self):
+        dashboard = self.give()
+        self.assertEqual((dashboard.view, dashboard.owner), ("tasks", self.TARGET))
+        rows = dashboard.rows()
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(tui.heading_title(rows[dashboard.selected][0]), self.LONG)
+        screen = Screen(20, 80)
+        dashboard.draw(screen, FakeCurses)
+        moved_row = next(line for line in screen.frames[-1].splitlines() if self.LONG in line)
+        self.assertTrue(moved_row.startswith("+"), moved_row)
+
+    def test_the_receiving_agent_is_never_the_part_that_gets_clipped(self):
+        dashboard = self.give()
+        for width in (64, 80, 100):
+            screen = Screen(20, width)
+            dashboard.draw(screen, FakeCurses)
+            banner = screen.frames[-1].splitlines()[-4]
+            self.assertIn(self.TARGET, banner, f"width {width}: {banner}")
+
+    def test_the_outcome_survives_looking_around(self):
+        dashboard = self.give()
+        self.press(dashboard, FakeCurses.KEY_DOWN, FakeCurses.KEY_UP, ord("b"))
+        self.assertIsNone(dashboard.owner)
+        self.assertIn(self.TARGET, dashboard.banner())
+        screen = Screen(20, 80)
+        dashboard.draw(screen, FakeCurses)
+        self.assertIn(self.TARGET, screen.frames[-1])
+
+    def test_a_new_cut_supersedes_the_previous_move(self):
+        dashboard = self.give()
+        self.press(dashboard, ord("x"))
+        self.assertIsNone(dashboard.moved)
+        self.assertNotIn("MOVED", dashboard.banner())
+
+    def test_a_move_to_unassigned_lands_on_the_unassigned_list(self):
+        dashboard = self.press(self.dashboard(), ord("x"), ord("P"))
+        self.press(dashboard, *[ord(c) for c in "Agent B"], 10)
+        self.assertEqual(dashboard.owner, "Agent B")
+        self.assertEqual([tui.owner_name(t) for t in dashboard.tasks()], ["Agent B", "Agent B"])
+
+    def test_a_peer_deleting_the_moved_task_drops_the_record(self):
+        dashboard = self.give()
+        self.write(entry("2026-09-07 - Verify Grok status lines", owner=self.TARGET))
+        dashboard.refresh()
+        self.assertIsNone(dashboard.moved)
+        self.assertNotIn("MOVED", dashboard.banner())

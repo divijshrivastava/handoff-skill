@@ -23,6 +23,7 @@ from handoff_guard import (
     owner_label_error,
     parse_tasks,
     reassign_task,
+    replace_owner,
     swap_ledger,
 )
 
@@ -87,9 +88,13 @@ def task_state(task: Task) -> str:
     return task.state.replace("_", " ")
 
 
+def heading_title(heading: str) -> str:
+    """Remove the recorded owner label; retain the ledger's title and date."""
+    return OWNER_RE.sub("", heading, count=1).strip()
+
+
 def task_title(task: Task) -> str:
-    """Remove the parsed owner label; retain the ledger's title and date."""
-    return OWNER_RE.sub("", task.heading, count=1).strip()
+    return heading_title(task.heading)
 
 
 def parse_snapshot(text: str) -> Snapshot:
@@ -289,6 +294,9 @@ class Dashboard:
         self.cut: Task | None = None
         self.prompt: str | None = None
         self.message: str | None = None
+        # The last completed move, kept until the next one: a transient message
+        # cannot answer "did it land" when checking costs a keypress.
+        self.moved: tuple[str, str] | None = None
 
     def tasks(self) -> list[Task]:
         snapshot = self.watcher.snapshot
@@ -319,6 +327,10 @@ class Dashboard:
             if self.cut is None:
                 self.message = ("The held task is no longer in the ledger. "
                                 "Nothing was moved.")
+        if self.moved is not None:
+            tasks = self.watcher.snapshot.tasks if self.watcher.snapshot else []
+            if not any(task.heading == self.moved[0] for task in tasks):
+                self.moved = None
 
     def selected_task(self) -> Task | None:
         rows = self.rows()
@@ -337,6 +349,20 @@ class Dashboard:
             return self.owner
         task = self.selected_task()
         return owner_name(task) if task else None
+
+    def show_landing(self, heading: str, label: str) -> None:
+        """After a move, open the receiving agent's task list on the moved task.
+
+        Answering "did it land" by reading a message is weaker than seeing the task
+        in that agent's own list, and the paste happens in the Agents view, where no
+        task rows are drawn at all.
+        """
+        self.moved = (heading, label)
+        self.refresh()
+        self.view, self.owner, self.detail = "tasks", label, None
+        rows = self.rows()
+        self.selected = next((i for i, row in enumerate(rows) if row[0] == heading), 0)
+        self.offset = 0
 
     def move_task(self, label: str) -> None:
         """Reassign the held task with a compare-and-swap against the read revision."""
@@ -364,9 +390,10 @@ class Dashboard:
             return
         if result["status"] == "applied":
             self.cut = None
-            self.message = (f"Moved '{title}' to {label}. That agent now owns it; "
-                            "tell them, and record the takeover in their status.")
-        elif result["status"] == "conflict":
+            self.message = None
+            self.show_landing(replace_owner(task.heading, owner), label)
+            return
+        if result["status"] == "conflict":
             self.cut = None
             self.message = ("The ledger changed while this view held the task, so nothing "
                             "was moved. Reloaded; check the new entries and cut again.")
@@ -410,6 +437,7 @@ class Dashboard:
                 self.message = "Released. Nothing is held."
             else:
                 self.cut = task
+                self.moved = None
                 self.message = (f"Cut '{fit(task_title(task), 46)}'. Press p on the receiving "
                                 "agent or task, P to type a name, x to put it back.")
             return True
@@ -536,16 +564,17 @@ class Dashboard:
                 self.offset = self.selected - available + 1
             for i, (label, value) in enumerate(rows[self.offset:self.offset + available]):
                 selected = self.offset + i == self.selected
-                held = False
+                held = landed = False
                 if self.view == "agents":
                     line = owner_row(label, value, width - 3)
                 else:
                     held = self.cut is not None and self.cut.heading == value.heading
+                    landed = self.moved is not None and self.moved[0] == value.heading
                     checked = sum(done for done, _ in value.steps)
                     line = (f"{task_state(value):13}  {checked:2}/{len(value.steps):<2}  "
                             f"{task_title(value)} / {owner_name(value)}")
-                write(content_start + i, ("*" if held else ">" if selected else " ") + line,
-                      curses.A_REVERSE if selected else 0)
+                mark = "*" if held else "+" if landed else ">" if selected else " "
+                write(content_start + i, mark + line, curses.A_REVERSE if selected else 0)
             if not rows:
                 write(content_start, " No entries to display. Waiting for ledger changes.")
 
@@ -572,6 +601,11 @@ class Dashboard:
         if self.cut is not None:
             return (f" HOLDING '{fit(task_title(self.cut), 46)}' from {owner_name(self.cut)}"
                     " | p: give to selected | P: type a name | x: release")
+        if self.moved is not None:
+            # The receiving agent comes first: it is the fact the user is checking,
+            # and whatever a narrow terminal clips should be the title, not this.
+            heading, label = self.moved
+            return f" MOVED to {label} | + {heading_title(heading)} | b: all tasks"
         return ""
 
 

@@ -1,5 +1,42 @@
 # Handoff
 
+## 2026-09-08 - Show where a moved task landed in the viewer (owner: Claude session 01Gjkh6S)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Land the view on the receiving agent's task list with the moved task selected and marked.
+- [x] Lead the confirmation with the receiving agent and keep it legible at 64 and 80 columns.
+- [x] Keep the outcome visible until the next cut or move instead of the next keypress.
+- [x] Cover the three failures with regression tests, document the behaviour, and run repository checks.
+
+Status: Complete. Each of the three reproduced failures has a fix and a
+regression test that fails without it. The view now lands on the receiving
+agent's task list after a successful move, with the moved task selected and
+marked `+`, so the answer is the task sitting in that agent's list rather than a
+sentence claiming it; the paste previously left the user in the Agents view,
+where no task rows are drawn. The line above the footer now leads with the
+receiving agent, `MOVED to <agent> | + <title>`, so a narrow terminal clips the
+title rather than the name the user is checking; verified rendered at 64, 80,
+and 100 columns. That line is held in new `Dashboard.moved` state until the next
+cut or move instead of the `message` channel that `handle_key` clears on the
+next keypress, so navigating to check no longer erases the outcome. The record
+is dropped if a peer deletes the task, and a new cut supersedes it. Verified:
+150 helper, viewer, launcher, bar and codex tests and 5 repository tests pass on
+Python 3.9.10 and 3.12, versions agree at 1.11.0, `validate --root .` exits 0,
+archives build, and `git diff --check` is clean. The original reproduction was
+re-run and now shows the receiving agent in the header, the marked task in its
+list, and the full name in the banner both immediately and after a keypress.
+Not verified: rendered through the test harness's fake screen, not a live curses
+terminal. Not done: nothing is committed, and 1.11.0 is already released, so
+this fix reaches no installed copy until a later version ships; the version
+triple was deliberately left at 1.11.0 for whoever cuts that release. Next
+action: none for this entry.
+
 ## 2026-09-08 - Commit and release 1.11.0 (owner: Claude session handoff-skill-b5)
 
 State:
