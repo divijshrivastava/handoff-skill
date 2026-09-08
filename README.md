@@ -311,7 +311,7 @@ The packager creates release artifacts in `dist/`. See [CONTRIBUTING.md](CONTRIB
 
 ## Scope
 
-Handoff is a coordination convention, not a permissions system or general-purpose lock manager. It does not authorize an agent to take over another agent's work, commit unrelated changes, or publish changes.
+Handoff is a coordination convention, not a permissions system or general-purpose lock manager. It never lets an agent take over another agent's work on its own initiative, commit unrelated changes, or publish changes. A takeover happens only when you direct it and name the prior owner; the agent must then find that owner stopped, preserve its uncommitted work, and record the transfer in the ledger where the prior owner will see it.
 
 ## License
 
