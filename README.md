@@ -8,7 +8,7 @@ Handoff is an agent skill for repositories where work continues across multiple 
 
 ![Handoff demo](scripts/demo/handoff.gif)
 
-**Version:** 1.18.0
+**Version:** 1.19.0
 
 ## Why Handoff?
 
@@ -103,7 +103,8 @@ Handoff work begins when one of these arrives:
 | Continue command | `/handoff:continue` |
 | Status command | `/handoff:status` |
 | View command | `/handoff:view` |
-| Direct instruction | "use handoff", "record this in the ledger", "take over Amaterasu's tasks" |
+| Purge command | `/handoff:purge` |
+| Direct instruction | "use handoff", "record this in the ledger", "purge the handoff", "take over Amaterasu's tasks" |
 
 In a repository with no ledger and no such request, the agent does none of this skill's work: no session name, no preflight, no ledger creation, no task entry. It answers under the repository's own instructions instead.
 
@@ -118,6 +119,7 @@ In a repository with no ledger and no such request, the agent does none of this 
 | A session ends mid-task | Leaves a useful, verifiable continuation point for the next agent |
 | New work arrives | Queues it without silently discarding earlier unfinished work |
 | You direct a takeover | Moves every open entry from the named owner after confirming they stopped and preserving their uncommitted work |
+| You purge the ledger | Archives HANDOFF.md and leaves an empty valid ledger in its place |
 
 ## The workflow
 
@@ -190,6 +192,10 @@ python3 skills/handoff/scripts/handoff_tui.py --root /path/to/your/repo
 
 Run this from a checkout of this repository, or use the script's path inside your installed handoff skill. It refreshes every second as agents save ledger updates.
 
+![The dashboard during a live session](assets/dashboard-session.gif)
+
+A real session: `/handoff:continue` claims a name and runs preflight on the left while the dashboard on the right tracks five agents against the same ledger.
+
 ### Views
 
 - **Agents** — Groups totals by the exact owner label in each heading. Shows completed/total tasks, in-progress tasks, pending tasks, step progress, and (when recorded) the harness each owner used. Owners appear in ledger order (newest first), not alphabetically. A `(recent)` suffix marks sessions that claimed a name on this machine in the last 15 minutes — that is a recent claim, not proof the agent is running.
@@ -245,7 +251,7 @@ Percentages reflect recorded checkboxes and heading owners. They do not measure 
 
 ## Slash commands
 
-Installed as a Claude Code plugin, the skill adds four commands:
+Installed as a Claude Code plugin, the skill adds five commands:
 
 | Command | Purpose |
 | --- | --- |
@@ -253,10 +259,13 @@ Installed as a Claude Code plugin, the skill adds four commands:
 | `/handoff:view` | Open the live progress viewer in a separate terminal |
 | `/handoff:status` | Turn on a live progress bar in the status line, and report progress |
 | `/handoff:continue` | Audit the ledger and resume what is actually unfinished |
+| `/handoff:purge` | Archive the ledger and replace it with an empty valid one |
 
 `/handoff:init` is how a repository without a ledger becomes one that tracks work this way (or the phrase "initialise the handoff" in Codex, whose default prompt runs it). Where a `HANDOFF.md` already exists it only reports the recorded state. Either way it establishes tracking without starting any task.
 
 `/handoff:continue` runs the full progressive audit and resumes the oldest effectively unfinished entry (or the one you name). It does not invent scope or create a ledger if none exists.
+
+`/handoff:purge` is authorized history erasure: it archives the current `HANDOFF.md` and leaves an empty valid ledger in its place. It does not delete the file, so the repository stays one that tracks work this way. Later work starts as new entries. Codex has no slash commands, so write "purge the handoff".
 
 `/handoff:view` opens the live dashboard in a real terminal window because a command session has no controlling terminal for curses:
 

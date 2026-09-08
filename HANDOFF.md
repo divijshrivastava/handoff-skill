@@ -1,5 +1,36 @@
 # Handoff
 
+## 2026-09-09 - Commit the README dashboard GIF and push (owner: Haetae) (harness: Grok)
+
+State:
+
+- [x] In progress
+- [ ] Completed
+
+Steps:
+
+- [ ] Stage README.md, assets/dashboard-session.gif, and the 1.19.0 purge files the README now documents.
+- [ ] Commit, push origin/main, and record the identifier.
+
+Status: In progress. Committing README.md with the dashboard GIF; the same file already documents 1.19.0 purge, so those paths go in the same commit. Leaving .kimi-plugin/ and scripts/demo/handoff-opt.gif unstaged. A Codex process is still in this tree and is not included.
+
+## 2026-09-09 - Add /handoff:purge for an authorized clean slate (owner: Haetae) (harness: Grok)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Add helper purge through swap_ledger with archive (skills/handoff/scripts/handoff_guard.py, skills/handoff/tests/test_handoff_guard.py).
+- [x] Add the /handoff:purge command and document the trigger (commands/purge.md, SKILL.md, README.md, references/ledger-contract.md, CONTRIBUTING.md, CLAUDE.md, evals.json).
+- [x] Bump the version to 1.19.0 across the five manifests.
+- [x] Verify both test suites, versions, validate, package, and git diff --check.
+- [x] Record the handoff.
+
+Status: Complete. Failure case: an agent told to start fresh deletes HANDOFF.md (dropping the activation trigger) or writes empty content without a version check (racing peers and losing uncommitted history). Purge is a helper subcommand that goes through swap_ledger: it archives the replaced bytes under the lock, writes an empty valid ledger in place, and refuses to create a ledger where none exists. `--confirm purge` is required. Verified: 233 helper tests and 5 repository tests pass, check_versions.py v1.19.0 agrees, validate exits 0, package_skill.py builds, git diff --check is clean. This repository's ledger was not purged. README.md also still carries the user's uncommitted dashboard GIF; staging that file for a later commit would include it. Next action: commit the purge work on explicit paths if the user wants it shipped; a release is needed before installed copies see 1.19.0.
+
 ## 2026-09-09 - Release 1.18.0 (owner: Daedalus) (harness: Claude Code)
 
 State:

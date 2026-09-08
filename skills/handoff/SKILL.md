@@ -1,9 +1,9 @@
 ---
 name: handoff
-description: "Coordinate progressive repository work across agents with a shared HANDOFF.md ledger. Active in any repository that already keeps a HANDOFF.md, which is itself the record that this repository tracks work this way; where none exists, it starts on explicit activation: the /handoff:init command, the phrase 'initialise the handoff' (the Codex prompt), or an explicit handoff request such as /handoff:continue, /handoff:status, /handoff:view, or 'use handoff'. Use for starting, continuing, checking, pausing, handing off, or committing tracked repository work. Audits later work and current code before treating old unchecked boxes as unfinished. Multiple agents, or unfinished-looking work in a repository that keeps no ledger, are not triggers on their own. Do not use for read-only questions that require no task tracking or repository mutation."
+description: "Coordinate progressive repository work across agents with a shared HANDOFF.md ledger. Active in any repository that already keeps a HANDOFF.md, which is itself the record that this repository tracks work this way; where none exists, it starts on explicit activation: the /handoff:init command, the phrase 'initialise the handoff' (the Codex prompt), or an explicit handoff request such as /handoff:continue, /handoff:status, /handoff:view, /handoff:purge, or 'use handoff'. Use for starting, continuing, checking, pausing, handing off, purging, or committing tracked repository work. Audits later work and current code before treating old unchecked boxes as unfinished. Multiple agents, or unfinished-looking work in a repository that keeps no ledger, are not triggers on their own. Do not use for read-only questions that require no task tracking or repository mutation."
 license: MIT
 metadata:
-  version: "1.18.0"
+  version: "1.19.0"
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
 ---
 
@@ -29,8 +29,9 @@ only when the user asks for it. The triggers are:
 - the `/handoff:init` command, or the phrase "initialise the handoff" in a
   host without slash commands (Codex's default prompt supplies it);
 - another explicit handoff request: `/handoff:continue`, `/handoff:status`,
-  `/handoff:view`, or a direct instruction such as "use handoff", "record
-  this in the ledger", or "take over <owner>'s tasks".
+  `/handoff:view`, `/handoff:purge`, or a direct instruction such as "use
+  handoff", "record this in the ledger", "purge the handoff", or "take over
+  <owner>'s tasks".
 
 In a repository with no ledger and no such request, do none of this skill's
 work: no session name, no preflight, no ledger creation, no task entry.
@@ -321,6 +322,13 @@ Editing `HANDOFF.md` directly is still a plain read-modify-write with no such
 protection. Under concurrency, route every write through `apply`; the guarantee
 belongs to the command, not to the file.
 
+`purge` is the other writing subcommand. It empties the ledger through the
+same compare-and-swap, archives the replaced bytes, and leaves `HANDOFF.md`
+in place as an empty valid ledger so the repository stays one that tracks
+work this way. It does not delete the file, create a parallel ledger, or
+start a task. `/handoff:purge` (or "purge the handoff") is the
+authorization; do not empty or delete the ledger any other way.
+
 Exit `3` means another writer changed the ledger first. The read that informed
 this edit is stale, so the audit behind it is stale too: re-read the ledger,
 redo the Step 2 progressive audit against the new entries, and apply again with
@@ -392,8 +400,10 @@ way, and do not run it unasked.
 
 - **Checkbox literalism:** calling an old unchecked item unfinished without
   reading later history or current source.
-- **History erasure:** rewriting or deleting an earlier task instead of
-  annotating how later work resolved it.
+- **History erasure:** rewriting, emptying, or deleting the ledger instead of
+  annotating how later work resolved an entry. `/handoff:purge` is the
+  authorized exception: it archives the whole file and replaces it with an
+  empty valid ledger, and only when the user asked.
 - **Silent takeover:** editing a task or files still owned by an active agent
   without an explicit handoff.
 - **Silent reclaim:** resuming or re-editing a task the ledger shows

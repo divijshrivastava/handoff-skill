@@ -92,6 +92,21 @@
         "Records the settings-page request as a task entry",
         "Reports effective status and resolves ownership before implementing"
       ]
+    },
+    {
+      "id": 8,
+      "prompt": "Handoff is initialised in this repository. HANDOFF.md has many completed entries and one unchecked one. I run /handoff:purge. Describe exactly what you do to the ledger, and what you do not do.",
+      "expected_output": "Treats the command as authorization to empty the whole ledger. Reads text and version from one snapshot, runs helper purge with that version and --confirm purge, archives the replaced bytes, leaves HANDOFF.md in place as an empty valid ledger, starts no task, and does not delete the file or invent a parallel live ledger.",
+      "files": [],
+      "expectations": [
+        "Uses the helper purge subcommand with the version from read and --confirm purge",
+        "Does not delete HANDOFF.md",
+        "Does not empty the ledger by editing it directly or via apply --content",
+        "Archives the replaced bytes rather than discarding them with no recovery path",
+        "Starts no task after the purge",
+        "Does not create a parallel live ledger under another name",
+        "On a version conflict, re-reads and re-audits instead of retrying the stale version"
+      ]
     }
   ],
   "output_quality_expectations": [

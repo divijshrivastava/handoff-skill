@@ -636,6 +636,153 @@ class SwapLedgerTests(unittest.TestCase):
         self.assertIn("(owner: Claude)", self.ledger.read_text(encoding="utf-8"))
 
 
+class PurgeTests(unittest.TestCase):
+    """Purge empties the ledger through swap_ledger and keeps the file."""
+
+    def setUp(self) -> None:
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.root = Path(self.directory.name)
+        self.ledger = self.root / "HANDOFF.md"
+        self.ledger.write_text(MINIMAL_LEDGER, encoding="utf-8")
+
+    def version(self) -> str:
+        return handoff_guard.ledger_version(self.ledger.read_text(encoding="utf-8"))
+
+    def run_purge(self, *args: str) -> tuple[int, str, str]:
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "purge", "--root", str(self.root), *args],
+            capture_output=True,
+            text=True, encoding="utf-8",
+            check=False,
+        )
+        return result.returncode, result.stdout, result.stderr
+
+    def run_purge_json(self, *args: str) -> tuple[int, dict]:
+        code, stdout, stderr = self.run_purge("--json", *args)
+        self.assertFalse(stderr, stderr)
+        return code, json.loads(stdout)
+
+    def test_empty_ledger_is_structurally_valid(self) -> None:
+        self.assertEqual(handoff_guard.structure_findings(handoff_guard.EMPTY_LEDGER), [])
+
+    def test_purge_empties_the_ledger_and_archives_the_previous_bytes(self) -> None:
+        before = self.ledger.read_text(encoding="utf-8")
+        version = self.version()
+        code, result = self.run_purge_json(
+            "--expect-version", version, "--confirm", "purge",
+        )
+        self.assertEqual(code, 0)
+        self.assertEqual(result["status"], "applied")
+        self.assertEqual(self.ledger.read_text(encoding="utf-8"), handoff_guard.EMPTY_LEDGER)
+        self.assertTrue(self.ledger.exists())
+        archive = Path(result["archive"])
+        self.assertEqual(archive.name, f"HANDOFF.md.{version[:12]}.bak")
+        self.assertEqual(archive.resolve().parent, self.ledger.resolve().parent)
+        self.assertEqual(archive.read_text(encoding="utf-8"), before)
+        self.assertEqual(result["new_version"], self.version())
+
+    def test_purge_refuses_to_run_without_confirm(self) -> None:
+        before = self.ledger.read_text(encoding="utf-8")
+        code, stdout, stderr = self.run_purge("--expect-version", self.version())
+        self.assertEqual(code, 2)
+        self.assertIn("--confirm", stderr)
+        self.assertEqual(self.ledger.read_text(encoding="utf-8"), before)
+        self.assertEqual(list(self.root.glob("HANDOFF.md.*.bak")), [])
+
+    def test_purge_errors_when_the_ledger_is_missing_and_creates_nothing(self) -> None:
+        self.ledger.unlink()
+        code, result = self.run_purge_json(
+            "--expect-version", "0" * 64, "--confirm", "purge",
+        )
+        self.assertEqual(code, 1)
+        self.assertEqual(result["status"], "error")
+        self.assertFalse(self.ledger.exists())
+        self.assertEqual(list(self.root.glob("HANDOFF.md.*.bak")), [])
+        self.assertIn("does not create a ledger", result["note"])
+
+    def test_stale_version_conflicts_and_writes_neither_ledger_nor_archive(self) -> None:
+        stale = self.version()
+        self.ledger.write_text(MINIMAL_LEDGER + "\nA peer wrote this.\n", encoding="utf-8")
+        peer = self.ledger.read_text(encoding="utf-8")
+        code, result = self.run_purge_json(
+            "--expect-version", stale, "--confirm", "purge",
+        )
+        self.assertEqual(code, 3)
+        self.assertEqual(result["status"], "conflict")
+        self.assertEqual(self.ledger.read_text(encoding="utf-8"), peer)
+        self.assertIsNone(result.get("archive"))
+        self.assertEqual(list(self.root.glob("HANDOFF.md.*.bak")), [])
+
+    def test_dry_run_reports_without_writing_ledger_or_archive(self) -> None:
+        before = self.ledger.read_text(encoding="utf-8")
+        code, result = self.run_purge_json(
+            "--expect-version", self.version(), "--confirm", "purge", "--dry-run",
+        )
+        self.assertEqual(code, 0)
+        self.assertEqual(result["status"], "dry-run")
+        self.assertEqual(self.ledger.read_text(encoding="utf-8"), before)
+        self.assertIsNone(result.get("archive"))
+        self.assertEqual(list(self.root.glob("HANDOFF.md.*.bak")), [])
+
+    def test_no_archive_empties_the_ledger_without_a_sidecar(self) -> None:
+        code, result = self.run_purge_json(
+            "--expect-version", self.version(), "--confirm", "purge", "--no-archive",
+        )
+        self.assertEqual(code, 0)
+        self.assertEqual(result["status"], "applied")
+        self.assertEqual(self.ledger.read_text(encoding="utf-8"), handoff_guard.EMPTY_LEDGER)
+        self.assertIsNone(result.get("archive"))
+        self.assertEqual(list(self.root.glob("HANDOFF.md.*.bak")), [])
+
+    def test_custom_archive_path_is_used(self) -> None:
+        before = self.ledger.read_text(encoding="utf-8")
+        archive = self.root / "kept.md"
+        code, result = self.run_purge_json(
+            "--expect-version", self.version(), "--confirm", "purge",
+            "--archive", str(archive),
+        )
+        self.assertEqual(code, 0)
+        self.assertEqual(result["archive"], str(archive))
+        self.assertEqual(archive.read_text(encoding="utf-8"), before)
+        self.assertEqual(list(self.root.glob("HANDOFF.md.*.bak")), [])
+
+    def test_existing_different_archive_refuses_and_leaves_the_ledger(self) -> None:
+        before = self.ledger.read_text(encoding="utf-8")
+        archive = self.root / "kept.md"
+        archive.write_text("someone else's backup\n", encoding="utf-8")
+        code, result = self.run_purge_json(
+            "--expect-version", self.version(), "--confirm", "purge",
+            "--archive", str(archive),
+        )
+        self.assertEqual(code, 1)
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(self.ledger.read_text(encoding="utf-8"), before)
+        self.assertEqual(archive.read_text(encoding="utf-8"), "someone else's backup\n")
+
+    def test_matching_archive_from_a_crashed_attempt_is_reusable(self) -> None:
+        before = self.ledger.read_text(encoding="utf-8")
+        archive = self.root / "kept.md"
+        archive.write_text(before, encoding="utf-8")
+        code, result = self.run_purge_json(
+            "--expect-version", self.version(), "--confirm", "purge",
+            "--archive", str(archive),
+        )
+        self.assertEqual(code, 0)
+        self.assertEqual(result["status"], "applied")
+        self.assertEqual(self.ledger.read_text(encoding="utf-8"), handoff_guard.EMPTY_LEDGER)
+        self.assertEqual(archive.read_text(encoding="utf-8"), before)
+
+    @unittest.skipIf(sys.platform == "win32", "Windows has no POSIX permission bits")
+    def test_purge_preserves_the_ledger_file_mode(self) -> None:
+        os.chmod(self.ledger, 0o644)
+        code, _ = self.run_purge_json(
+            "--expect-version", self.version(), "--confirm", "purge",
+        )
+        self.assertEqual(code, 0)
+        self.assertEqual(os.stat(self.ledger).st_mode & 0o777, 0o644)
+
+
 if __name__ == "__main__":
     unittest.main()
 

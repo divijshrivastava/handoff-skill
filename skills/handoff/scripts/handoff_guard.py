@@ -32,6 +32,10 @@ FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 VERSION_PREFIX_MIN = 8
 APPLY_EXIT = {"applied": 0, "dry-run": 0, "conflict": 3, "rejected": 4, "error": 1}
 LOCK_TIMEOUT_SECONDS = 30.0
+# A valid empty ledger. Purge replaces HANDOFF.md with this; it does not
+# delete the file, because an existing ledger is what keeps the repository
+# one that tracks work this way.
+EMPTY_LEDGER = "# Handoff\n"
 
 try:
     import fcntl
@@ -788,12 +792,16 @@ def ledger_lock(ledger: Path, timeout: float = LOCK_TIMEOUT_SECONDS):
 
 
 def swap_ledger(ledger: Path, expect_version: str, build: Callable[[str], str], *,
-                allow_structure_errors: bool = False, dry_run: bool = False) -> dict[str, object]:
+                allow_structure_errors: bool = False, dry_run: bool = False,
+                before_replace: Callable[[str], None] | None = None) -> dict[str, object]:
     """Apply `build(current_text)` to the ledger as one compare-and-swap.
 
     Every writer goes through here so the read, the version check, and the replace
     stay inside a single held lock; `build` runs on text whose hash already matched
     the caller's version, so a caller may locate an entry by the position it read.
+    `before_replace(current)` runs after validation, only on the real write path,
+    still holding the lock: a purge archive taken here is the bytes about to be
+    replaced, not a stale snapshot from before the lock.
     """
     try:
         with ledger_lock(ledger):
@@ -846,6 +854,17 @@ def swap_ledger(ledger: Path, expect_version: str, build: Callable[[str], str], 
                     "note": "Nothing was written.",
                 }
 
+            if before_replace is not None:
+                try:
+                    before_replace(current)
+                except OSError as error:
+                    return {
+                        "status": "error",
+                        "current_version": current_version,
+                        "errors": [str(error)],
+                        "note": "The pre-replace step failed; the ledger was not changed.",
+                    }
+
             atomic_write(ledger, updated)
     except TimeoutError as error:
         return {
@@ -879,6 +898,7 @@ def print_apply(result: dict[str, object]) -> None:
         ("Expected version", "expected_version"),
         ("Current version", "current_version"),
         ("New version", "new_version"),
+        ("Archive", "archive"),
     ):
         if result.get(key):
             print(f"{label}: {result[key]}")
@@ -927,6 +947,95 @@ def apply_command(args: argparse.Namespace) -> int:
         allow_structure_errors=args.allow_structure_errors,
         dry_run=args.dry_run,
     )})
+
+
+def default_purge_archive(ledger: Path, version: str) -> Path:
+    return ledger.with_name(f"{ledger.name}.{version[:12]}.bak")
+
+
+def write_purge_archive(path: Path, text: str) -> None:
+    """Write the replaced ledger bytes, refusing to clobber a different file.
+
+    If a previous attempt archived the same bytes and then died before replacing
+    the ledger, retrying is safe: matching content is treated as already archived.
+    Differing content is a real collision and must not be overwritten.
+    """
+    payload = text if text.endswith("\n") else text + "\n"
+    if path.exists():
+        if path.read_text(encoding="utf-8") == payload:
+            return
+        raise FileExistsError(
+            f"{path} already exists and differs from the ledger being purged"
+        )
+    atomic_write(path, payload)
+
+
+def purge_command(args: argparse.Namespace) -> int:
+    """Replace HANDOFF.md with an empty valid ledger through the one CAS.
+
+    Failure case: an agent told to start fresh deletes the file (which drops the
+    activation trigger) or writes empty content without a version check (which
+    races peers and loses uncommitted history). Purge keeps the file, archives
+    the replaced bytes under the lock, and refuses a stale version the same way
+    apply does.
+    """
+    repo = find_repo_root(Path(args.root))
+    ledger = repo / "HANDOFF.md"
+
+    def emit(result: dict[str, object]) -> int:
+        if args.json:
+            print(json.dumps(result, indent=2))
+        else:
+            print_apply(result)
+        return APPLY_EXIT.get(str(result["status"]), 1)
+
+    base: dict[str, object] = {"root": str(repo), "ledger": str(ledger)}
+
+    if not ledger.exists():
+        return emit({
+            **base,
+            "status": "error",
+            "ledger": None,
+            "errors": ["HANDOFF.md not found"],
+            "note": (
+                "Purge does not create a ledger. Initialise one first, or stop: a "
+                "repository with no HANDOFF.md is already a clean slate."
+            ),
+        })
+
+    archived: list[str] = []
+
+    def before_replace(current: str) -> None:
+        if args.no_archive:
+            return
+        path = (
+            Path(args.archive).expanduser()
+            if args.archive
+            else default_purge_archive(ledger, ledger_version(current))
+        )
+        write_purge_archive(path, current)
+        archived.append(str(path))
+
+    result = swap_ledger(
+        ledger,
+        args.expect_version,
+        lambda _current: EMPTY_LEDGER,
+        dry_run=args.dry_run,
+        before_replace=before_replace,
+    )
+    if archived:
+        result["archive"] = archived[0]
+        result["note"] = (
+            "Ledger emptied. The previous contents are in the archive; "
+            "HANDOFF.md remains as an empty valid ledger. Pass the new version "
+            "to the next apply from this session."
+        )
+    elif result.get("status") == "applied":
+        result["note"] = (
+            "Ledger emptied with no archive. HANDOFF.md remains as an empty "
+            "valid ledger. Pass the new version to the next apply from this session."
+        )
+    return emit({**base, **result})
 
 
 def read_command(args: argparse.Namespace) -> int:
@@ -1016,7 +1125,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Inspect HANDOFF.md structure, name this session, print a canonical task "
-            "entry, or apply a compare-and-swap ledger write."
+            "entry, apply a compare-and-swap ledger write, or purge the ledger."
         )
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -1078,6 +1187,33 @@ def build_parser() -> argparse.ArgumentParser:
     apply_parser.add_argument("--dry-run", action="store_true", help="Report without writing")
     apply_parser.add_argument("--json", action="store_true", help="Emit JSON")
     apply_parser.set_defaults(handler=apply_command)
+
+    purge_parser = subparsers.add_parser("purge")
+    purge_parser.add_argument("--root", default=".", help="Repository path or child path")
+    purge_parser.add_argument(
+        "--expect-version",
+        required=True,
+        help="Ledger version read before this purge; the write is refused if it moved",
+    )
+    purge_parser.add_argument(
+        "--confirm",
+        required=True,
+        choices=("purge",),
+        help="Must be the word 'purge'; refuses to run without it",
+    )
+    archive = purge_parser.add_mutually_exclusive_group()
+    archive.add_argument(
+        "--archive",
+        help="Write the replaced ledger bytes to this path instead of the default sidecar",
+    )
+    archive.add_argument(
+        "--no-archive",
+        action="store_true",
+        help="Replace the ledger without writing a sidecar archive",
+    )
+    purge_parser.add_argument("--dry-run", action="store_true", help="Report without writing")
+    purge_parser.add_argument("--json", action="store_true", help="Emit JSON")
+    purge_parser.set_defaults(handler=purge_command)
     return parser
 
 

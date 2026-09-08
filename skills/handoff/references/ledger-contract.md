@@ -200,3 +200,15 @@ editing this task; the user's new request is tracked separately.
 - A pending task has no checked implementation steps.
 - Never use a checked box to mean attempted, reviewed, or no longer desired.
   Use `Superseded`, `Obsolete`, or a factual status annotation instead.
+
+## Empty ledger
+
+A ledger with no tasks is valid and is exactly:
+
+```md
+# Handoff
+```
+
+That is what `/handoff:purge` leaves behind. Keep the file: deleting it would
+stop the repository being one that tracks work this way. Do not treat a
+`HANDOFF.md.*.bak` sidecar as a ledger.
