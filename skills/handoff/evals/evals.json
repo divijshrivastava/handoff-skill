@@ -3,7 +3,7 @@
   "evals": [
     {
       "id": 1,
-      "prompt": "A repository HANDOFF.md has an old unchecked 'add export button' entry, but a newer completed UI task cites commit abc1234 and the current source contains the verified export button. I ask you to add search. Explain your intake and ledger actions before implementation.",
+      "prompt": "Handoff is initialised in this repository. A repository HANDOFF.md has an old unchecked 'add export button' entry, but a newer completed UI task cites commit abc1234 and the current source contains the verified export button. I ask you to add search. Explain your intake and ledger actions before implementation.",
       "expected_output": "Audits later evidence, treats export as complete rather than reopening it, records search as a stepped task, and starts it only after ownership checks.",
       "files": [],
       "expectations": [
@@ -16,7 +16,7 @@
     },
     {
       "id": 2,
-      "prompt": "HANDOFF.md shows one genuinely unfinished task owned by an active Agent A and another unassigned unfinished task. I ask for a new settings page without saying what to do with old work. Describe exactly what you do next.",
+      "prompt": "Handoff is initialised in this repository. HANDOFF.md shows one genuinely unfinished task owned by an active Agent A and another unassigned unfinished task. I ask for a new settings page without saying what to do with old work. Describe exactly what you do next.",
       "expected_output": "Surfaces effective unfinished work and ownership, asks finish-first versus leave-and-start, avoids implementation and active-agent takeover until the user chooses.",
       "files": [],
       "expectations": [
@@ -29,7 +29,7 @@
     },
     {
       "id": 3,
-      "prompt": "I say 'finish the unassigned migration task first, then build the dashboard.' The migration has two completed steps and one unverified step. Explain the task-state transitions and what remains in HANDOFF.md throughout.",
+      "prompt": "Handoff is initialised in this repository. I say 'finish the unassigned migration task first, then build the dashboard.' The migration has two completed steps and one unverified step. Explain the task-state transitions and what remains in HANDOFF.md throughout.",
       "expected_output": "Queues dashboard as pending, resumes only migration's remaining step, verifies and completes migration, then starts dashboard while preserving history.",
       "files": [],
       "expectations": [
@@ -44,7 +44,7 @@
     },
     {
       "id": 4,
-      "prompt": "The repository audit is complete: every old task is verified complete, no other agent owns active work, the working tree is clean, and repository instructions permit the requested edits without further approval. I ask you to add a help page. No framework, navigation structure, file paths, or implementation details have been supplied. Describe the next action and show the new task entry before implementation.",
+      "prompt": "Handoff is initialised in this repository. The repository audit is complete: every old task is verified complete, no other agent owns active work, the working tree is clean, and repository instructions permit the requested edits without further approval. I ask you to add a help page. No framework, navigation structure, file paths, or implementation details have been supplied. Describe the next action and show the new task entry before implementation.",
       "expected_output": "Proceeds with the authorized help-page task without asking a pickup or approval question, proposes grounded steps with unknown paths left unknown, and records the correct initial task state.",
       "files": [],
       "expectations": [
@@ -56,7 +56,7 @@
     },
     {
       "id": 5,
-      "prompt": "A repository HANDOFF.md carries entries owned by 'Sekhmet' and by 'Anubis', and the audit finds no effective unfinished work. I ask you to add a changelog page. Explain how you decide the owner label for the entry you write, and what you do when I ask again later in the session who owns it.",
+      "prompt": "Handoff is initialised in this repository. A repository HANDOFF.md carries entries owned by 'Sekhmet' and by 'Anubis', and the audit finds no effective unfinished work. I ask you to add a changelog page. Explain how you decide the owner label for the entry you write, and what you do when I ask again later in the session who owns it.",
       "expected_output": "Claims a session name from the helper at preflight, uses it verbatim as the owner label, neither invents one nor reuses an existing owner's, and reports that same name later instead of renaming itself.",
       "files": [],
       "expectations": [
@@ -65,6 +65,32 @@
         "Uses the claimed name verbatim in the new entry's heading",
         "Reports the same name later in the session rather than a second name",
         "Does not present the label as proof of who performed a step or that an owner is live"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "A repository has no HANDOFF.md and no repository instruction prescribing one. Several agents may share the tree and some work looks unfinished. I ask you to add a settings page. I have not run /handoff:init, written 'initialise the handoff', or mentioned handoff at all. Describe what you do.",
+      "expected_output": "Does no handoff work - no session name, preflight, or ledger creation - and implements the page under the repository's own instructions, because a repository that keeps no ledger is not made one by shared agents or work that merely looks unfinished. Says that an existing HANDOFF.md would have been a trigger on its own.",
+      "files": [],
+      "expectations": [
+        "Claims no session name and runs no handoff preflight",
+        "Creates no HANDOFF.md and no parallel ledger under another name",
+        "Answers the settings-page request under the repository's own instructions",
+        "Does not treat shared agents or unfinished-looking work as activation",
+        "Distinguishes this from a repository that already keeps a HANDOFF.md, which activates the skill on its own"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "A repository already contains a HANDOFF.md with several entries, one unchecked. I ask you to add a settings page and say nothing about handoff. Describe what you do.",
+      "expected_output": "Treats the existing ledger as activation: claims a session name, runs the preflight, audits the unchecked entry's effective status against later entries, commits and current source rather than trusting its checkbox, records the settings page as a new task, and resolves ownership before implementing.",
+      "files": [],
+      "expectations": [
+        "Treats the existing HANDOFF.md as activation without being asked",
+        "Claims a session name and runs the preflight before writing",
+        "Audits the unchecked entry rather than assuming it is unfinished",
+        "Records the settings-page request as a task entry",
+        "Reports effective status and resolves ownership before implementing"
       ]
     }
   ],

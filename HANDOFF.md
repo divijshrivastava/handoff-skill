@@ -1,5 +1,22 @@
 # Handoff
 
+## 2026-09-09 - Reconcile the gate documents with the narrowed rule (owner: Daedalus) (harness: Claude Code)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Rewrite eval scenario 6 so it grades the narrowed rule (skills/handoff/evals/evals.json).
+- [x] Correct the README activation section, trigger table, and command list (README.md).
+- [x] Correct the init command's description of the gate (commands/init.md).
+- [x] Check the Codex default prompt still holds (skills/handoff/agents/openai.yaml).
+- [x] Run the repository checks and record the handoff.
+
+Status: In progress. adf5a98 made an existing HANDOFF.md a trigger, but the documents describing the gate are uncommitted work of the live Enkidu session (kimi-code, pid 66690) and still state the wider rule: eval scenario 6 grades doing no handoff work in a repository that has a ledger, README says the skill does not engage on its own "not even in a repository with a HANDOFF.md", and commands/init.md calls itself the activation gate. The user directed this reconciliation explicitly. Enkidu's four files were copied to /tmp/handoff-enkidu-preserve-025033 before any edit. Complete. Scenario 6 now poses a repository with no HANDOFF.md, shared agents and work that looks unfinished, and grades doing no handoff work and creating no ledger; it also asks the answer to distinguish a repository that already keeps one. A new scenario 7 grades the converse, that an existing ledger activates the skill without being asked, which nothing tested before. README no longer says the skill does not engage "not even in a repository with a HANDOFF.md"; the trigger table gains an existing-ledger row, the never-auto-selects paragraph is narrowed to repositories without a ledger and carries the reason, and the command list describes init as how a repository without a ledger becomes one. commands/init.md says the same. agents/openai.yaml needed no change: its default prompt asks to initialise, claim a name, audit the ledger and report, which holds under either rule. Enkidu's files were copied to /tmp/handoff-enkidu-preserve-025033 first, and a 90-second watch over all four reported no peer write; they had been unchanged since 02:45:03 and 02:34:54. Verified: 222 helper tests and 5 repository tests pass, evals.json parses with 7 scenarios, versions agree at 1.16.0, archives build, ledger validation and git diff --check pass. Not verified: scenarios 6 and 7 were authored, not run against a model, so they must not be reported as passing evaluations. Next action: none; the gate documents and the shipped contract now agree, and a release would need the triple bumped past 1.16.0.
+
 ## 2026-09-09 - Let an existing ledger activate the skill (owner: Daedalus) (harness: Claude Code)
 
 State:

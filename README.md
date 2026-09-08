@@ -6,6 +6,8 @@ Handoff is an agent skill for repositories where work continues across multiple 
 
 ![Handoff demo](scripts/demo/handoff.gif)
 
+**Version:** 1.16.0
+
 ## Why Handoff?
 
 An unchecked task is not always unfinished.
@@ -19,6 +21,7 @@ Before acting, Handoff helps an agent:
 - Keep new requests visible without losing unfinished work
 - Record a precise next action when a session stops mid-task
 - Safely update the ledger when multiple agents share one working tree
+- Name each session distinctly so the ledger and dashboard read as named agents rather than host session ids
 
 ## Install
 
@@ -43,15 +46,23 @@ npx skills add divijshrivastava/handoff-skill --skill handoff
 
 Add `-g` to install globally.
 
-**Requirements:** Git, an agent with repository read/edit access, and Python 3.9+ for the optional helper. The live dashboard needs a POSIX terminal; the optional Codex bar also needs tmux 3.2+. Handoff needs no API key, external service, or third-party Python package.
+**Requirements:** Git, an agent with repository read/edit access, and Python 3.9+ for the optional helper. The live dashboard needs a POSIX terminal; the optional agent bar wrapper also needs tmux 3.2+. Handoff needs no API key, external service, or third-party Python package.
 
 ## Use it
 
-Ask your agent to use Handoff explicitly:
+In a repository that already keeps a `HANDOFF.md`, Handoff is already on: the ledger is the record that this repository tracks work this way, and an agent reads and audits it without being asked. Everywhere else you initialise it:
 
 ```text
-Use handoff to audit HANDOFF.md and tell me what is actually unfinished.
+/handoff:init
 ```
+
+Codex has no slash commands, so write the phrase instead — the plugin's default prompt runs exactly this:
+
+```text
+initialise the handoff
+```
+
+Initialising claims a session name, audits the ledger, and reports what is actually unfinished; it starts no task by itself. It lazy-loads the skill: from then on the full workflow governs every repository request for the rest of the session — new work becomes ledger tasks, old entries get audited, ownership is checked — with no need to keep saying "use handoff". Explicit direction still steers it:
 
 ```text
 Use handoff. Finish the unassigned migration first, then add the dashboard.
@@ -61,25 +72,67 @@ Use handoff. Finish the unassigned migration first, then add the dashboard.
 Use handoff to pause this task with verification results and the exact next action.
 ```
 
-Skill auto-selection depends on your host. Installing Handoff does not install hooks or guarantee it runs for every task.
+```text
+Use handoff to take over Codex's tasks.
+```
+
+Installing Handoff adds no hooks. In a repository with no ledger it does not run for a task you have not asked it to track: multiple agents sharing the tree, or unfinished-looking checkboxes, are **not** triggers on their own. An existing `HANDOFF.md` is, because a ledger nobody reads is worse than none - entries go stale and the next agent trusts checkboxes no one has audited.
+
+### Activation triggers
+
+Handoff work begins when one of these arrives:
+
+| Trigger | Example |
+| --- | --- |
+| Existing ledger | the repository already has a `HANDOFF.md` |
+| Init command | `/handoff:init` |
+| Codex default prompt | "initialise the handoff" |
+| Continue command | `/handoff:continue` |
+| Status command | `/handoff:status` |
+| View command | `/handoff:view` |
+| Direct instruction | "use handoff", "record this in the ledger", "take over Amaterasu's tasks" |
+
+In a repository with no ledger and no such request, the agent does none of this skill's work: no session name, no preflight, no ledger creation, no task entry. It answers under the repository's own instructions instead.
 
 ## What happens
 
 | Situation | Handoff does |
-|---|---|
+| --- | --- |
 | An old task remains unchecked | Checks later commits, code, and ledger entries before treating it as unfinished |
 | Work is already implemented | Records the evidence and resolves the stale entry instead of redoing it |
 | Another agent owns related work | Preserves the work and reports the specific ownership conflict |
 | A check fails | Keeps the task open with failure evidence and a concrete next action |
 | A session ends mid-task | Leaves a useful, verifiable continuation point for the next agent |
 | New work arrives | Queues it without silently discarding earlier unfinished work |
+| You direct a takeover | Moves every open entry from the named owner after confirming they stopped and preserving their uncommitted work |
+
+## The workflow
+
+Handoff treats the ledger as progressive history, not a flat todo list. Every session follows the same contract (defined in `skills/handoff/SKILL.md`):
+
+1. **Preflight** — Claim a session name, read repository instructions, read the whole ledger (newest to oldest) from one versioned snapshot, run the structural doctor, and inspect Git history and active ownership.
+2. **Intake** — Turn each request into a dated task entry with separate `In progress` and `Completed` boxes, concrete steps, verification, and a factual status line.
+3. **Progressive audit** — For each apparently unfinished entry, weigh later ledger entries, commits, current source, live ownership, and the old entry's boxes. Classify the effective scope as **Complete**, **Partially complete**, **Superseded**, **Unfinished**, or **Unknown**. Preserve history by annotating rather than deleting.
+4. **Ownership resolution** — When effective unfinished work exists alongside a new request, ask whether to finish eligible work first or leave it with its current owner and start the new task. An explicit ordering such as "finish X first, then Y" is already the choice.
+5. **Safe writes** — Update the ledger at real transitions. When peers may write the same tree, route every write through the helper's locked compare-and-swap.
+6. **Commit and stop** — Stage explicit paths only, record verification and commit identifiers, and leave enough state for the next agent to continue without this conversation.
+
+### Task states
+
+| State | In progress | Completed |
+| --- | --- | --- |
+| Pending or queued | `[ ]` | `[ ]` |
+| Actively being worked | `[x]` | `[ ]` |
+| Finished and verified | `[x]` | `[x]` |
+
+Check `In progress` immediately before the first implementation step. Check `Completed` only after every required step and proportionate verification finish. Completed tasks keep `In progress` checked to preserve transition history.
 
 ## The ledger
 
-Handoff stores project work in a root-level `HANDOFF.md`. Each task records ownership, state, completed steps, evidence, and the next action.
+Handoff stores project work in a root-level `HANDOFF.md`. Each task records ownership, optional harness, state, completed steps, evidence, and the next action.
 
 ```md
-## 2026-09-07 — Add search (owner: Amaterasu)
+## 2026-09-07 — Add search (owner: Amaterasu) (harness: Claude Code)
 
 State:
 - [x] In progress
@@ -94,7 +147,25 @@ Status: Filtering exists. Edge-case verification remains.
 Next action: Add and run empty-query/no-results tests.
 ```
 
-Completed tasks retain both state boxes checked, so the ledger remains useful as history. See the full [ledger contract](skills/handoff/references/ledger-contract.md) for formatting rules and examples.
+The optional `(harness: ...)` field records which tool the owning session ran in. It is separate from the owner label so names survive round trips through headings. The helper auto-detects Claude Code, Codex, Cursor, and VS Code from environment variables; set `$HANDOFF_HARNESS` to override or name an unrecognised tool. Use `--harness auto` on the template command to include it. When a task is reassigned, the harness field is dropped so the new owner records its own.
+
+Completed tasks retain both state boxes checked, so the ledger remains useful as history. See the full [ledger contract](skills/handoff/references/ledger-contract.md) for formatting rules, ownership notes, progressive resolution examples, and superseded-entry patterns.
+
+## Session naming
+
+Every session claims a name as its first action, before reading or reporting anything:
+
+```bash
+python3 skills/handoff/scripts/handoff_guard.py name --root /path/to/your/repo
+```
+
+Names come from a roster of a hundred mythological figures worldwide. They are handed out first come, first served, cycling initials A through Z and wrapping to the next free A name after Z. A name is never one an owner in that ledger already holds (completed entries included), and the same session asking twice gets the same name.
+
+- `$HANDOFF_SESSION` identifies a session whose host exposes no id of its own
+- `--seed` names one explicitly
+- `$HANDOFF_NAME_CACHE` moves the claim cache directory
+
+The name identifies a session, not a person or model, and proves nothing about who performed a step. It is how a later agent tells your entries from a peer's, and how the dashboard groups them.
 
 ## Live progress dashboard
 
@@ -104,120 +175,83 @@ Watch overall completion and each agent's recorded progress while they work:
 python3 skills/handoff/scripts/handoff_tui.py --root /path/to/your/repo
 ```
 
-Run this from a checkout of this repository, or use the script's path inside
-your installed handoff skill. It refreshes every second as agents save ledger
-updates. The Agents view shows completed tasks and checked steps per owner;
-press Enter to browse an owner's tasks and inspect their steps and status.
-Use Tab to switch views, arrow keys to navigate, and `q` to quit.
+Run this from a checkout of this repository, or use the script's path inside your installed handoff skill. It refreshes every second as agents save ledger updates.
 
-When an agent is about to run out of context, its task can be handed over from
-the live view: select the task, press `x` to cut it, then press `p` on the
-receiving agent (or `P` to type a name). That rewrites the task's owner label
-and records the change in its status, using the same locked compare-and-swap as
-the writer helper, and leaves state, steps, and ledger order untouched. Pass
-`--read-only` for a terminal that must never write.
+### Views
 
-You can also hand one agent another agent's whole bucket: tell the receiving
-agent to take over, naming the prior owner. It preserves the prior owner's
-uncommitted work, moves every open entry in one locked ledger write, and
-records the transfer in each entry's status, so the prior owner sees the move
-the next time it audits the ledger and reports it instead of resuming.
+- **Agents** — Groups totals by the exact owner label in each heading. Shows completed/total tasks, in-progress tasks, pending tasks, step progress, and (when recorded) the harness each owner used. Owners appear in ledger order (newest first), not alphabetically. A `(recent)` suffix marks sessions that claimed a name on this machine in the last 15 minutes — that is a recent claim, not proof the agent is running.
+- **Tasks** — Lists every entry in ledger order with state, step counts, and owner. Press Enter to inspect steps and full status text.
 
-Add `--once` for a plain-text snapshot, `--interval 2` to change the refresh
-rate, or `--file /path/to/handoff.md` for an explicit ledger filename. Live mode
-uses Python's standard-library curses module on macOS/Linux; snapshot mode also
-works without curses. No package installation or service is needed.
+### Controls
 
-A plugin install lives under a version-pinned directory, so a command line
-naming one breaks at the next release. The skill ships a launcher that resolves
-the viewer at run time; copy it once onto your PATH:
+| Key | Action |
+| --- | --- |
+| Tab, a, t | Switch views, or open Agents / Tasks directly |
+| Up/Down, k/j | Select a row or scroll task details |
+| Page Up/Page Down, Home/End | Move through long lists or details |
+| gg, G | Jump to the first or last line |
+| Enter | Open the selected owner's tasks or task details |
+| b, Escape, Backspace | Close details, then clear the owner filter |
+| r | Refresh immediately |
+| x | Cut the selected task, or put a held one back |
+| p | Give the held task to the selected agent or task's owner |
+| P | Give the held task to an owner name you type |
+| q, Ctrl-C | Quit and restore the terminal |
+
+Live mode needs at least 64 columns and 14 rows. Pass `--read-only` for a terminal that must never write.
+
+### Handing a task to another agent
+
+When an agent is about to run out of context, select the task, press `x` to cut it, then press `p` on the receiving agent (or `P` to type a name). That rewrites the task's owner label, drops its harness field, appends a dated note to its status, and uses the same locked compare-and-swap as the writer helper. State, steps, and ledger order stay untouched — order records when work was raised; the label records who holds it.
+
+You can also hand one agent another agent's whole bucket: tell the receiving agent to take over, naming the prior owner. It preserves the prior owner's uncommitted work to a recovery point outside the tree, moves every open entry in one locked ledger write, and records the transfer in each entry's status, so the prior owner sees the move the next time it audits the ledger and reports it instead of resuming.
+
+### Snapshot and path options
+
+```bash
+handoff-tui --root /path/to/your/repo --once          # plain-text snapshot
+handoff-tui --root /path/to/your/repo --interval 2    # change refresh rate (0.1–60 s)
+handoff-tui --file /path/to/handoff.md                # explicit ledger filename
+handoff-tui --root /path/to/your/repo --read-only     # never write
+```
+
+Live mode uses Python's standard-library curses module on macOS/Linux; snapshot mode also works without curses. No package installation or service is needed.
+
+### PATH launcher
+
+A plugin install lives under a version-pinned directory, so a command line naming one breaks at the next release. The skill ships a launcher that resolves the viewer at run time; copy it once onto your PATH:
 
 ```bash
 cp skills/handoff/scripts/handoff-tui ~/.local/bin/ && chmod +x ~/.local/bin/handoff-tui
 handoff-tui --root /path/to/your/repo
 ```
 
-It takes the same flags, plus `--which` to print the copy it resolved. Copy it
-rather than symlinking, so it does not point back into a version-pinned path.
+It takes the same flags, plus `--which` to print the copy it resolved. Copy it rather than symlinking, so it does not point back into a version-pinned path. Resolution order: `$HANDOFF_TUI`, a sibling `handoff_tui.py`, project and global `.agents`/`.codex` skill installs, the registered plugin install, the plugin cache and marketplace directories, then `$HANDOFF_SKILL_REPO`.
 
-Percentages reflect recorded checkboxes and heading owners. They do not measure
-effort or verify who performed a step; stale entries still need an audit.
-See [controls and counting rules](skills/handoff/references/progress-viewer.md).
-
-### Codex with the bar
-
-Run Codex and keep a live Handoff progress bar at the bottom of the same terminal:
-
-```bash
-./skills/handoff/scripts/handoff-tui --codex
-# Or, after copying the launcher onto PATH:
-handoff-tui --root /path/to/your/repo --codex
-handoff-tui --root /path/to/your/repo --codex resume --last
-```
-
-Requires Codex CLI and tmux 3.2+ on PATH (macOS/Linux or WSL). Put viewer
-options such as `--root`, `--file`, `--interval 2`, and `--no-color` before
-`--codex`; everything after it goes to Codex. The bar refreshes while idle and
-shows recorded task and step counts plus open owners.
-
-Press `Ctrl-G` to open the live viewer in a popup over Codex, hand a task to
-another agent with `x` and `p`, then `q` to drop back to the Codex prompt. The
-row ends with `^G open` while that key is bound; `$HANDOFF_VIEWER_KEY` moves it
-to another tmux key or turns it off with `none`, and `--read-only` opens a
-viewer that cannot write.
-
-Codex's native footer exposes built-in items; this mode supplies the Handoff
-row through a private tmux session. Exit Codex normally to return to your shell.
-
-### Any agent with the bar
-
-Nothing in that wrapper is Codex-specific. `--with` runs the same bar and the
-same `Ctrl-G` viewer around any agent CLI on PATH, so one key opens the ledger
-whichever agent you are in:
-
-```bash
-handoff-tui --with claude
-handoff-tui --root /path/to/your/repo --with kimi
-handoff-tui --root /path/to/your/repo --with grok -p "what is left?"
-```
-
-`--codex` is simply `--with codex`. No harness can bind a key to an arbitrary
-command of its own - Claude Code's `keybindings.json` accepts only its own fixed
-actions - so the key is bound in tmux's root table, which resolves it before the
-agent sees it. In an *unwrapped* session, both Codex and Claude Code use
-`Ctrl-G` for their external editor. Installing the skill does not intercept it.
-To install the viewer key in a supported terminal, run:
-
-```bash
-handoff-tui --install-viewer-key
-```
-
-The installer detects the terminal. In iTerm2 it creates a dedicated Handoff
-profile and merges a global shortcut that opens the viewer in a new window.
-Set `HANDOFF_VIEWER_KEY=C-M-h` before the iTerm2 install command to use
-`Ctrl+Alt+H` (`Control+Option+H` on macOS). Keep `Ctrl+V` for Codex image paste.
-Changing the key removes previous shortcuts to the same repository's viewer.
-The shortcut selects the repository where the installer runs; use `--root` to
-choose another. In **Cursor** the same key works inside the integrated terminal:
-`--emulator cursor` binds it to a `Handoff viewer` workspace task and adds that
-command to `terminal.integrated.commandsToSkipShell`, so Cursor answers the key
-instead of passing it to the shell. The Claude-only path releases `Ctrl-G` and
-moves its editor action to `Ctrl-E`, but cannot launch the viewer itself. See
-[the key and its host override](skills/handoff/references/harness-setup.md#releasing-the-key-in-the-host).
-The launcher also discovers project `.agents/skills/handoff` and
-`.codex/skills/handoff`, global `~/.agents/skills/handoff`, and
-`$CODEX_HOME/skills/handoff` (default `~/.codex/skills/handoff`). See
-[Codex setup and limits](skills/handoff/references/harness-setup.md#codex-cli).
+Percentages reflect recorded checkboxes and heading owners. They do not measure effort or verify who performed a step; stale entries still need an audit. See [controls and counting rules](skills/handoff/references/progress-viewer.md).
 
 ## Slash commands
 
-Installed as a Claude Code plugin, the skill adds three commands:
+Installed as a Claude Code plugin, the skill adds four commands:
 
 | Command | Purpose |
 | --- | --- |
+| `/handoff:init` | Initialise handoff tracking: claim a session name, audit the ledger, report |
 | `/handoff:view` | Open the live progress viewer in a separate terminal |
 | `/handoff:status` | Turn on a live progress bar in the status line, and report progress |
 | `/handoff:continue` | Audit the ledger and resume what is actually unfinished |
+
+`/handoff:init` is how a repository without a ledger becomes one that tracks work this way (or the phrase "initialise the handoff" in Codex, whose default prompt runs it). Where a `HANDOFF.md` already exists it only reports the recorded state. Either way it establishes tracking without starting any task.
+
+`/handoff:continue` runs the full progressive audit and resumes the oldest effectively unfinished entry (or the one you name). It does not invent scope or create a ledger if none exists.
+
+`/handoff:view` opens the live dashboard in a real terminal window because a command session has no controlling terminal for curses:
+
+```bash
+handoff-tui --open --root /path/to/your/repo
+```
+
+If `handoff-tui` is not on PATH, copy the launcher first. When you are already at a shell, `handoff-tui --root <target>` in the foreground also works.
 
 `/handoff:status` puts a live row at the bottom of Claude Code:
 
@@ -225,16 +259,13 @@ Installed as a Claude Code plugin, the skill adds three commands:
 handoff █████████░ 17/18 tasks · 70/73 steps · Codex
 ```
 
-It configures Claude Code's [status line](https://code.claude.com/docs/en/statusline)
-to run `handoff-bar`, which prints one row and exits. With a refresh interval
-set, the bar keeps updating while the session is idle, so progress moves as
-other agents write the ledger. `/handoff:status off` removes it. The bar prints
-nothing in a repository without a ledger, so it stays empty rather than erroring.
+It configures Claude Code's [status line](https://code.claude.com/docs/en/statusline) to run `handoff-bar`, which prints one row and exits. With a refresh interval set, the bar keeps updating while the session is idle, so progress moves as other agents write the ledger. `/handoff:status off` removes it. The bar prints nothing in a repository without a ledger, so it stays empty rather than erroring.
+
+The command also reports the totals and per-owner table the bar has no room for. Both show *recorded* progress; `/handoff:continue` is the one that runs the progressive audit. For the full dashboard with drilldown, run `handoff-tui` in your own terminal — Claude Code owns the one it is running in.
 
 ### Other agent harnesses
 
-The bar is not Claude Code specific. `handoff-bar` reads the status-line payload
-shapes all of these send, so the same script works unchanged:
+The bar is not Claude Code specific. `handoff-bar` reads the status-line payload shapes all of these send, so the same script works unchanged:
 
 | Harness | Live bar | Configure in |
 | --- | --- | --- |
@@ -246,30 +277,62 @@ shapes all of these send, so the same script works unchanged:
 | opencode 1.18.3 | Built-in segments only | — |
 | Cursor agent | None found | — |
 
-Claude Code, Grok, and Kimi rows were each confirmed in a live session. Grok
-refreshes on session events, so its row appears once you interact rather than
-on the first empty frame.
+Use `handoff-bar`, not `handoff-tui --bar`, in status-line configuration: hosts cap how long a status-line command may take (Kimi's cap is 300 ms), and `handoff-bar` caches its row against the ledger's content hash so a tick costs about 31 ms rather than 250 ms for a fresh Python start.
 
-Harnesses without a status-line hook still get the full dashboard: run
-`handoff-tui` in a second terminal, which needs nothing from the host. Exact
-configuration and the measurements behind the design are in
-[harness setup](skills/handoff/references/harness-setup.md).
+Claude Code, Grok, and Kimi rows were each confirmed in a live session. Grok refreshes on session events, so its row appears once you interact rather than on the first empty frame.
 
-On Windows the ledger helper and the snapshot and bar modes work, but the live
-curses dashboard and the `handoff-bar` fast path do not; point the status line
-at `python handoff_tui.py --bar`, or use WSL for the dashboard. CI runs the
-suites on Ubuntu and Windows.
+Harnesses without a status-line hook still get the full dashboard: run `handoff-tui` in a second terminal, which needs nothing from the host. Exact configuration and the measurements behind the design are in [harness setup](skills/handoff/references/harness-setup.md).
 
-The command also reports the totals and per-owner table the bar has no room for.
-Both show *recorded* progress; `/handoff:continue` is the one that runs the
-progressive audit. For the full dashboard with drilldown, run `handoff-tui` in
-your own terminal — Claude Code owns the one it is running in.
+On Windows the ledger helper and the snapshot and bar modes work, but the live curses dashboard and the `handoff-bar` fast path do not; point the status line at `python handoff_tui.py --bar`, or use WSL for the dashboard. CI runs the suites on Ubuntu and Windows.
+
+## Agent bar wrapper (Codex and any CLI)
+
+Run an agent CLI and keep a live Handoff progress bar at the bottom of the same terminal:
+
+```bash
+./skills/handoff/scripts/handoff-tui --codex
+# Or, after copying the launcher onto PATH:
+handoff-tui --root /path/to/your/repo --codex
+handoff-tui --root /path/to/your/repo --codex resume --last
+```
+
+Requires the agent CLI and tmux 3.2+ on PATH (macOS/Linux or WSL). Put viewer options such as `--root`, `--file`, `--interval 2`, and `--no-color` before `--codex`; everything after it goes to the agent. The bar refreshes while idle and shows recorded task and step counts plus open owners.
+
+Nothing in that wrapper is agent-specific. `--with` runs the same bar and the same viewer key around any agent CLI on PATH:
+
+```bash
+handoff-tui --with claude
+handoff-tui --root /path/to/your/repo --with kimi
+handoff-tui --root /path/to/your/repo --with grok -p "what is left?"
+```
+
+`--codex` is simply `--with codex`. Each invocation owns a private tmux socket, ignores `~/.tmux.conf`, and removes its server when the agent exits. Prefix shortcuts are disabled so keys reach the agent, with one exception: the viewer key opens the live dashboard in a popup.
+
+Press `Ctrl-G` to open the live viewer in a popup over the agent, hand a task to another agent with `x` and `p`, then `q` to drop back to the prompt. The row ends with `^G open` while that key is bound; `$HANDOFF_VIEWER_KEY` moves it to another tmux key or turns it off with `none`, and `--read-only` opens a viewer that cannot write.
+
+No harness can bind a key to an arbitrary command of its own — Claude Code's `keybindings.json` accepts only its own fixed actions — so the key is bound in tmux's root table, which resolves it before the agent sees it. In an *unwrapped* session, both Codex and Claude Code use `Ctrl-G` for their external editor. Installing the skill does not intercept it.
+
+### Installing the viewer key
+
+To install the viewer key in a supported terminal, run:
+
+```bash
+handoff-tui --install-viewer-key
+```
+
+The installer detects the terminal. In **iTerm2** it creates a dedicated Handoff profile and merges a global shortcut that opens the viewer in a new window. Set `HANDOFF_VIEWER_KEY=C-M-h` before the iTerm2 install command to use `Ctrl+Alt+H` (`Control+Option+H` on macOS). Keep `Ctrl+V` for Codex image paste. Changing the key removes previous shortcuts to the same repository's viewer.
+
+In **Cursor** the same key works inside the integrated terminal: `--emulator cursor` binds it to a `Handoff viewer` workspace task and adds that command to `terminal.integrated.commandsToSkipShell`, so Cursor answers the key instead of passing it to the shell.
+
+The **Claude-only** path releases `Ctrl-G` and moves its editor action to `Ctrl-E`, but cannot launch the viewer itself — use `/handoff:view` or `handoff-tui --with claude` for a key that actually opens the dashboard. **kitty** and **wezterm** receive marked configuration snippets.
+
+See [the key and its host override](skills/handoff/references/harness-setup.md#releasing-the-key-in-the-host) and [Codex setup and limits](skills/handoff/references/harness-setup.md#codex-cli).
 
 ## Multi-agent safety
 
 For normal sequential work—or separate Git worktrees—editing `HANDOFF.md` directly is fine.
 
-When several agents share **one working tree**, use the bundled `apply` command. It performs a locked, compare-and-swap update so one agent cannot silently overwrite another agent's ledger change.
+When several agents share **one working tree**, use the bundled `apply` command. It performs a locked, compare-and-swap update so one agent cannot silently overwrite another agent's ledger change. The helper holds an exclusive lock on a `HANDOFF.md.lock` sidecar across re-read, version check, and atomic replace. The payload is read before the lock is taken so blocking stdin cannot stall peers.
 
 <details>
 <summary>Safe concurrent update example</summary>
@@ -286,11 +349,22 @@ python3 skills/handoff/scripts/handoff_guard.py apply \
   --entry new-entry.md
 ```
 
-Exit code `3` means another writer changed the ledger first. Re-read, re-audit, and apply against the new version—do not retry stale content.
+Use `--entry` to insert one new task at the newest position, or `--content` to replace the whole ledger after editing existing entries; either accepts `-` for stdin.
+
+Exit codes:
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Applied |
+| `1` | Usage error or missing ledger |
+| `3` | Version conflict — re-read, re-audit, do not retry stale content |
+| `4` | Write would introduce structural errors |
 
 </details>
 
 ## Helper commands
+
+All commands accept `--root` with a repository path or child directory.
 
 ```bash
 # Diagnose ledger structure
@@ -301,6 +375,10 @@ python3 skills/handoff/scripts/handoff_guard.py doctor \
 python3 skills/handoff/scripts/handoff_guard.py validate \
   --root /absolute/path/to/repo --json
 
+# Read ledger text and version from one snapshot
+python3 skills/handoff/scripts/handoff_guard.py read \
+  --root /absolute/path/to/repo
+
 # Name this session, to own its ledger entries under
 python3 skills/handoff/scripts/handoff_guard.py name \
   --root /absolute/path/to/repo
@@ -310,20 +388,48 @@ python3 skills/handoff/scripts/handoff_guard.py template \
   --title "Add search" \
   --owner "Amaterasu" \
   --step "Implement search filtering." \
-  --step "Verify behavior and update the handoff."
+  --step "Verify behavior and update the handoff." \
+  --harness auto
 ```
 
-Every session in a repository with Handoff installed claims a name as the
-first thing it does, before it reads the ledger or reports anything, drawn from
-a hundred mythological figures worldwide, so the ledger
-and the dashboard read as named agents rather than a column of host session
-ids. Names are handed out first come, first served, cycling initials A through
-Z and wrapping to the next free A name after Z. A name is never one an owner
-in that ledger already holds, and the same session asking twice gets the same
-name. `$HANDOFF_SESSION` identifies a session whose host exposes no id of its
-own, and `--seed` names one explicitly.
+Additional flags:
 
-The helper validates ledger structure only. It cannot determine whether a feature is really implemented, whether ownership is active, or whether a requirement is obsolete—those are evidence-based decisions made by the agent.
+- `read --out FILE` — write ledger text to a file instead of stdout
+- `name --seed ID` — identify the session explicitly; `name --json` includes detected harness
+- `template --harness auto` — record the detected tool; `--harness ""` opts out
+- `apply --dry-run` — report without writing
+- `apply --allow-structure-errors` — repair a malformed ledger, not for pushing past a failed check
+- `apply --json` — machine-readable result
+
+The helper validates ledger structure only. It cannot determine whether a feature is really implemented, whether ownership is active, or whether a requirement is obsolete—those are evidence-based decisions made by the agent. A passing `validate` is never evidence that a task is finished.
+
+## Environment variables
+
+| Variable | Used by | Purpose |
+| --- | --- | --- |
+| `$HANDOFF_SESSION` | `name` | Session id when the host exposes none |
+| `$HANDOFF_HARNESS` | `name`, `template` | Override auto-detected harness label |
+| `$HANDOFF_NAME_CACHE` | `name` | Move the session-name claim cache |
+| `$HANDOFF_TUI` | `handoff-tui`, `handoff-bar` | Pin the viewer script path |
+| `$HANDOFF_SKILL_REPO` | `handoff-tui` | Point at a source checkout |
+| `$HANDOFF_VIEWER_KEY` | bar wrapper, key installer | tmux key for the popup viewer (`none` to disable) |
+| `$HANDOFF_PYTHON` | `handoff-bar` | Python interpreter for `--bar` |
+| `$HANDOFF_BAR_CACHE` | `handoff-bar` | Move the status-line row cache |
+| `$CLAUDE_CONFIG_DIR` | `handoff-tui` | Non-default Claude plugin directory |
+
+## Named failure modes
+
+Handoff is designed around mistakes observed in multi-agent work:
+
+- **Checkbox literalism** — treating an old unchecked item as unfinished without reading later history or current source
+- **History erasure** — rewriting or deleting an earlier task instead of annotating how later work resolved it
+- **Silent takeover** — editing a task or files still owned by an active agent without an explicit handoff
+- **Silent reclaim** — resuming a task the ledger shows transferred to another owner
+- **Lost queued request** — finishing older work without preserving the user's newer request as a pending entry
+- **Premature completion** — checking `Completed` before required verification, commit, or handoff work is done
+- **Private-context handoff** — leaving "continue later" without state, evidence, blocker, and next action
+- **Broad staging** — catch-all staging in a shared working tree
+- **Blind overwrite** — writing the ledger from a read another agent has already superseded
 
 ## Updates
 
@@ -355,13 +461,15 @@ Clone this repository and copy the **entire** `skills/handoff` directory into yo
 .claude/skills/handoff/
 ```
 
-Do not copy only `SKILL.md`: the references and helper script are part of the skill.
+Do not copy only `SKILL.md`: the references and helper scripts are part of the skill.
 
 ## Development
 
 ```bash
 python3 -m unittest discover -s skills/handoff/tests -v
 python3 -m unittest discover -s tests -v
+python3 scripts/check_versions.py
+python3 skills/handoff/scripts/handoff_guard.py validate --root .
 python3 scripts/package_skill.py
 ```
 
@@ -370,6 +478,16 @@ The packager creates release artifacts in `dist/`. See [CONTRIBUTING.md](CONTRIB
 ## Scope
 
 Handoff is a coordination convention, not a permissions system or general-purpose lock manager. It never lets an agent take over another agent's work on its own initiative, commit unrelated changes, or publish changes. A takeover happens only when you direct it and name the prior owner; the agent must then find that owner stopped, preserve its uncommitted work, and record the transfer in the ledger where the prior owner will see it.
+
+## Further reading
+
+| Document | Contents |
+| --- | --- |
+| [SKILL.md](skills/handoff/SKILL.md) | Runtime contract for agents |
+| [ledger-contract.md](skills/handoff/references/ledger-contract.md) | Ledger format spec |
+| [progress-viewer.md](skills/handoff/references/progress-viewer.md) | Dashboard controls, counting rules, bar mode |
+| [harness-setup.md](skills/handoff/references/harness-setup.md) | Per-harness status-line setup, platform matrix, key installer |
+| [design-notes.md](skills/handoff/references/design-notes.md) | Lineage and design influences |
 
 ## License
 
