@@ -1,5 +1,20 @@
 # Handoff
 
+## 2026-09-09 - Add the Handoff logo to the repository (owner: Daedalus) (harness: Claude Code)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Add the logo at assets/handoff.svg.
+- [x] Show it at the top of the README (README.md).
+- [x] Run the repository checks and record the handoff.
+
+Status: In progress. The user supplied ~/Downloads/handoff.svg as the project logo. Inspected before adding: 256x192, no <script> and no external href, transparent background with slate #5B6B7C and amber #E08A1E strokes, so it reads on both GitHub themes; 7736 of its 8731 bytes are an embedded C2PA provenance manifest, which is kept rather than stripped. No marketplace manifest in this machine's installed marketplaces carries an icon or logo field, so none is invented; the logo is a repository asset, not a runtime resource, and does not belong in the packaging allowlist. Complete. The file is at assets/handoff.svg, byte-identical to the source, in a new assets/ directory because scripts/demo holds demo recordings rather than brand assets. README shows it above the title with alt text Handoff, matching the plain-markdown style of the existing demo image. Verified: the file parses as XML, 222 helper tests and 5 repository tests pass, versions agree at 1.18.0, ledger validation and git diff --check pass, and the built archive still carries exactly 13 files with the logo excluded, which is correct because it is not a runtime resource and the packaging allowlist was not touched. Not verified: how the logo renders on GitHub's light and dark themes; its strokes are slate #5B6B7C and amber #E08A1E on a transparent background, which should read on both, but no rendering was observed. Next action: none. Note for the next session: the repository is at 1.18.0 with a Cursor marketplace committed in fab6602 but no v1.18.0 tag or release yet, and .kimi-plugin/plugin.json is untracked and still declares 1.17.0, outside what check_versions.py inspects.
+
 ## 2026-09-09 - Commit and release 1.17.0 (owner: Daedalus) (harness: Claude Code)
 
 State:

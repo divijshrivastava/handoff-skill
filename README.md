@@ -1,3 +1,5 @@
+![Handoff](assets/handoff.svg)
+
 # Handoff
 
 > Keep AI agents from redoing finished work, overwriting active work, or losing context between sessions.
