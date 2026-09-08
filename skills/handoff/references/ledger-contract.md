@@ -119,7 +119,8 @@ above.
 
 ## Ownership notes
 
-An owner label names one session. Claim yours once, from the helper:
+An owner label names one session. Claim yours once, from the helper, as the
+first step of preflight rather than at the first write:
 
 ```bash
 python3 "$SKILL_DIR/scripts/handoff_guard.py" name --root /absolute/repo/path

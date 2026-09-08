@@ -38,9 +38,26 @@ requires.
 
 ## Step 0: Preflight before task work
 
-1. Resolve the repository root without assuming the current directory is it.
-2. Read every applicable repository instruction file before mutating anything.
-3. Read the whole handoff ledger, newest entry to oldest. Do not stop at the
+1. Claim this session's name first, before reading or reporting anything, and
+   own every entry you write under it:
+
+   ```bash
+   python3 "$SKILL_DIR/scripts/handoff_guard.py" name --root /absolute/repo/path
+   ```
+
+   It prints one name from a hundred mythological figures, never a name an
+   owner in this ledger already holds, and returns the same name every time
+   this session asks. Ask once, remember it, and use it verbatim as the owner
+   label. Do not invent a name, reuse another session's, or rename yourself
+   mid-task: the label is how a later agent tells your work from a peer's.
+   `--root` accepts any path inside the repository, so this does not wait on
+   the root resolution below. Claim it first because names are handed out first
+   come, first served: a session that audits, reports, or writes before asking
+   has been speaking anonymously, and the peer that reads its work later cannot
+   tell whose it is.
+2. Resolve the repository root without assuming the current directory is it.
+3. Read every applicable repository instruction file before mutating anything.
+4. Read the whole handoff ledger, newest entry to oldest. Do not stop at the
    first unchecked box. When another agent may write this tree, take that text
    and its version from one snapshot rather than two separate reads:
 
@@ -52,26 +69,15 @@ requires.
    and then asking separately for a version binds an audit of the old text to a
    newer version, and a `--content` write built from it deletes the peer entry
    that landed between the two reads.
-4. Run the bundled read-only doctor, using the directory that contains this
+5. Run the bundled read-only doctor, using the directory that contains this
    `SKILL.md` as `SKILL_DIR`:
 
    ```bash
    python3 "$SKILL_DIR/scripts/handoff_guard.py" doctor --root /absolute/repo/path
    ```
 
-5. Run `git status` and inspect relevant recent history. If collaboration or
+6. Run `git status` and inspect relevant recent history. If collaboration or
    agent-status tools exist, check which owners are actually active.
-6. Claim this session's name, and own every entry you write under it:
-
-   ```bash
-   python3 "$SKILL_DIR/scripts/handoff_guard.py" name --root /absolute/repo/path
-   ```
-
-   It prints one name from a hundred mythological figures, never a name an
-   owner in this ledger already holds, and returns the same name every time
-   this session asks. Ask once, remember it, and use it verbatim as the owner
-   label. Do not invent a name, reuse another session's, or rename yourself
-   mid-task: the label is how a later agent tells your work from a peer's.
 7. Before the first ledger edit, read `references/ledger-contract.md`.
 
 The doctor reports structural state only. Never present its raw pending or

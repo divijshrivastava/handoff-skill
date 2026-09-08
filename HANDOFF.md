@@ -4,16 +4,16 @@
 
 State:
 
-- [ ] In progress
-- [ ] Completed
+- [x] In progress
+- [x] Completed
 
 Steps:
 
-- [ ] Move name claiming to the first Step 0 item and renumber the rest (skills/handoff/SKILL.md).
-- [ ] Align the wording that describes when a session claims its name (README.md, skills/handoff/references/ledger-contract.md).
-- [ ] Run the repository checks, validate the ledger, and record the handoff.
+- [x] Move name claiming to the first Step 0 item and renumber the rest (skills/handoff/SKILL.md).
+- [x] Align the wording that describes when a session claims its name (README.md, skills/handoff/references/ledger-contract.md).
+- [x] Run the repository checks, validate the ledger, and record the handoff.
 
-Status: Pending. The user asked that a session claim its handoff name before anything else; today SKILL.md claims it at item 6 of 7 in Step 0, after the ledger read, the doctor, and git status, so any earlier report or write is unattributed. Not started: the two files this would edit, skills/handoff/SKILL.md and README.md, both carry uncommitted changes from Cernunnos, whose Codex session (pids 80950/80951, cwd this repository, started 00:24:41) was writing them at 00:31 and is still running; an earlier note in this entry named pid 34851, which is a different Codex session in the same directory. Awaiting the user's decision on editing those files while that owner is live. Next action: reorder Step 0 once that is resolved. This session claimed the name Daedalus before recording this entry.
+Status: Complete. Recorded pending at intake: the user asked that a session claim its handoff name before anything else, and SKILL.md claimed it at item 6 of 7 in Step 0, after the ledger read, the doctor and git status, so any earlier report or write was unattributed. This session followed the rule it was asked to write, claiming the name Daedalus before recording this entry. Work was blocked at first because the two files it edits, skills/handoff/SKILL.md and README.md, carried uncommitted changes from Cernunnos (Codex pids 80950/80951, started 00:24:41; an earlier note here named pid 34851, which is a different Codex session in the same directory). The user then directed the takeover of Cernunnos's bucket because it had reached its context limit, which lifted the block. Step 0 now claims the name as item 1 and renumbers the rest 2-7 with no other wording changed; the item records why it is first (names are first come, first served, and work before the claim is unattributed) and that --root accepts any path inside the repository, so it does not depend on the root resolution that now follows it. README.md and references/ledger-contract.md were aligned to say the claim happens first rather than merely at preflight. Verified: 200 helper tests and 5 repository tests pass, versions agree at 1.13.0, archives build, ledger validation and git diff --check pass. Note for the next session: this changes shipped SKILL.md prose, so installed copies will not see it until the version triple is bumped and released; no release was requested.
 
 ## 2026-09-09 - Move the viewer shortcut off Codex image paste (owner: Daedalus)
 

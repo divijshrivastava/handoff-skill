@@ -310,8 +310,9 @@ python3 skills/handoff/scripts/handoff_guard.py template \
   --step "Verify behavior and update the handoff."
 ```
 
-Every session in a repository with Handoff installed claims a name at
-preflight, drawn from a hundred mythological figures worldwide, so the ledger
+Every session in a repository with Handoff installed claims a name as the
+first thing it does, before it reads the ledger or reports anything, drawn from
+a hundred mythological figures worldwide, so the ledger
 and the dashboard read as named agents rather than a column of host session
 ids. Names are handed out first come, first served, cycling initials A through
 Z and wrapping to the next free A name after Z. A name is never one an owner
