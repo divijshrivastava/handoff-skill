@@ -1,4 +1,6 @@
-![Handoff](assets/handoff.svg)
+<p align="center">
+  <img src="assets/handoff.svg" alt="Handoff" width="192">
+</p>
 
 # Handoff
 

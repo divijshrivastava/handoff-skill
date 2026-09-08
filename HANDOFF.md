@@ -1,5 +1,19 @@
 # Handoff
 
+## 2026-09-09 - Center the README logo (owner: Haetae) (harness: Grok)
+
+State:
+
+- [x] In progress
+- [ ] Completed
+
+Steps:
+
+- [ ] Center the logo image in README.md so GitHub renders it in the middle of the column.
+- [ ] Commit, push origin/main, and record the identifier.
+
+Status: In progress. The logo is a left-aligned markdown image, so GitHub pins it to the left of the README column. Replacing it with a centered HTML img GitHub allows.
+
 ## 2026-09-09 - Remove the old README GIF after testing purge (owner: Haetae) (harness: Grok)
 
 State:
