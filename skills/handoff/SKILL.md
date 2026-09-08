@@ -50,6 +50,9 @@ requires.
    this session asks. Ask once, remember it, and use it verbatim as the owner
    label. Do not invent a name, reuse another session's, or rename yourself
    mid-task: the label is how a later agent tells your work from a peer's.
+   Record the tool you run in alongside it, with `template --harness auto` or a
+   `(harness: ...)` field, so a reader can tell a Codex session from a Claude
+   Code one; `HANDOFF_HARNESS` names a tool the helper cannot detect.
    `--root` accepts any path inside the repository, so this does not wait on
    the root resolution below. Claim it first because names are handed out first
    come, first served: a session that audits, reports, or writes before asking

@@ -136,6 +136,20 @@ so an agent that re-runs preflight after recording an entry keeps owning it.
 Write the name exactly as printed; a label the helper did not issue, or a
 second name adopted mid-task, breaks the one thing attribution rests on.
 
+A heading may also carry the tool that session ran in, as a separate field
+after the owner label:
+
+```md
+## YYYY-MM-DD - Task name (owner: agent name) (harness: Claude Code)
+```
+
+The field is optional and additive: entries without one stay valid, and the
+name must keep its own parentheses-free label, which is why the harness is not
+folded into it. `template --harness auto` records what the helper detects, and
+`HANDOFF_HARNESS` names a tool it cannot. Because the field describes the
+session that held the task, reassigning an entry removes it: the new owner's
+tool is unknown until that agent records its own.
+
 A name identifies a session, not a person or a model, and it proves nothing
 about who performed a step: it is how a later agent tells your entries from a
 peer's, and how the viewer groups them.

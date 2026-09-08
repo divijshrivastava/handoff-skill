@@ -22,6 +22,10 @@ from typing import Callable, Iterable
 
 HEADING_RE = re.compile(r"^##\s+(.+?)\s*$")
 OWNER_RE = re.compile(r"\((?P<label>owner|agent):\s*(?P<name>[^)]+)\)", re.IGNORECASE)
+# An optional second field: which tool the owning session ran in. Separate from
+# the owner label because a name must survive a round trip through the heading,
+# and OWNER_RE forbids the parentheses a combined label would need.
+HARNESS_RE = re.compile(r"\(harness:\s*(?P<harness>[^)]+)\)", re.IGNORECASE)
 BOX_RE = re.compile(r"^\s*-\s+\[([ xX])\]\s+(.+?)\s*$")
 FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 
@@ -52,6 +56,8 @@ class Task:
     has_status: bool
     state: str
     errors: list[str]
+    # Optional: the tool the owning session ran in, when its heading records one.
+    harness: str | None = None
 
 
 def outside_fence_lines(lines: list[str]) -> list[str]:
@@ -179,6 +185,7 @@ def parse_tasks(text: str) -> list[Task]:
             state = "invalid"
 
         owner_match = OWNER_RE.search(heading)
+        harness_match = HARNESS_RE.search(heading)
         tasks.append(
             Task(
                 heading=heading,
@@ -191,6 +198,7 @@ def parse_tasks(text: str) -> list[Task]:
                 has_status=has_status,
                 state=state,
                 errors=errors,
+                harness=harness_match.group("harness").strip() if harness_match else None,
             )
         )
     return tasks
@@ -307,10 +315,14 @@ def print_human(report: dict[str, object]) -> None:
     print(f"Note: {report['note']}")
 
 
-def make_template(task_date: str, title: str, owner: str, steps: list[str]) -> str:
+def make_template(task_date: str, title: str, owner: str, steps: list[str],
+                  harness: str | None = None) -> str:
     step_lines = "\n".join(f"- [ ] {step}" for step in steps)
+    # The harness field is optional and additive: an entry without one is still
+    # a valid entry, and every ledger written before this existed stays valid.
+    label = f" (harness: {harness.strip()})" if harness and harness.strip() else ""
     return (
-        f"## {task_date} - {title} (owner: {owner})\n\n"
+        f"## {task_date} - {title} (owner: {owner}){label}\n\n"
         "State:\n\n"
         "- [ ] In progress\n"
         "- [ ] Completed\n\n"
@@ -404,6 +416,12 @@ MYTHIC_NAMES = (
 # A claim older than this is treated as a finished session, so a machine that
 # has run hundreds of sessions does not run out of names.
 NAME_CLAIM_SECONDS = 12 * 3600
+# A separate, much shorter window for "did this session ask for its name just
+# now". The 12-hour figure above reserves a name so two sessions cannot share
+# one; it is deliberately generous and says nothing about whether a session is
+# still working. A record is refreshed only when a session claims its name, so
+# even this window reports a recent claim, never a running process.
+RECENT_CLAIM_SECONDS = 15 * 60
 # First-come-first-served naming cycles A through Z, then wraps to the next
 # free A name. The slot counter lives beside per-session claim records.
 LETTER_CYCLE = tuple(chr(ord("A") + index) for index in range(26))
@@ -483,6 +501,27 @@ def taken_names(text: str) -> set[str]:
     return {task.owner.strip() for task in parse_tasks(text) if task.owner}
 
 
+def detect_harness() -> str | None:
+    """Name the tool this session runs in, or None when nothing identifies it.
+
+    Environment first, because a harness that identifies itself is the only
+    evidence that does not guess. HANDOFF_HARNESS overrides everything, so a
+    wrapper or an unrecognised tool can still record itself accurately.
+    """
+    override = os.environ.get("HANDOFF_HARNESS", "").strip()
+    if override:
+        return override[:80]
+    if os.environ.get("CLAUDECODE") or os.environ.get("CLAUDE_CODE_SESSION_ID"):
+        return "Claude Code"
+    if os.environ.get("CODEX_HOME") or os.environ.get("CODEX_SANDBOX"):
+        return "Codex"
+    term_program = os.environ.get("TERM_PROGRAM", "").strip()
+    if term_program.lower() == "vscode":
+        # Cursor and VS Code both report vscode; the app name separates them.
+        return "Cursor" if os.environ.get("CURSOR_TRACE_ID") else "VS Code"
+    return None
+
+
 def name_cache_dir() -> Path:
     location = os.environ.get("HANDOFF_NAME_CACHE")
     if location:
@@ -505,10 +544,40 @@ def held_names(directory: Path, record: Path) -> set[str]:
         try:
             if entry.stat().st_mtime < fresh:
                 continue
-            names.add(entry.read_text(encoding="utf-8").strip())
+            # A record is "name" or "name\nharness"; only the first line names
+            # it, and an empty or truncated record names nothing.
+            lines = entry.read_text(encoding="utf-8").splitlines()
+            names.add(lines[0].strip() if lines else "")
         except OSError:
             continue
     return names - {""}
+
+
+def held_sessions(directory: Path | None = None,
+                  max_age: float = RECENT_CLAIM_SECONDS) -> dict[str, str]:
+    """Harness by name for sessions that claimed a name within `max_age`.
+
+    This reports a recent claim on this machine, not a running process: a record
+    is touched only when a session asks for its name. Callers must not present
+    it as proof that an agent is working.
+    """
+    directory = directory or name_cache_dir()
+    live: dict[str, str] = {}
+    fresh = time.time() - max_age
+    try:
+        entries = sorted(directory.iterdir())
+    except OSError:
+        return live
+    for entry in entries:
+        try:
+            if entry.stat().st_mtime < fresh:
+                continue
+            lines = entry.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            continue
+        if lines and lines[0].strip():
+            live[lines[0].strip()] = lines[1].strip() if len(lines) > 1 else ""
+    return live
 
 
 def free_name(order: list[str], reserved: set[str]) -> str:
@@ -537,17 +606,24 @@ def claim_name(seed: str, ledger: Path, taken: set[str]) -> tuple[str, bool]:
     directory = name_cache_dir()
     key = hashlib.sha256(("%s\0%s" % (seed, ledger)).encode("utf-8")).hexdigest()[:16]
     record = directory / key
+    harness = detect_harness()
     try:
-        remembered = record.read_text(encoding="utf-8").strip()
+        lines = record.read_text(encoding="utf-8").splitlines()
     except OSError:
-        remembered = ""
+        lines = []
+    remembered = lines[0].strip() if lines else ""
     if remembered:
+        # Refresh the record so a live session keeps its claim and its harness.
+        try:
+            record.write_text(remembered + "\n" + (harness or "") + "\n", encoding="utf-8")
+        except OSError:
+            pass
         return remembered, True
     reserved = set(taken) | held_names(directory, record)
     chosen = name_for_slot(allocate_fcfs_slot(directory), reserved)
     try:
         directory.mkdir(parents=True, exist_ok=True)
-        record.write_text(chosen + "\n", encoding="utf-8")
+        record.write_text(chosen + "\n" + (harness or "") + "\n", encoding="utf-8")
     except OSError:
         pass
     return chosen, False
@@ -564,8 +640,23 @@ def owner_label_error(owner: str) -> str | None:
     return None
 
 
+def strip_harness(heading: str) -> str:
+    """Drop a heading's harness field.
+
+    The field describes the session that held the task, so a reassignment must
+    not carry it to the new owner: unknown is honest until that agent records
+    its own.
+    """
+    match = HARNESS_RE.search(heading)
+    if match is None:
+        return heading
+    remainder = heading[: match.start()] + heading[match.end():]
+    return re.sub(r"\s{2,}", " ", remainder).strip()
+
+
 def replace_owner(heading: str, owner: str | None) -> str:
     """Swap one heading's recorded owner, keeping its own `owner`/`agent` wording."""
+    heading = strip_harness(heading)
     match = OWNER_RE.search(heading)
     if match is None:
         return f"{heading.rstrip()} (owner: {owner})" if owner else heading
@@ -901,14 +992,23 @@ def name_command(args: argparse.Namespace) -> int:
     name, remembered = claim_name(session_seed(args.seed), ledger, taken_names(text))
     if args.json:
         print(json.dumps({"name": name, "ledger": str(ledger),
-                          "remembered": remembered, "roster": len(MYTHIC_NAMES)}, indent=2))
+                          "remembered": remembered, "roster": len(MYTHIC_NAMES),
+                          "harness": detect_harness()}, indent=2))
     else:
         print(name)
     return 0
 
 
 def template_command(args: argparse.Namespace) -> int:
-    print(make_template(args.date, args.title, args.owner, args.step))
+    # --harness auto records what this session can detect; --harness "" opts out.
+    harness = args.harness if args.harness is not None else ""
+    if harness == "auto":
+        harness = detect_harness() or ""
+    problem = harness and owner_label_error(harness)
+    if problem:
+        print(f"handoff: harness label rejected ({problem})", file=sys.stderr)
+        return 1
+    print(make_template(args.date, args.title, args.owner, args.step, harness))
     return 0
 
 
@@ -941,6 +1041,10 @@ def build_parser() -> argparse.ArgumentParser:
     template.add_argument("--title", required=True)
     template.add_argument("--owner", required=True)
     template.add_argument("--step", action="append", required=True)
+    template.add_argument(
+        "--harness",
+        help="Record the tool this session runs in; 'auto' detects it",
+    )
     template.set_defaults(handler=template_command)
 
     read_parser = subparsers.add_parser("read")

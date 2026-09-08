@@ -1,5 +1,41 @@
 # Handoff
 
+## 2026-09-09 - Start handoff only on handoff:init or 'initialise the handoff' (owner: Enkidu) (harness: Kimi Code)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Add the /handoff:init command that initialises tracking (commands/init.md).
+- [x] Gate the skill on explicit activation in the description and a new Activation section (skills/handoff/SKILL.md).
+- [x] Point the Codex default prompt at the phrase (skills/handoff/agents/openai.yaml).
+- [x] Document the gate and the new command (README.md).
+- [x] Update eval scenarios for activation and add a gate scenario (skills/handoff/evals/evals.json).
+- [x] Run the repository checks and record the handoff.
+
+Status: Complete. Failure case: hosts auto-selected the skill whenever HANDOFF.md existed, so handoff preflight and ledger work ran on requests the user never asked to track. The skill's description no longer lists repository conditions as triggers and states that an existing HANDOFF.md, multiple agents, or unfinished-looking work are not triggers; a new Activation section confines handoff work to the /handoff:init command, the phrase "initialise the handoff" (which the Codex default_prompt in agents/openai.yaml now runs), or an explicit handoff request, and says init establishes tracking without starting a task. commands/init.md defines the command: claim the session name, preflight, read or create the ledger, report effective status, start nothing. README leads with init, shows the Codex phrase, and lists four commands. Evals 1-5 now state handoff is initialised; new eval 6 grades doing no handoff work without activation. Packaging unchanged: commands/ ships via the plugin, not RUNTIME_FILES. Verified: 222 helper tests pass (an earlier run flaked 219 with 2 failures and 1 error before these edits were reverted-independent; three consecutive full runs are green), 5 repository tests pass, evals.json parses, versions agree at 1.16.0, validate exits 0, package_skill.py builds, git diff --check is clean. Not verified: eval 6 was authored, not run against a model. Commit state: while this session worked, the concurrent Daedalus session committed f3443f4 ("Show each session's harness beside its name") and swept this task's uncommitted SKILL.md description and Activation section into that commit; the harness field in this entry's heading and the harness prose in SKILL.md Step 0 are Daedalus's work from that commit. Left uncommitted in the working tree: commands/init.md, openai.yaml, evals.json, this entry, and README.md, where Daedalus's own uncommitted edits (the Version line, the workflow and task-state sections, the activation-triggers table) are interleaved with this task's, so committing README.md would sweep an active owner's work. Next action: none for the gate itself; committing README.md waits on Daedalus, and a release would need the version triple bumped past 1.16.0.
+
+## 2026-09-09 - Show each session's harness beside its name (owner: Daedalus) (harness: Claude Code)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Detect the harness and record it in the heading and the session cache (skills/handoff/scripts/handoff_guard.py).
+- [x] Show the recorded harness and a live marker in the agents view, the plain report, and the bar (skills/handoff/scripts/handoff_tui.py). The bar was deliberately left unchanged and the marker reads "(recent)", not "live"; both are explained in the status.
+- [x] Drop the harness field when a task is reassigned, since it describes the owner.
+- [x] Cover both with regression tests (skills/handoff/tests/).
+- [x] Document the heading field and the new column (references/ledger-contract.md, references/progress-viewer.md, SKILL.md).
+- [x] Run the repository checks and record the handoff.
+
+Status: In progress. The viewer shows owner labels only, so a reader cannot tell which tool a session ran in; with Claude Code, Codex and Cursor sessions in this repository at once, the names alone do not say who is who. OWNER_RE forbids parentheses inside a name, so the harness cannot go in the label. At the user's direction the harness is recorded both ways: a separate optional heading field, `(harness: ...)`, written when an entry is created, so every reader and every past owner keeps it; and the per-session name-cache record, so the viewer can also mark which of those sessions is still running on this machine. Old entries simply lack the field. Complete. HARNESS_RE parses an optional `(harness: ...)` field beside the owner label, Task carries it, detect_harness reads HANDOFF_HARNESS then CLAUDECODE and CLAUDE_CODE_SESSION_ID, CODEX_HOME and CODEX_SANDBOX, and TERM_PROGRAM with CURSOR_TRACE_ID, template --harness auto writes it, and the session cache record now holds name and harness on separate lines so older single-line records still parse. replace_owner strips the field, because it describes the session that held the task. The viewer shows it in the agents view and the plain report, taken from the newest entry an owner recorded one in. This entry carries the field itself. Two deliberate deviations from the plan above. The bar was left unchanged, because its one line already carries owner names and doubling them would crowd a status line. And the marker reads (recent), not live: the liveness idea did not survive contact with the evidence, because NAME_CLAIM_SECONDS is a twelve-hour reservation that stops two sessions sharing a name, and it had marked Bakunawa live two hours after that session ended. A separate RECENT_CLAIM_SECONDS of fifteen minutes now backs a marker that claims only what a refreshed record proves, a recent claim on this machine, never a running process. The existing suite also caught a real defect introduced on the way: reading a record first line raised IndexError on an empty file where the previous strip() did not, now fixed and covered. Verified: 222 helper tests and 5 repository tests pass, versions agree at 1.16.0, ledger validation and git diff --check pass. Not verified: the curses agents view under a real terminal; its row rendering is covered by unit tests and the plain report was checked against this ledger. Next action: none, unless a release is wanted, which would need the triple bumped past 1.16.0.
+
 ## 2026-09-09 - Commit and release 1.16.0 (owner: Daedalus)
 
 State:

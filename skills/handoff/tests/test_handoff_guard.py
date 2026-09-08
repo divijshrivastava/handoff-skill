@@ -640,6 +640,79 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class HarnessFieldTests(unittest.TestCase):
+    """The optional `(harness: ...)` heading field beside the owner label."""
+
+    def heading(self, text):
+        body = ("# Handoff\n\n## " + text + "\n\nState:\n\n- [x] In progress\n"
+                "- [ ] Completed\n\nSteps:\n\n- [x] Done.\n\nStatus: Recorded.\n")
+        return handoff_guard.parse_tasks(body)[0]
+
+    def test_harness_is_parsed_beside_the_owner_and_stays_optional(self):
+        task = self.heading("2026-09-09 - T (owner: Daedalus) (harness: Claude Code)")
+        self.assertEqual((task.owner, task.harness), ("Daedalus", "Claude Code"))
+        plain = self.heading("2026-09-09 - T (owner: Daedalus)")
+        self.assertEqual((plain.owner, plain.harness), ("Daedalus", None))
+        self.assertEqual(plain.errors, [])
+
+    def test_owner_name_never_absorbs_the_harness_field(self):
+        task = self.heading("2026-09-09 - T (owner: Daedalus) (harness: Codex)")
+        self.assertEqual(task.owner, "Daedalus")
+
+    def test_reassigning_drops_the_previous_owners_harness(self):
+        heading = "2026-09-09 - T (owner: Cernunnos) (harness: Codex)"
+        self.assertEqual(handoff_guard.replace_owner(heading, "Daedalus"),
+                         "2026-09-09 - T (owner: Daedalus)")
+        # Removing the owner entirely also removes a harness that described it.
+        self.assertEqual(handoff_guard.replace_owner(heading, None),
+                         "2026-09-09 - T")
+
+    def test_template_records_a_harness_only_when_asked(self):
+        with_harness = handoff_guard.make_template("2026-09-09", "T", "Daedalus",
+                                                   ["step"], "Claude Code")
+        self.assertIn("(owner: Daedalus) (harness: Claude Code)", with_harness)
+        without = handoff_guard.make_template("2026-09-09", "T", "Daedalus", ["step"])
+        self.assertIn("(owner: Daedalus)\n", without)
+        self.assertNotIn("harness", without)
+        self.assertEqual(handoff_guard.parse_tasks(with_harness)[0].errors, [])
+
+    def test_detection_prefers_an_explicit_override(self):
+        with unittest.mock.patch.dict(os.environ, {"HANDOFF_HARNESS": "Weird Tool",
+                                     "CLAUDECODE": "1"}, clear=True):
+            self.assertEqual(handoff_guard.detect_harness(), "Weird Tool")
+        with unittest.mock.patch.dict(os.environ, {"CLAUDECODE": "1"}, clear=True):
+            self.assertEqual(handoff_guard.detect_harness(), "Claude Code")
+        with unittest.mock.patch.dict(os.environ, {"CODEX_HOME": "/x"}, clear=True):
+            self.assertEqual(handoff_guard.detect_harness(), "Codex")
+        with unittest.mock.patch.dict(os.environ, {"TERM_PROGRAM": "vscode",
+                                     "CURSOR_TRACE_ID": "z"}, clear=True):
+            self.assertEqual(handoff_guard.detect_harness(), "Cursor")
+        with unittest.mock.patch.dict(os.environ, {"TERM_PROGRAM": "iTerm.app"}, clear=True):
+            self.assertIsNone(handoff_guard.detect_harness())
+
+    def test_recent_sessions_report_their_harness_within_a_short_window(self):
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory)
+            (cache / "one").write_text("Daedalus\nClaude Code\n", encoding="utf-8")
+            # An older record format, from before the harness was recorded.
+            (cache / "two").write_text("Bakunawa\n", encoding="utf-8")
+            (cache / "empty").write_text("", encoding="utf-8")
+            self.assertEqual(handoff_guard.held_sessions(cache),
+                             {"Daedalus": "Claude Code", "Bakunawa": ""})
+            # The name reservation window is far longer than the recency window;
+            # a claim old enough to have stopped must not be reported.
+            old = time.time() - handoff_guard.RECENT_CLAIM_SECONDS - 60
+            os.utime(cache / "one", (old, old))
+            self.assertNotIn("Daedalus", handoff_guard.held_sessions(cache))
+            self.assertIn("Daedalus", handoff_guard.held_names(cache, cache / "none"))
+
+    def test_an_empty_record_does_not_break_name_claiming(self):
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory)
+            (cache / "empty").write_text("", encoding="utf-8")
+            self.assertEqual(handoff_guard.held_names(cache, cache / "none"), set())
+
+
 class SessionNameTests(unittest.TestCase):
     def setUp(self) -> None:
         self.directory = tempfile.TemporaryDirectory()

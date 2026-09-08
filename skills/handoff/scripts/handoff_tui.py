@@ -18,6 +18,7 @@ from handoff_guard import (
     OWNER_RE,
     Task,
     find_repo_root,
+    held_sessions,
     ledger_version,
     outside_fence_lines,
     owner_label_error,
@@ -87,6 +88,34 @@ def owner_counts(tasks: list[Task]) -> list[tuple[str, Counts]]:
     for task in tasks:
         groups.setdefault(owner_name(task), []).append(task)
     return [(owner, count_tasks(groups[owner])) for owner in groups]
+
+
+def owner_harnesses(tasks: list[Task]) -> dict[str, str]:
+    """The harness each owner recorded, from their newest entry that names one.
+
+    Entries written before the field existed simply have none, so an owner
+    shows a harness only where the ledger actually records it.
+    """
+    found: dict[str, str] = {}
+    for task in tasks:
+        owner = owner_name(task)
+        if owner not in found and task.harness:
+            found[owner] = task.harness
+    return found
+
+
+def harness_label(owner: str, harnesses: dict[str, str], recent: dict[str, str]) -> str:
+    """What to show beside a name: the recorded harness, and a recent claim.
+
+    A recent claim can name a harness the ledger does not carry yet, for a
+    session that has claimed a name but not written an entry. It marks a claim
+    made minutes ago on this machine, which is not proof the agent is running,
+    so it is labelled "recent" rather than "live".
+    """
+    recorded = harnesses.get(owner, "")
+    if owner in recent:
+        return (recorded or recent[owner] or "unknown") + " (recent)"
+    return recorded
 
 
 def task_state(task: Task) -> str:
@@ -236,9 +265,13 @@ def status_line_root(payload: str) -> Path | None:
     return Path(location) if isinstance(location, str) and location else None
 
 
-def owner_row(owner: str, counts: Counts, width: int) -> str:
-    name_width = max(12, width - 52)
-    return (f"{fit(owner, name_width, pad=True)}  "
+def owner_row(owner: str, counts: Counts, width: int, harness: str = "") -> str:
+    # The harness borrows from the name column rather than widening the row, so
+    # narrow terminals keep every count visible.
+    harness_width = 0 if not harness else min(20, max(8, width - 72))
+    name_width = max(12, width - 52 - (harness_width + 2 if harness_width else 0))
+    shown = f"{fit(harness, harness_width, pad=True)}  " if harness_width else ""
+    return (f"{fit(owner, name_width, pad=True)}  {shown}"
             f"{counts.completed:3}/{counts.tracked:<3}  "
             f"{counts.in_progress:3}  {counts.pending:3}  "
             f"{progress(counts.checked, counts.steps, 8)}"
@@ -253,13 +286,19 @@ def plain_report(watcher: Watcher) -> str:
         if watcher.snapshot:
             lines.append("Showing the last readable snapshot; data is stale.")
     lines.extend(summary_lines(watcher.snapshot))
-    lines.extend(["", "BY RECORDED OWNER (newest first) | done/tasks, in progress, pending, checked steps",
-                  "! = invalid; ? = legacy (excluded from totals)"])
+    lines.extend(["", "BY RECORDED OWNER (newest first) | harness, done/tasks, in progress, "
+                  "pending, checked steps",
+                  "! = invalid; ? = legacy (excluded from totals); (recent) = claimed its "
+                  "name here in the last 15 minutes"])
     if watcher.snapshot:
+        harnesses = owner_harnesses(watcher.snapshot.tasks)
+        live = held_sessions()
         for owner, counts in owner_counts(watcher.snapshot.tasks):
+            harness = harness_label(owner, harnesses, live)
             # Avoid truncating ownership in redirected reports.
-            width = max(110, sum(cell_width(c) for c in clean_text(owner)) + 62)
-            lines.append(owner_row(owner, counts, width))
+            width = max(110, sum(cell_width(c) for c in clean_text(owner))
+                        + 62 + (len(harness) + 2 if harness else 0))
+            lines.append(owner_row(owner, counts, width, harness))
         lines.extend(["", "TASKS (ledger order)"])
         for task, status in zip(watcher.snapshot.tasks, watcher.snapshot.statuses):
             checked = sum(done for done, _ in task.steps)
@@ -581,7 +620,11 @@ class Dashboard:
                 write(content_start + i, " " + line)
         else:
             if self.view == "agents":
-                write(6, f" {fit('RECORDED OWNER (newest first)', max(12, width - 55), pad=True)}"
+                harnesses = owner_harnesses(self.tasks())
+                recent = held_sessions()
+                shown = any(harness_label(owner, harnesses, recent) for owner, _ in rows)
+                heading = "RECORDED OWNER (newest first)" + ("  HARNESS" if shown else "")
+                write(6, f" {fit(heading, max(12, width - 55), pad=True)}"
                       "  DONE/TASK  WIP WAIT  CHECKED STEPS  !bad ?old", curses.A_DIM)
             else:
                 write(6, " STATE          STEPS    TASK / OWNER (ledger order)", curses.A_DIM)
@@ -592,7 +635,8 @@ class Dashboard:
                 selected = self.offset + i == self.selected
                 held = landed = False
                 if self.view == "agents":
-                    line = owner_row(label, value, width - 3)
+                    line = owner_row(label, value, width - 3,
+                                     harness_label(label, harnesses, recent))
                 else:
                     held = self.cut is not None and self.cut.heading == value.heading
                     landed = self.moved is not None and self.moved[0] == value.heading

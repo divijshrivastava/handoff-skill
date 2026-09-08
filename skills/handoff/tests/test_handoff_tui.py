@@ -108,6 +108,35 @@ class ProgressTests(unittest.TestCase):
         owners = [owner for owner, _ in tui.owner_counts(tui.parse_snapshot(text).tasks)]
         self.assertEqual(owners, ["Zeta", "Alpha"])
 
+    def test_harness_comes_from_the_owners_newest_entry_that_records_one(self):
+        text = ("## New (owner: Zeta) (harness: Claude Code)\n\nState:\n- [x] In progress\n"
+                "- [ ] Completed\n\nSteps:\n- [x] a\n\nStatus: s.\n\n"
+                + entry("Older", owner="Zeta")
+                + entry("Other", owner="Ann"))
+        harnesses = tui.owner_harnesses(tui.parse_snapshot(text).tasks)
+        self.assertEqual(harnesses, {"Zeta": "Claude Code"})
+
+    def test_a_recent_claim_is_labelled_recent_and_never_live(self):
+        harnesses = {"Zeta": "Claude Code"}
+        self.assertEqual(tui.harness_label("Zeta", harnesses, {}), "Claude Code")
+        label = tui.harness_label("Zeta", harnesses, {"Zeta": "Claude Code"})
+        self.assertEqual(label, "Claude Code (recent)")
+        self.assertNotIn("live", label)
+        # A session that claimed a name but has written no entry yet.
+        self.assertEqual(tui.harness_label("New", {}, {"New": "Codex"}), "Codex (recent)")
+        self.assertEqual(tui.harness_label("New", {}, {"New": ""}), "unknown (recent)")
+
+    def test_owner_row_keeps_every_count_visible_when_a_harness_is_shown(self):
+        counts = tui.Counts(tracked=2, completed=1, in_progress=1, checked=3, steps=4)
+        plain = tui.owner_row("Zeta", counts, 110)
+        with_harness = tui.owner_row("Zeta", counts, 110, "Claude Code")
+        self.assertIn("Claude Code", with_harness)
+        self.assertNotIn("Claude Code", plain)
+        for line in (plain, with_harness):
+            self.assertIn("1/2", line)
+            self.assertIn("3/4", line)
+        self.assertEqual(len(plain), len(with_harness))
+
     def test_terminal_text_is_sanitized_and_wide_names_fit(self):
         self.assertNotIn("\x1b", tui.clean_text("Agent\x1b[2J\x00"))
         self.assertNotIn("\u202e", tui.clean_text("Agent\u202e"))
