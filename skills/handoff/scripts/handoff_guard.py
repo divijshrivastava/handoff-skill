@@ -350,6 +350,167 @@ def insert_entry(text: str, entry: str) -> str:
     return "\n\n".join(part for part in parts if part) + "\n"
 
 
+# One hundred figures from mythologies and folklore worldwide, grouped by
+# tradition. A session claims one as its owner label so a ledger reads as named
+# agents rather than a column of host session identifiers. Every name is a
+# single ASCII word: an owner label travels through headings, tmux status
+# formats, and clipped viewer columns, and a name that survives all three
+# unchanged is worth more here than an exact transliteration.
+MYTHIC_NAMES = (
+    # Greek and Roman
+    "Atalanta", "Chiron", "Daedalus", "Hyperion", "Nemesis", "Orpheus",
+    "Prometheus", "Janus",
+    # Norse
+    "Bragi", "Fenrir", "Heimdall", "Idunn", "Mimir", "Ratatoskr", "Sleipnir",
+    "Yggdrasil",
+    # Celtic
+    "Brigid", "Cernunnos", "Dagda", "Epona", "Lugh", "Rhiannon",
+    # Finnish and Baltic
+    "Ilmarinen", "Louhi", "Vainamoinen", "Perkunas",
+    # Slavic
+    "Perun", "Veles", "Zorya", "Rusalka", "Koschei",
+    # Basque
+    "Sugaar", "Basajaun",
+    # Egyptian
+    "Anubis", "Bastet", "Nephthys", "Sekhmet", "Sobek", "Thoth",
+    # Mesopotamian
+    "Anzu", "Enkidu", "Gilgamesh", "Inanna", "Ninurta", "Lamassu",
+    # Persian and Armenian
+    "Anahita", "Rostam", "Simurgh", "Zahhak", "Vahagn",
+    # South Asian
+    "Garuda", "Airavata", "Jatayu", "Vayu", "Kubera",
+    # Chinese
+    "Nuwa", "Pangu", "Houyi", "Taotie", "Qilin",
+    # Japanese
+    "Amaterasu", "Susanoo", "Tsukuyomi", "Inari", "Kitsune", "Tengu",
+    # Korean
+    "Dangun", "Haetae", "Ungnyeo",
+    # Southeast Asian
+    "Bathala", "Bakunawa", "Rangda", "Barong",
+    # Pacific and Maori
+    "Maui", "Pele", "Kanaloa", "Hina", "Tangaroa", "Rangi",
+    # Arctic
+    "Sedna", "Nanook",
+    # Mesoamerican
+    "Quetzalcoatl", "Tlaloc", "Xolotl", "Coatlicue", "Tezcatlipoca",
+    "Kukulkan", "Ixchel",
+    # Andean and Amazonian
+    "Viracocha", "Inti", "Mamaquilla", "Curupira", "Iara",
+    # African
+    "Anansi", "Sundiata", "Nyaminyami", "Inkanyamba", "Sasabonsam",
+    "Tokoloshe", "Simbi",
+)
+
+# A claim older than this is treated as a finished session, so a machine that
+# has run hundreds of sessions does not run out of names.
+NAME_CLAIM_SECONDS = 12 * 3600
+
+
+def session_seed(explicit: str | None = None) -> str:
+    """Identify this session, so repeated calls agree on one name.
+
+    Prefers an identifier the host already assigns. `HANDOFF_SESSION` covers a
+    host that exposes none, and a random seed keeps unidentified sessions apart
+    rather than making them all claim the same first name.
+    """
+    for value in (explicit, os.environ.get("HANDOFF_SESSION"),
+                  os.environ.get("CLAUDE_CODE_SESSION_ID"),
+                  os.environ.get("TERM_SESSION_ID")):
+        if value and value.strip():
+            return value.strip()
+    return os.urandom(16).hex()
+
+
+def name_order(seed: str) -> list[str]:
+    """Order the whole roster for one seed.
+
+    Hashing rather than `random.shuffle` keeps the order reproducible across
+    Python versions, so a session that asks twice is told the same name.
+    """
+    return sorted(
+        MYTHIC_NAMES,
+        key=lambda name: hashlib.sha256(("%s\0%s" % (seed, name)).encode("utf-8")).hexdigest(),
+    )
+
+
+def taken_names(text: str) -> set[str]:
+    """Owner labels the ledger already carries, at any completion state.
+
+    Completed entries count: reusing a retired owner's name would make the
+    ledger's own history ambiguous about who did which work.
+    """
+    return {task.owner.strip() for task in parse_tasks(text) if task.owner}
+
+
+def name_cache_dir() -> Path:
+    location = os.environ.get("HANDOFF_NAME_CACHE")
+    if location:
+        return Path(location).expanduser()
+    user = getattr(os, "getuid", lambda: 0)()
+    return Path(tempfile.gettempdir()) / ("handoff-names-%s" % user)
+
+
+def held_names(directory: Path, record: Path) -> set[str]:
+    """Names live sessions have claimed but not yet written into a ledger."""
+    names: set[str] = set()
+    try:
+        entries = sorted(directory.iterdir())
+    except OSError:
+        return names
+    fresh = time.time() - NAME_CLAIM_SECONDS
+    for entry in entries:
+        if entry == record:
+            continue
+        try:
+            if entry.stat().st_mtime < fresh:
+                continue
+            names.add(entry.read_text(encoding="utf-8").strip())
+        except OSError:
+            continue
+    return names - {""}
+
+
+def free_name(order: list[str], reserved: set[str]) -> str:
+    """The first unused name, then numbered repeats once the roster runs out."""
+    for name in order:
+        if name not in reserved:
+            return name
+    suffix = 2
+    while True:
+        for name in order:
+            candidate = "%s %d" % (name, suffix)
+            if candidate not in reserved:
+                return candidate
+        suffix += 1
+
+
+def claim_name(seed: str, ledger: Path, taken: set[str]) -> tuple[str, bool]:
+    """Name this session for this ledger, and remember it for later calls.
+
+    A named session keeps its name even once its own entry makes that name
+    taken; without the record, an agent re-running preflight after writing an
+    entry would be handed a second name and its own work would read as someone
+    else's. The record is a convenience: if the cache cannot be read or
+    written, naming still works and only stability across calls is lost.
+    """
+    directory = name_cache_dir()
+    key = hashlib.sha256(("%s\0%s" % (seed, ledger)).encode("utf-8")).hexdigest()[:16]
+    record = directory / key
+    try:
+        remembered = record.read_text(encoding="utf-8").strip()
+    except OSError:
+        remembered = ""
+    if remembered:
+        return remembered, True
+    chosen = free_name(name_order(seed), set(taken) | held_names(directory, record))
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+        record.write_text(chosen + "\n", encoding="utf-8")
+    except OSError:
+        pass
+    return chosen, False
+
+
 def owner_label_error(owner: str) -> str | None:
     """Reject an owner name a heading cannot carry back out unchanged."""
     if not owner.strip():
@@ -685,6 +846,25 @@ def report_command(args: argparse.Namespace) -> int:
     return 1 if report["errors"] else 0
 
 
+def name_command(args: argparse.Namespace) -> int:
+    """Print the name this session owns work under in this repository."""
+    repo = find_repo_root(Path(args.root))
+    ledger = repo / "HANDOFF.md"
+    try:
+        text = ledger.read_text(encoding="utf-8")
+    except OSError:
+        # A repository with no ledger yet still names the session that is about
+        # to create one.
+        text = ""
+    name, remembered = claim_name(session_seed(args.seed), ledger, taken_names(text))
+    if args.json:
+        print(json.dumps({"name": name, "ledger": str(ledger),
+                          "remembered": remembered, "roster": len(MYTHIC_NAMES)}, indent=2))
+    else:
+        print(name)
+    return 0
+
+
 def template_command(args: argparse.Namespace) -> int:
     print(make_template(args.date, args.title, args.owner, args.step))
     return 0
@@ -693,8 +873,8 @@ def template_command(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Inspect HANDOFF.md structure, print a canonical task entry, or apply "
-            "a compare-and-swap ledger write."
+            "Inspect HANDOFF.md structure, name this session, print a canonical task "
+            "entry, or apply a compare-and-swap ledger write."
         )
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -704,6 +884,15 @@ def build_parser() -> argparse.ArgumentParser:
         command.add_argument("--root", default=".", help="Repository path or child path")
         command.add_argument("--json", action="store_true", help="Emit JSON")
         command.set_defaults(handler=report_command)
+
+    name_parser = subparsers.add_parser("name")
+    name_parser.add_argument("--root", default=".", help="Repository path or child path")
+    name_parser.add_argument(
+        "--seed",
+        help="Identify the session explicitly instead of using the host's session id",
+    )
+    name_parser.add_argument("--json", action="store_true", help="Emit JSON")
+    name_parser.set_defaults(handler=name_command)
 
     template = subparsers.add_parser("template")
     template.add_argument("--date", default=date.today().isoformat())

@@ -1,5 +1,43 @@
 # Handoff
 
+## 2026-09-08 - Commit and release 1.12.0 (owner: Zahhak)
+
+State:
+
+- [x] In progress
+- [ ] Completed
+
+Steps:
+
+- [ ] Rebase or merge origin/main into bar-viewer-key-and-session-names and bump the version triple to 1.12.0.
+- [ ] Push the branch, open a pull request, and merge after CI passes.
+- [ ] Tag v1.12.0 and confirm the published release.
+- [ ] Run the repository checks and record the handoff.
+
+Status: In progress. Started at the user's direction after the audit found the branch unmerged; current step is merging origin/main into bar-viewer-key-and-session-names and bumping the version triple to 1.12.0.
+
+## 2026-09-08 - Make the viewer key work without the tmux wrapper (owner: Zahhak)
+
+State:
+
+- [ ] In progress
+- [ ] Completed
+
+Steps:
+
+- [ ] Add a /handoff:view slash command that opens the viewer with no setup and no wrapper (commands/view.md).
+- [ ] Replace --install-viewer-key with an installer that writes a binding that actually fires, per emulator (skills/handoff/scripts/handoff_keys.py).
+- [ ] Cover the installer and the refusals with regression tests.
+- [ ] Document the shortcut honestly and run the repository checks.
+
+Status: Pending. No work has started.
+Reassigned 2026-09-08: moved from Sobek to Chiron in the handoff viewer at the
+user's direction. No state or step boxes were changed, and the entry keeps its
+place in ledger order.
+Reassigned 2026-09-08: moved from Chiron to Zahhak in the handoff viewer at the
+user's direction. No state or step boxes were changed, and the entry keeps its
+place in ledger order.
+
 ## 2026-09-08 - Correct the README scope claim that 1.11.0 falsified (owner: Claude session handoff-skill-b5)
 
 State:
@@ -13,6 +51,178 @@ Steps:
 - [x] Run repository checks and record verification.
 
 Status: Complete. The user asked to update the README. Audited it before writing anything, and no feature was missing: `--codex` is documented under `Codex with the bar`, and the viewer's `x`/`p` handoff and `--read-only` under the dashboard section. The real defect was a contradiction 1.11.0 introduced and 1.11.1 did not fix. `## Scope` claimed Handoff "does not authorize an agent to take over another agent's work", which was true before that release and is now contradicted by the same file's own dashboard section describing a bucket takeover, and by `SKILL.md`, which ships `Authorized takeover of another agent's bucket`. Narrowed rather than deleted, because the constraint did not disappear, only its scope: an agent still may not take over on its own initiative, and a takeover needs the user's explicit direction, a stopped prior owner, preserved uncommitted work, and a recorded transfer. Worked on a branch in a separate worktree rather than the shared checkout: while this edit was in progress a live Codex session moved that checkout onto `viewer-move-feedback` and committed a 1.11.1 release, so the first attempt landed on that branch by accident; both changes were saved, reverted there so that session's tree was left exactly as it was, and reapplied from `origin/main`. That session's work has since reached main as `d815782` and `cc6f51d`, and this branch was rebuilt on top of it rather than hand-resolving the ledger conflict the two entries created. Verified after the rebuild: 5 repository tests pass, `validate --root .` exits 0, `git diff --check` is clean, and versions agree at 1.11.1. The helper suite was not rerun, because no helper code changed.
+
+## 2026-09-08 - Open the viewer with Ctrl-G from any agent session (owner: Chiron)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Generalise the Codex bar into an any-agent wrapper so claude, codex, kimi and grok all run under it (skills/handoff/scripts/handoff_codex.py, handoff_tui.py).
+- [x] Install a host keybinding override so Ctrl-G stops reaching the host's own action (~/.claude/keybindings.json).
+- [x] Have the skill ensure the override at preflight (skills/handoff/SKILL.md, references/harness-setup.md).
+- [x] Cover the wrapper, the key and the override with regression tests.
+- [x] Document the shortcut and run the repository checks.
+
+Status: Complete. The user pressed `Ctrl-G` in Claude Code and Cursor opened,
+and asked for one key that opens the viewer from Claude, Codex, Kimi or Grok.
+The cause was not a defect: `Ctrl-G` is bound in the private tmux session
+`--codex` creates, so it existed only around Codex, and in Claude Code
+`ctrl+g` is its own `chat:externalEditor`, which launches whatever editor is on
+PATH. No harness can fix this from its own configuration - Claude Code's
+`keybindings.json` accepts only its fixed `chat:`/`app:` actions, with no
+run-a-command action - so the fix is the tmux root table, which resolves the
+key before the wrapped agent sees it, plus releasing the key in the host for
+sessions that are not wrapped.
+
+`Ctrl-G` was kept after checking the alternatives rather than by default: it is
+ASCII BEL, so unlike `Ctrl-H`/`Ctrl-I`/`Ctrl-M` it aliases no terminal key,
+unlike `Ctrl-C`/`Ctrl-Z`/`Ctrl-\` carries no signal, unlike `Ctrl-S`/`Ctrl-Q`
+is not flow control, and Codex does not use it. Function keys lose to macOS
+media keys by default and `Alt` keys to iTerm2's Option handling, so both were
+rejected; `Ctrl-Y` and `Ctrl-K` are free in Claude Code and Codex and remain
+available through `$HANDOFF_VIEWER_KEY`. Kimi and Grok string-match nearly the
+whole control alphabet, which is a bundled keymap table rather than evidence of
+real bindings, so neither was used as a constraint - the wrapper shadows the key
+from them regardless.
+
+Changes: `run_codex` became `run_agent(..., agent=)` and `CodexSession` became
+`AgentSession`, since nothing in the footer, the binding or the exit shim was
+ever Codex-specific; `run_codex` remains as a wrapper so `--codex` keeps
+working, and the diagnostics now name the agent the user asked for. `--with
+<agent>` is the new flag and `--codex` is `--with codex`. `--install-viewer-key`
+writes `~/.claude/keybindings.json`, releasing `ctrl+g` and moving
+`chat:externalEditor` to `ctrl+e`, the alternative Claude Code's own docs use;
+it merges rather than replaces, is idempotent, and refuses to rewrite a file
+that does not parse, because the user's own bindings live there. Only control
+keys get a host spelling: `M-` and function keys have host names too, but the
+harnesses disagree about them and a wrong guess writes a binding that silently
+never fires.
+
+The module keeps the filename `handoff_codex.py` deliberately. Renaming a
+shipped runtime file means moving `RUNTIME_FILES`, `tests/test_package.py`, the
+import and the test module together, which is churn this change does not need;
+the symbols inside it now carry the general names.
+
+Verified: 179 helper, viewer, launcher, bar and codex tests and 5 repository
+tests pass, `validate --root .` exits 0, versions agree at 1.11.1, archives
+build, and `git diff --check` is clean. End to end on tmux 3.6a through a sized
+pty, a stand-in CLI named `myagent` - deliberately not `codex` - ran under
+`--with`, its banner reached the pane, the bar showed `0/1 tasks` and the
+`^G open` hint, a real `Ctrl-G` byte opened the viewer, `q` closed it, and the
+agent was still running afterwards. `--install-viewer-key` was run against the
+user's real `~/.claude/keybindings.json`, which did not previously exist, and
+re-running it reported the key already released. Not verified: no live Claude,
+Kimi or Grok CLI was driven under `--with`, only a stand-in child, and the
+override was not exercised against a pre-existing hand-written keybindings file
+outside the tests. Not done: the version triple is deliberately left at 1.11.1
+for whoever cuts the next release, so this reaches no installed copy until
+then.
+
+## 2026-09-08 - Give every session a mythological name (owner: Claude session 01N7DGVQ)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Add a read-only `name` subcommand to `handoff_guard.py` carrying 100 names from mythologies worldwide.
+- [x] Return a name no ledger owner already holds, stable for a given session seed.
+- [x] Instruct the skill to claim a name at preflight and use it as its owner label (`SKILL.md`, `references/ledger-contract.md`).
+- [x] Cover naming with tests, document it, and run the repository checks.
+
+Status: Complete. Sessions previously invented their own owner labels, which is
+why this ledger carries `Codex`, `Codex TUI session`, and six different `Claude
+session <id>` spellings; the user asked that a repository with the skill
+installed name every session instead. `handoff_guard.py name` is a new
+read-only subcommand carrying 100 single-word ASCII names from nineteen
+traditions worldwide, from Greek and Norse through Mesopotamian, Japanese,
+Pacific, Mesoamerican, Andean and African. ASCII and single-word is a
+constraint, not a preference: the label passes through headings, tmux status
+formats, and clipped viewer columns. The roster is ordered per session by
+`sha256(seed + name)` rather than `random.shuffle`, so the order does not
+depend on a random module's internals staying stable between Python versions,
+and it skips every name an owner in that ledger already holds - completed
+entries included, since reusing a retired owner's name makes the history
+ambiguous. The assignment is remembered in a cache file keyed by seed and
+ledger under `$TMPDIR/handoff-names-<uid>` (`$HANDOFF_NAME_CACHE` moves it):
+without it, an agent re-running preflight after recording its own entry would
+be handed a second name and its own work would read as a peer's. Claims
+younger than 12 hours also reserve their names, so two sessions that have not
+written entries yet cannot pick the same one, while older claims stop
+reserving so a busy machine does not exhaust the roster; an unwritable cache
+costs stability across calls, not the name. The seed is `--seed`, then
+`$HANDOFF_SESSION`, `$CLAUDE_CODE_SESSION_ID`, `$TERM_SESSION_ID`, then random,
+so an unidentified session is distinct rather than sharing everyone's first
+name. Wiring: `SKILL.md` Step 0 gained a numbered claim step and its template
+example now takes the owner from the command; `references/ledger-contract.md`
+carries the rule agents read before writing; the README documents the command
+and its example ledger now shows a named owner; `evals/evals.json` gained
+scenario 5 for the behaviour - a scenario only, not a run or a result. No new
+runtime file, so the packaging allowlist is unchanged. Verified: 171 helper,
+viewer, launcher, bar and codex tests and 5 repository tests pass on Python
+3.9.10 and 3.12.7, `validate --root .` exits 0, versions agree at 1.11.1,
+archives build, and `git diff --check` is clean. End to end in a scratch
+repository, two sessions were named `Jatayu` and `Thoth`, the first kept
+`Jatayu` when it asked again after writing its entry, and the dashboard
+grouped both. One defect was found in my own tests and fixed rather than
+retried: the in-process cases read `$HANDOFF_NAME_CACHE` from the real
+environment and wrote six claim records into the developer's `$TMPDIR`; the
+suite now isolates the variable in `setUp`, and those files were removed. Not
+done: this session's own two entries keep the `Claude session 01N7DGVQ` label
+they were opened under, because renaming mid-task is precisely what the new
+contract forbids - the next session in this repository is the first to be
+named. Committed in `1f84573` on
+`bar-viewer-key-and-session-names`, which is not merged into `main`; the
+version triple is deliberately left at 1.11.1 for whoever cuts the next
+release, so neither this nor the Ctrl-G shortcut reaches an installed copy
+until then.
+
+## 2026-09-08 - Open the viewer from the Codex bar with Ctrl-G (owner: Claude session 01N7DGVQ)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Bind a configurable root-table key in the Codex tmux session that opens the live viewer in a popup (`skills/handoff/scripts/handoff_codex.py`).
+- [x] Advertise the shortcut in the bottom bar and carry `--read-only` into the popup.
+- [x] Cover the binding, its configuration, and the hint with regression tests.
+- [x] Document the shortcut and run the repository checks.
+
+Status: Complete. The bar reported progress but could not change it, so the
+user asked for a key that opens the viewer in the session. `Ctrl-G` now opens
+the live view in a tmux popup over Codex, with the same `x`/`p` move keys, and
+`q` returns to the Codex prompt with Codex still running underneath. The
+binding is a root-table one, which is what the private session's disabled
+prefix requires, and it is the only key Codex no longer receives;
+`$HANDOFF_VIEWER_KEY` moves it to another tmux key name or takes it back with
+`none`. The popup opens the ledger the bar is reporting, at the same
+`--interval`, and `--read-only` now reaches Codex mode so a read-only bar opens
+a viewer that cannot write. `CodexSession.call` was split over a new `run` so
+the binding can be attempted without `check=True` killing the session:
+`bind_viewer` returns whether tmux accepted it, and a tmux that rejects the
+command or the key name leaves Codex running and drops the `^G open` hint
+instead of advertising a dead key. The hint is appended after `clean_text`, so
+a ledger owner label cannot forge one. Verified: 159 helper, viewer, launcher,
+bar and codex tests and 5 repository tests pass, `validate --root .` exits 0,
+versions agree at 1.11.1, and `git diff --check` is clean. Beyond the unit and
+real-tmux tests, the keypress path itself was driven end to end on tmux 3.6a:
+a client attached on a pty, `Ctrl-G` written to it, the viewer confirmed
+running by pid from a popup, `q` confirmed to end that pid, and the Codex pane
+confirmed alive afterwards (`pane_dead` 0). Not verified: no live Codex CLI
+session was driven, only a stand-in child, and the popup was not exercised on
+tmux 3.2 itself. Committed in `1f84573` on
+`bar-viewer-key-and-session-names`, which is not merged into `main`. Not done:
+the version triple is deliberately left at 1.11.1 for whoever cuts the next
+release, so this reaches no installed copy until then.
 
 ## 2026-09-08 - Commit and release 1.11.1 (owner: Claude session 01Gjkh6S)
 

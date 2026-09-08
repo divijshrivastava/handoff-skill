@@ -79,7 +79,7 @@ Skill auto-selection depends on your host. Installing Handoff does not install h
 Handoff stores project work in a root-level `HANDOFF.md`. Each task records ownership, state, completed steps, evidence, and the next action.
 
 ```md
-## 2026-09-07 — Add search (owner: agent-a)
+## 2026-09-07 — Add search (owner: Amaterasu)
 
 State:
 - [x] In progress
@@ -160,8 +160,40 @@ options such as `--root`, `--file`, `--interval 2`, and `--no-color` before
 `--codex`; everything after it goes to Codex. The bar refreshes while idle and
 shows recorded task and step counts plus open owners.
 
+Press `Ctrl-G` to open the live viewer in a popup over Codex, hand a task to
+another agent with `x` and `p`, then `q` to drop back to the Codex prompt. The
+row ends with `^G open` while that key is bound; `$HANDOFF_VIEWER_KEY` moves it
+to another tmux key or turns it off with `none`, and `--read-only` opens a
+viewer that cannot write.
+
 Codex's native footer exposes built-in items; this mode supplies the Handoff
 row through a private tmux session. Exit Codex normally to return to your shell.
+
+### Any agent with the bar
+
+Nothing in that wrapper is Codex-specific. `--with` runs the same bar and the
+same `Ctrl-G` viewer around any agent CLI on PATH, so one key opens the ledger
+whichever agent you are in:
+
+```bash
+handoff-tui --with claude
+handoff-tui --root /path/to/your/repo --with kimi
+handoff-tui --root /path/to/your/repo --with grok -p "what is left?"
+```
+
+`--codex` is simply `--with codex`. No harness can bind a key to an arbitrary
+command of its own - Claude Code's `keybindings.json` accepts only its own fixed
+actions - so the key is bound in tmux's root table, which resolves it before the
+agent sees it. In an *unwrapped* Claude Code session `ctrl+g` is still its own
+`chat:externalEditor`, which opens an editor; run
+
+```bash
+handoff-tui --install-viewer-key
+```
+
+once to release it there and move that action to `ctrl+e`. It merges into
+`~/.claude/keybindings.json` without disturbing your other bindings. See
+[the key and its host override](skills/handoff/references/harness-setup.md#releasing-the-key-in-the-host).
 The launcher also discovers project `.agents/skills/handoff` and
 `.codex/skills/handoff`, global `~/.agents/skills/handoff`, and
 `$CODEX_HOME/skills/handoff` (default `~/.codex/skills/handoff`). See
@@ -199,6 +231,7 @@ shapes all of these send, so the same script works unchanged:
 | Grok CLI 1.0.13 | Yes | `~/.grok/config.toml` → `[ui.status_line]` |
 | Kimi Code 0.41.0 | Yes | `~/.kimi-code/tui.toml` → `[status_line]` |
 | Codex CLI 0.153.4 | Via tmux wrapper | `handoff-tui --codex` |
+| Any agent CLI | Via tmux wrapper | `handoff-tui --with <agent>` |
 | opencode 1.18.3 | Built-in segments only | — |
 | Cursor agent | None found | — |
 
@@ -257,13 +290,24 @@ python3 skills/handoff/scripts/handoff_guard.py doctor \
 python3 skills/handoff/scripts/handoff_guard.py validate \
   --root /absolute/path/to/repo --json
 
+# Name this session, to own its ledger entries under
+python3 skills/handoff/scripts/handoff_guard.py name \
+  --root /absolute/path/to/repo
+
 # Generate a task-entry template
 python3 skills/handoff/scripts/handoff_guard.py template \
   --title "Add search" \
-  --owner "agent-a" \
+  --owner "Amaterasu" \
   --step "Implement search filtering." \
   --step "Verify behavior and update the handoff."
 ```
+
+Every session in a repository with Handoff installed claims a name at
+preflight, drawn from a hundred mythological figures worldwide, so the ledger
+and the dashboard read as named agents rather than a column of host session
+ids. A name is never one an owner in that ledger already holds, and the same
+session asking twice gets the same name. `$HANDOFF_SESSION` identifies a
+session whose host exposes no id of its own, and `--seed` names one explicitly.
 
 The helper validates ledger structure only. It cannot determine whether a feature is really implemented, whether ownership is active, or whether a requirement is obsolete—those are evidence-based decisions made by the agent.
 

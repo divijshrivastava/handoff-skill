@@ -66,6 +66,25 @@ Run these in your terminal. Codex CLI and tmux 3.2+ must be on PATH. From a
 checkout, use `./skills/handoff/scripts/handoff-tui` before installing the
 launcher. No Codex configuration edit is needed.
 
+## Any agent CLI
+
+Nothing in the wrapper is specific to Codex, so `--with` runs the same bar and
+the same viewer key around any agent CLI on PATH. `--codex` is `--with codex`:
+
+```sh
+handoff-tui --with claude
+handoff-tui --root /path/to/repo --with kimi
+handoff-tui --root /path/to/repo --with grok -p "what is left?"
+```
+
+This matters most for the harnesses whose own status line already works. A
+status line shows progress; it cannot open the viewer, because no harness in
+the table above can bind a key to an arbitrary command - Claude Code's
+`keybindings.json` accepts only its own fixed `chat:` and `app:` actions. Under
+`--with`, the key is bound in tmux's root table, which resolves it before the
+agent is reached, so one key opens the viewer in every harness including those
+that have no key hook at all.
+
 The current [Codex configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference)
 defines `tui.status_line` as a list of built-in footer item identifiers. No
 custom command hook was found in Codex CLI 0.153.4. This wrapper reserves one
@@ -84,11 +103,40 @@ ledgers show a waiting row; unreadable files label retained counts as stale.
 All counts remain recorded progress, not completion evidence.
 
 Each invocation owns a private tmux socket, ignores `~/.tmux.conf`, and removes
-its server when Codex exits or the wrapper stops. It does not modify an existing
-tmux server. Prefix shortcuts are disabled in the private server so keys reach
-Codex; when launched inside tmux, the outer session's prefix still belongs to
-the outer session. Exit Codex normally; the wrapper returns its exit code.
-Detaching or stopping the wrapper closes its Codex process too.
+its server when the agent exits or the wrapper stops. It does not modify an
+existing tmux server. Prefix shortcuts are disabled in the private server so
+keys reach the agent, with one exception: `Ctrl-G` opens the live viewer in a
+popup over it, so a task can be moved to another agent without leaving the
+session. Set `$HANDOFF_VIEWER_KEY` to another tmux key name to move it, or to
+`none` to give that key back. When launched inside tmux, the outer session's
+prefix still belongs to the outer session. Exit the agent normally; the wrapper
+returns its exit code. Detaching or stopping the wrapper closes its agent too.
+
+### Releasing the key in the host
+
+`Ctrl-G` was chosen because it is ASCII BEL: it aliases no terminal key the way
+`Ctrl-H`, `Ctrl-I` and `Ctrl-M` alias Backspace, Tab and Enter, carries no
+signal like `Ctrl-C`, `Ctrl-Z` or `Ctrl-\`, is not flow control like `Ctrl-S`
+and `Ctrl-Q`, and is unused by Codex. Function keys lose to macOS media keys by
+default and `Alt` keys lose to the terminal's Option handling, which is why
+neither is the default.
+
+One harness does claim it: in Claude Code `ctrl+g` runs `chat:externalEditor`,
+which opens whichever editor is on PATH. Inside a `--with` session that never
+fires, because tmux resolves the key first - but in an unwrapped session it
+does, and the same key then means two different things. To give it one meaning:
+
+```sh
+handoff-tui --install-viewer-key
+```
+
+That rewrites `~/.claude/keybindings.json` to release the key and move
+`chat:externalEditor` onto `ctrl+e`, the alternative Claude Code's own
+documentation uses for this rebinding. It merges: other contexts and bindings
+in the file are preserved, running it twice reports that the key is already
+released, and a file that does not parse is left untouched rather than
+replaced. It follows `$HANDOFF_VIEWER_KEY`, and skips with a message for a key
+that has no host spelling, such as a function or `Alt` key.
 
 Verification: argument forwarding, refresh, stale data, format escaping,
 failure cleanup, and packaged loading have regression tests. The optional

@@ -3,7 +3,7 @@ name: handoff
 description: "Coordinate progressive repository work across agents with a shared HANDOFF.md ledger. Use before starting, continuing, checking, pausing, handing off, or committing a repository task whenever HANDOFF.md exists, multiple agents may be involved, the user mentions unfinished tasks or another agent, or work must be split into trackable steps. Audits later work and current code before treating old unchecked boxes as unfinished. Do not use for read-only questions that require no task tracking or repository mutation."
 license: MIT
 metadata:
-  version: "1.11.1"
+  version: "1.12.0"
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
 ---
 
@@ -61,7 +61,18 @@ requires.
 
 5. Run `git status` and inspect relevant recent history. If collaboration or
    agent-status tools exist, check which owners are actually active.
-6. Before the first ledger edit, read `references/ledger-contract.md`.
+6. Claim this session's name, and own every entry you write under it:
+
+   ```bash
+   python3 "$SKILL_DIR/scripts/handoff_guard.py" name --root /absolute/repo/path
+   ```
+
+   It prints one name from a hundred mythological figures, never a name an
+   owner in this ledger already holds, and returns the same name every time
+   this session asks. Ask once, remember it, and use it verbatim as the owner
+   label. Do not invent a name, reuse another session's, or rename yourself
+   mid-task: the label is how a later agent tells your work from a peer's.
+7. Before the first ledger edit, read `references/ledger-contract.md`.
 
 The doctor reports structural state only. Never present its raw pending or
 in-progress result as the effective status until the progressive audit below is
@@ -89,7 +100,7 @@ Use the bundled template command to avoid format drift:
 ```bash
 python3 "$SKILL_DIR/scripts/handoff_guard.py" template \
   --title "Task name" \
-  --owner "Agent name" \
+  --owner "$(python3 "$SKILL_DIR/scripts/handoff_guard.py" name --root /absolute/repo/path)" \
   --step "Implement the bounded change (path/to/file)." \
   --step "Verify behavior and update the handoff."
 ```
@@ -312,6 +323,19 @@ the viewer at run time and takes the same arguments. See
 `references/progress-viewer.md` for controls, snapshot mode, and counting rules,
 and `references/harness-setup.md` for wiring `scripts/handoff-bar` into a host
 status line, including which harnesses expose one.
+
+`--with <agent>` runs any agent CLI under a live bottom bar whose `Ctrl-G` opens
+that viewer in a popup; `--codex` is `--with codex`. When the user asks for the
+viewer key, or reports that `Ctrl-G` does something else in their harness, run:
+
+```bash
+python3 "$SKILL_DIR/scripts/handoff_tui.py" --install-viewer-key
+```
+
+It releases the key in the host's own keybindings so it means one thing whether
+or not the session is wrapped, merging into the file rather than replacing it.
+It is idempotent, so running it when nothing needs changing is safe and says so.
+Do not edit a user's keybindings any other way, and do not run it unasked.
 
 ## Named failure modes
 

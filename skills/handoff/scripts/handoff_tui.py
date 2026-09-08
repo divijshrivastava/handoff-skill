@@ -666,16 +666,31 @@ def main(argv: list[str] | None = None) -> int:
                         help="Refresh seconds, 0.1 to 60 (default: 1)")
     parser.add_argument("--once", action="store_true", help="Print a snapshot and exit")
     parser.add_argument("--read-only", action="store_true",
-                        help="Disable the live view's cut and paste keys, so it never writes")
+                        help="Disable the cut and paste keys in the live view, including the "
+                             "one Codex mode opens, so it never writes")
     parser.add_argument("--bar", action="store_true",
                         help="Print one status-line row; reads host JSON on stdin for the directory")
     parser.add_argument("--no-color", action="store_true", help="Omit colour from --bar or --codex")
     parser.add_argument("--codex", nargs=argparse.REMAINDER,
                         help="Run Codex with a live bottom bar (tmux 3.2+); remaining arguments go to Codex")
+    parser.add_argument("--with", dest="agent", nargs=argparse.REMAINDER, metavar="AGENT",
+                        help="Run AGENT (claude, codex, kimi, grok, ...) with a live bottom bar "
+                             "and the viewer key (tmux 3.2+); remaining arguments go to AGENT")
+    parser.add_argument("--install-viewer-key", action="store_true",
+                        help="Release the viewer key in the host harness's own keybindings and exit")
     args = parser.parse_args(argv)
     use_utf8_stdout()
-    if args.codex is not None and (args.bar or args.once):
-        parser.error("--codex cannot be combined with --bar or --once")
+    if args.install_viewer_key:
+        from handoff_codex import install_host_keybindings, viewer_key
+        print(install_host_keybindings(viewer_key()))
+        return 0
+    # Both flags take the rest of the line, so only the first one given is ever
+    # set; whichever it is, everything after it belongs to the wrapped agent.
+    wrapped = args.codex if args.codex is not None else args.agent
+    if wrapped is not None and (args.bar or args.once):
+        parser.error("--codex and --with cannot be combined with --bar or --once")
+    if args.agent is not None and not [word for word in args.agent if word != "--"]:
+        parser.error("--with needs an agent to run, e.g. --with claude")
     root = args.root
     if args.bar and not args.file and not sys.stdin.isatty():
         # A host status line pipes session JSON in; prefer the directory it reports.
@@ -684,11 +699,14 @@ def main(argv: list[str] | None = None) -> int:
             root = reported
     path = args.file.resolve() if args.file else find_repo_root(root) / "HANDOFF.md"
     watcher = Watcher(path)
-    if args.codex is not None:
-        from handoff_codex import run_codex
-        arguments = args.codex[1:] if args.codex[:1] == ["--"] else args.codex
-        return run_codex(watcher, args.file.resolve().parent if args.file else root.resolve(),
-                         arguments, args.interval, color=not args.no_color)
+    if wrapped is not None:
+        from handoff_codex import DEFAULT_AGENT, run_agent
+        arguments = wrapped[1:] if wrapped[:1] == ["--"] else wrapped
+        # `--codex` names its agent in the flag; `--with` takes it as the first word.
+        agent = DEFAULT_AGENT if args.codex is not None else arguments.pop(0)
+        return run_agent(watcher, args.file.resolve().parent if args.file else root.resolve(),
+                         arguments, args.interval, color=not args.no_color,
+                         read_only=args.read_only, agent=agent)
     if args.bar:
         # A status line must never break the host: no ledger means no row.
         if not path.is_file():

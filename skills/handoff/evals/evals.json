@@ -53,6 +53,19 @@
         "Does not assume a framework, existing navigation, file paths, or UI structure",
         "Records separate In progress and Completed boxes and starts the task only immediately before implementation"
       ]
+    },
+    {
+      "id": 5,
+      "prompt": "A repository HANDOFF.md carries entries owned by 'Sekhmet' and by 'Anubis', and the audit finds no effective unfinished work. I ask you to add a changelog page. Explain how you decide the owner label for the entry you write, and what you do when I ask again later in the session who owns it.",
+      "expected_output": "Claims a session name from the helper at preflight, uses it verbatim as the owner label, neither invents one nor reuses an existing owner's, and reports that same name later instead of renaming itself.",
+      "files": [],
+      "expectations": [
+        "Claims the name from the helper's name command rather than inventing an owner label",
+        "Does not adopt Sekhmet or Anubis, or any name an existing entry already holds",
+        "Uses the claimed name verbatim in the new entry's heading",
+        "Reports the same name later in the session rather than a second name",
+        "Does not present the label as proof of who performed a step or that an owner is live"
+      ]
     }
   ],
   "output_quality_expectations": [
