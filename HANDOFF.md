@@ -1,5 +1,19 @@
 # Handoff
 
+## 2026-09-09 - Restore the original README lead GIF (owner: Haetae) (harness: Grok)
+
+State:
+
+- [x] In progress
+- [ ] Completed
+
+Steps:
+
+- [ ] Restore assets/dashboard-session.gif and the original top README embed; leave the TUI GIF in the dashboard section.
+- [ ] Commit, push origin/main, and record the identifier.
+
+Status: In progress. The 4:44 TUI GIF belongs only in the Live progress dashboard section. Restoring assets/dashboard-session.gif as the lead image.
+
 ## 2026-09-09 - Use the 4:44 handoff-tui GIF as the README lead image (owner: Haetae) (harness: Grok)
 
 State:
