@@ -39,6 +39,9 @@ class CodexSession:
         self.environment.pop("TMUX", None)
         self.environment.pop("TMUX_PANE", None)
         self.directory = socket.parent
+        # tmux 3.4 leaves pane_dead_status empty on a dead pane, so the child's
+        # own status is recorded here rather than trusted to the format.
+        self.status_file = socket.parent / "status"
         self.client: subprocess.Popen | None = None
 
     def call(self, *arguments: str, check: bool = True) -> str:
@@ -65,11 +68,17 @@ class CodexSession:
         self.call("set-option", "-w", "-t", "handoff:0", "remain-on-exit", "on")
         # tmux treats even an argv item consisting of ';' as a command
         # separator. Encode user arguments so its parser cannot interpret them.
-        payload = base64.b64encode(json.dumps([str(cwd), [codex, *arguments]]).encode()).decode()
+        payload = base64.b64encode(json.dumps(
+            [str(cwd), [codex, *arguments], str(self.status_file)]).encode()).decode()
+        # The shim waits for Codex rather than exec'ing it, so the exit status
+        # survives a tmux that does not report pane_dead_status. It ignores
+        # SIGINT so Ctrl-C reaches Codex alone, as a shell would.
         self.call("respawn-pane", "-k", "-t", "handoff:0.0", "-c", str(self.directory),
                   sys.executable, "-c",
-                  "import base64,json,os,sys; d,a=json.loads(base64.b64decode(sys.argv[1])); "
-                  "os.chdir(d); os.execv(a[0],a)", payload)
+                  "import base64,json,os,pathlib,signal,subprocess,sys; "
+                  "d,a,s=json.loads(base64.b64decode(sys.argv[1])); os.chdir(d); "
+                  "signal.signal(signal.SIGINT, signal.SIG_IGN); c=subprocess.call(a); "
+                  "pathlib.Path(s).write_text(str(c)); sys.exit(c)", payload)
 
     def attach(self) -> None:
         self.client = subprocess.Popen(self.command + ["attach-session", "-t", "handoff"],
@@ -79,9 +88,16 @@ class CodexSession:
         state = self.call("display-message", "-p", "-t", "handoff:0.0",
                           "#{pane_dead}:#{pane_dead_status}")
         dead, _, status = state.partition(":")
-        if dead == "1":
-            return int(status) if status.isdigit() else 1
-        return None
+        if dead != "1":
+            return None
+        if status.isdigit():
+            return int(status)
+        # tmux 3.4 reports a dead pane with an empty pane_dead_status. Reading
+        # the shim's record keeps a real exit code from being reported as 1.
+        try:
+            return int(self.status_file.read_text(encoding="utf-8").strip())
+        except (OSError, ValueError):
+            return 1
 
     def close(self) -> None:
         try:

@@ -71,9 +71,11 @@ class SessionTests(unittest.TestCase):
         with patch.object(session, "call") as call:
             session.start("/some path/codex", arguments, Path("/repo with space"), "bar")
         command = call.call_args.args
-        cwd, forwarded = json.loads(base64.b64decode(command[-1]))
+        cwd, forwarded, status = json.loads(base64.b64decode(command[-1]))
         self.assertEqual(forwarded, ["/some path/codex", *arguments])
-        self.assertEqual(cwd, "/repo with space")
+        # Compare as paths: Windows renders this as a backslash path.
+        self.assertEqual(Path(cwd), Path("/repo with space"))
+        self.assertEqual(Path(status), session.status_file)
         call.assert_any_call("set-option", "-t", "handoff", "prefix", "None")
         call.assert_any_call("set-option", "-t", "handoff", "status-format[0]", "bar")
         self.assertEqual(session.command[2:4], ["-S", "/tmp/private/s"])
@@ -85,6 +87,18 @@ class SessionTests(unittest.TestCase):
             self.assertIsNone(session.exit_status())
             self.assertEqual(session.exit_status(), 7)
             self.assertEqual(session.exit_status(), 1)
+
+    def test_an_empty_pane_dead_status_reads_the_recorded_status(self):
+        # tmux 3.4 reports a dead pane as '1:' with no status. Trusting the
+        # format alone reported every Codex run as exit 1 on that version.
+        with tempfile.TemporaryDirectory() as directory:
+            session = codex.CodexSession("tmux", Path(directory) / "s")
+            with patch.object(session, "call", return_value="1:"):
+                self.assertEqual(session.exit_status(), 1)
+                session.status_file.write_text("7", encoding="utf-8")
+                self.assertEqual(session.exit_status(), 7)
+                session.status_file.write_text("not a number", encoding="utf-8")
+                self.assertEqual(session.exit_status(), 1)
 
     def test_cleanup_waits_for_attached_client(self):
         session = codex.CodexSession("tmux", Path("private"))
