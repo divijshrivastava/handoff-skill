@@ -137,13 +137,26 @@ Installed as a Claude Code plugin, the skill adds two commands:
 
 | Command | Purpose |
 | --- | --- |
-| `/handoff:status` | Print recorded progress overall and per owner, read-only |
+| `/handoff:status` | Turn on a live progress bar in the status line, and report progress |
 | `/handoff:continue` | Audit the ledger and resume what is actually unfinished |
 
-`/handoff:status` prints a snapshot rather than the live dashboard, because a
-command session has no terminal to draw into. Run `handoff-tui` yourself in a
-separate terminal for the refreshing view. It reports *recorded* progress;
-`/handoff:continue` is the one that runs the progressive audit.
+`/handoff:status` puts a live row at the bottom of Claude Code:
+
+```
+handoff █████████░ 17/18 tasks · 70/73 steps · Codex
+```
+
+It configures Claude Code's [status line](https://code.claude.com/docs/en/statusline)
+to run `handoff-tui --bar`, which prints one row and exits. With
+`refreshInterval` set, the bar keeps updating while the session is idle, so
+progress moves as other agents write the ledger. `/handoff:status off` removes
+it. The bar prints nothing in a repository without a ledger, so it stays empty
+rather than erroring.
+
+The command also reports the totals and per-owner table the bar has no room for.
+Both show *recorded* progress; `/handoff:continue` is the one that runs the
+progressive audit. For the full dashboard with drilldown, run `handoff-tui` in
+your own terminal — Claude Code owns the one it is running in.
 
 ## Multi-agent safety
 

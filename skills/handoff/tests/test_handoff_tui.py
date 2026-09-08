@@ -268,3 +268,47 @@ class CliTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BarTests(unittest.TestCase):
+    def snapshot(self, text):
+        return tui.parse_snapshot(text)
+
+    def test_empty_when_nothing_is_tracked(self):
+        self.assertEqual(tui.bar_line(self.snapshot("# Handoff\n")), "")
+        self.assertEqual(tui.bar_line(None), "")
+
+    def test_counts_and_open_owners_appear(self):
+        text = "# Handoff\n\n" + entry(title="A", owner="Ann", state="completed", steps=(True, True))
+        text += entry(title="B", owner="Bo", state="in_progress", steps=(True, False))
+        line = tui.bar_line(self.snapshot(text), color=False)
+        self.assertIn("1/2 tasks", line)
+        self.assertIn("3/4 steps", line)
+        self.assertIn("Bo", line)
+        self.assertNotIn("Ann", line)
+
+    def test_no_color_omits_escape_codes(self):
+        text = "# Handoff\n\n" + entry(steps=(True, False))
+        self.assertNotIn("\033", tui.bar_line(self.snapshot(text), color=False))
+        self.assertIn("\033", tui.bar_line(self.snapshot(text), color=True))
+
+    def test_fully_complete_reads_green(self):
+        text = "# Handoff\n\n" + entry(state="completed", steps=(True, True))
+        self.assertIn("\033[32m", tui.bar_line(self.snapshot(text)))
+
+    def test_bar_is_one_line(self):
+        text = "# Handoff\n\n" + entry(title="A\nB", owner="Ann", steps=(True, False))
+        self.assertNotIn("\n", tui.bar_line(self.snapshot(text), color=False))
+
+
+class StatusLineRootTests(unittest.TestCase):
+    def test_workspace_directory_is_preferred(self):
+        payload = '{"cwd": "/fallback", "workspace": {"current_dir": "/chosen"}}'
+        self.assertEqual(tui.status_line_root(payload), Path("/chosen"))
+
+    def test_cwd_is_the_fallback(self):
+        self.assertEqual(tui.status_line_root('{"cwd": "/only"}'), Path("/only"))
+
+    def test_unusable_payloads_return_none(self):
+        for payload in ("", "not json", "[]", "{}", '{"cwd": 4}', '{"workspace": null}'):
+            self.assertIsNone(tui.status_line_root(payload), payload)

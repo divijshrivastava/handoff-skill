@@ -1,5 +1,21 @@
 # Handoff
 
+## 2026-09-08 - Make /handoff:status show a live status-line bar (owner: Claude session 01LD89UW)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Add a one-row status-line mode to the viewer.
+- [x] Make the command install and remove the bar, keeping the snapshot report.
+- [x] Cover the new mode with tests and document it.
+- [x] Run repository checks and record the handoff.
+
+Status: Complete. The previous `/handoff:status` could only print a snapshot, because Claude Code owns the terminal and curses has nowhere to draw. Claude Code's own status line is the right surface: a row at the bottom that re-runs a command, supports ANSI colour, and takes a `refreshInterval` (minimum 1s) that re-runs it on a timer even while the session is idle, which is exactly when peer agents write the ledger. Added `--bar` to `handoff_tui.py`, printing one row (`handoff █████████░ 17/18 tasks · 70/73 steps · Codex`) and exiting, plus `--no-color`. It reads the host's session JSON from stdin when stdin is not a terminal and takes `workspace.current_dir`, falling back to `cwd`, so the bar follows the session's directory; an explicit `--root`/`--file` still wins, and an unparsable payload is ignored rather than fatal. It is silent and exits 0 when there is no ledger or nothing tracked, so a status bar in an unrelated repository stays empty instead of showing an error; trailing names are owners of entries not recorded complete. Rewrote `commands/status.md`: it now installs `statusLine` pointing at the PATH launcher rather than a versioned plugin path, so the bar survives upgrades, refuses to overwrite a `statusLine` it did not add, accepts `off` to remove it, verifies by piping a sample payload before claiming success, and still reports the totals and per-owner table the bar has no room for. Verified: 60 helper/viewer/launcher tests and 5 repository tests pass, versions agree at 1.7.0, `claude plugin validate .` passes, `validate --root .` exits 0, archives build, whitespace clean; `--bar` was exercised for the plain, coloured, non-ledger, and malformed-stdin cases. Not done: nothing is committed or released, so no installed copy has `--bar` yet, and no `statusLine` has been written to this machine's settings. Next action: release 1.7.0 and update the plugin, then run the command to install the bar.
+
 ## 2026-09-08 - Add a /handoff:status command for recorded progress (owner: Claude session 01LD89UW)
 
 State:

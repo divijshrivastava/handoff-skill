@@ -1,36 +1,78 @@
 ---
-description: Show recorded HANDOFF.md progress overall and per owner
-argument-hint: [repository path]
+description: Show a live handoff progress bar in the status line, or a snapshot
+argument-hint: [off | repository path]
 ---
 
-Report this repository's recorded ledger progress. Read-only: make no edits, run
-no `apply`, and start no work.
+Show this repository's recorded ledger progress. Read-only with respect to the
+repository: make no edits, run no `apply`, and start no work.
 
-Target repository (may be empty, meaning the current directory): $ARGUMENTS
+Argument (may be empty): $ARGUMENTS
 
-Run the progress viewer's snapshot mode and show the summary above the task list:
+If the argument is `off`, remove the `statusLine` field this command added from
+`~/.claude/settings.json`, confirm it is gone, and stop. Leave a `statusLine`
+this command did not add alone; say so instead.
+
+Otherwise do both of the following.
+
+## 1. Turn on the live bar
+
+Claude Code's status line is a row at the bottom that re-runs a command and
+redraws. Point it at the viewer's one-line mode so ledger progress stays visible
+while work happens.
+
+Check that the launcher is on PATH (`command -v handoff-tui`). If it is missing,
+copy it from this skill first:
+
+```sh
+cp "$SKILL_DIR/scripts/handoff-tui" ~/.local/bin/ && chmod +x ~/.local/bin/handoff-tui
+```
+
+Then add this to `~/.claude/settings.json`, preserving every other setting:
+
+```json
+"statusLine": {
+  "type": "command",
+  "command": "$HOME/.local/bin/handoff-tui --bar",
+  "padding": 0,
+  "refreshInterval": 2
+}
+```
+
+Use the launcher path, never a versioned plugin path, so the bar survives skill
+upgrades. `refreshInterval` re-runs the command on a timer, so the bar keeps
+moving while the session is idle and other agents write the ledger.
+
+If `statusLine` already holds something else, do not overwrite it. Report what is
+there and ask before replacing.
+
+Verify before claiming it works: pipe a sample payload through the command and
+show the row it prints.
+
+```sh
+echo '{"workspace":{"current_dir":"'"$PWD"'"}}' | ~/.local/bin/handoff-tui --bar
+```
+
+The bar prints nothing outside a repository that has a ledger, which is intended:
+the status line stays empty rather than showing an error. Tell the user the bar
+appears on their next interaction.
+
+## 2. Report current progress
+
+Show the totals and the per-owner table, which the bar has no room for:
 
 ```sh
 handoff-tui --root <target> --once | sed -n '/^TASKS (ledger order)/q;p'
 ```
 
-`handoff-tui` is the launcher on PATH. If it is not installed, fall back to the
-viewer inside this skill, `python3 "$SKILL_DIR/scripts/handoff_tui.py"`, with the
-same arguments. If `HANDOFF.md` does not exist, say so and stop; do not create
-one. If the snapshot exits non-zero, show its error and stop.
-
-Present the totals and the per-owner table as returned. Then add, in one or two
-sentences, which entries are recorded as in progress or pending and who owns
-them. Read the task list from the full snapshot for that, but do not paste it.
+If `HANDOFF.md` does not exist, say so and stop; do not create one. Add one or
+two sentences naming the entries recorded as in progress or pending and their
+owners, reading the task list from the full snapshot without pasting it.
 
 State plainly that these are **recorded** figures: they count checkboxes and
 heading owners. They are not evidence that a task is finished, that an owner is
-still active, or that a given owner performed a step. An old unchecked box is
-frequently already satisfied by later commits. If the user wants effective
-status rather than recorded status, point them at `/handoff:continue`, which
-runs the progressive audit.
+still active, or that a given owner performed a step. For effective status, point
+the user at `/handoff:continue`, which runs the progressive audit.
 
-Mention the live dashboard only if it is useful: this command prints a snapshot
-because a command session has no terminal to draw into. For the refreshing view
-with per-owner drilldown, the user runs `handoff-tui` themselves in a separate
-terminal.
+For the full dashboard, with per-owner drilldown and task detail, the user runs
+`handoff-tui` in a separate terminal. A command session cannot host it, because
+Claude Code owns this terminal.

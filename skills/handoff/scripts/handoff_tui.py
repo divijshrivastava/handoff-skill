@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 from datetime import datetime
+import json
 import math
 from pathlib import Path
 import sys
@@ -161,6 +162,38 @@ def summary_lines(snapshot: Snapshot | None) -> list[str]:
         f"STEPS  {progress(counts.checked, counts.steps)} checked",
         f"Excluded from totals: {counts.invalid} invalid / {counts.legacy} legacy entries",
     ]
+
+
+def bar_line(snapshot: Snapshot | None, width: int = 10, color: bool = True) -> str:
+    """One row for a host status line; empty when nothing is tracked."""
+    counts = count_tasks(snapshot.tasks if snapshot else [])
+    if not counts.tracked:
+        return ""
+    filled = counts.completed * width // counts.tracked
+    shade = "\033[32m" if counts.completed == counts.tracked else "\033[33m"
+    reset = "\033[0m"
+    dim = "\033[2m"
+    if not color:
+        shade = reset = dim = ""
+    open_tasks = [t for t in (snapshot.tasks if snapshot else []) if t.modern and task_state(t) != "completed"]
+    trailer = f" {dim}·{reset} " + ", ".join(sorted({owner_name(t) for t in open_tasks})) if open_tasks else ""
+    return (f"{shade}handoff{reset} {shade}{'█' * filled}{'░' * (width - filled)}{reset} "
+            f"{counts.completed}/{counts.tracked} tasks {dim}·{reset} "
+            f"{counts.checked}/{counts.steps} steps{trailer}")
+
+
+def status_line_root(payload: str) -> Path | None:
+    """Read workspace.current_dir from a host status-line JSON payload."""
+    try:
+        data = json.loads(payload)
+    except ValueError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    workspace = data.get("workspace")
+    location = (workspace or {}).get("current_dir") if isinstance(workspace, dict) else None
+    location = location or data.get("cwd")
+    return Path(location) if isinstance(location, str) and location else None
 
 
 def owner_row(owner: str, counts: Counts, width: int) -> str:
@@ -420,9 +453,27 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--interval", type=refresh_interval, default=1.0,
                         help="Refresh seconds, 0.1 to 60 (default: 1)")
     parser.add_argument("--once", action="store_true", help="Print a snapshot and exit")
+    parser.add_argument("--bar", action="store_true",
+                        help="Print one status-line row; reads host JSON on stdin for the directory")
+    parser.add_argument("--no-color", action="store_true", help="Omit ANSI colour from --bar")
     args = parser.parse_args(argv)
-    path = args.file.resolve() if args.file else find_repo_root(args.root) / "HANDOFF.md"
+    root = args.root
+    if args.bar and not args.file and not sys.stdin.isatty():
+        # A host status line pipes session JSON in; prefer the directory it reports.
+        reported = status_line_root(sys.stdin.read())
+        if reported is not None and args.root == Path("."):
+            root = reported
+    path = args.file.resolve() if args.file else find_repo_root(root) / "HANDOFF.md"
     watcher = Watcher(path)
+    if args.bar:
+        # A status line must never break the host: no ledger means no row.
+        if not path.is_file():
+            return 0
+        watcher.poll()
+        line = bar_line(watcher.snapshot, color=not args.no_color)
+        if line:
+            print(line)
+        return 0
     if args.once or not (sys.stdin.isatty() and sys.stdout.isatty()):
         watcher.poll()
         print(plain_report(watcher), end="")

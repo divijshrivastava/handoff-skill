@@ -65,6 +65,30 @@ shows read errors and retains the last readable snapshot, labelled stale, until
 the file becomes readable again. A missing file at startup is retried without
 creating it.
 
+## Status-line mode
+
+`--bar` prints a single row for a host status bar and exits, instead of drawing
+a dashboard:
+
+```sh
+handoff-tui --bar          # handoff █████████░ 17/18 tasks · 70/73 steps · Codex
+```
+
+It reads the host's session JSON on stdin when stdin is not a terminal, taking
+`workspace.current_dir` (falling back to `cwd`) as the repository, so the bar
+follows the session rather than the directory the host was launched from. An
+explicit `--root` or `--file` wins over the payload; an unparsable payload is
+ignored rather than fatal. `--no-color` omits the ANSI codes.
+
+The row is deliberately silent and exits 0 when there is no ledger or nothing
+tracked, so a status bar in an unrelated repository stays empty instead of
+showing an error. Colour is green at full completion and amber otherwise, and
+the trailing names are the owners of entries not recorded complete.
+
+In Claude Code, `/handoff:status` wires this into `statusLine`; see the README.
+Point any such configuration at the `handoff-tui` launcher rather than a
+versioned plugin path, so it survives upgrades.
+
 ## Counting rules
 
 - Task completion is the number of valid structured tasks with `Completed`
