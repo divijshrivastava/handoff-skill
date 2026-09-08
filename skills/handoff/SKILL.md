@@ -1,6 +1,6 @@
 ---
 name: handoff
-description: "Coordinate progressive repository work across agents with a shared HANDOFF.md ledger. Use before starting, continuing, checking, pausing, handing off, or committing a repository task whenever HANDOFF.md exists, multiple agents may be involved, the user mentions unfinished tasks or another agent, or work must be split into trackable steps. Audits later work and current code before treating old unchecked boxes as unfinished. Do not use for read-only questions that require no task tracking or repository mutation."
+description: "Coordinate progressive repository work across agents with a shared HANDOFF.md ledger, starting only on explicit activation: the /handoff:init command, the phrase 'initialise the handoff' (the Codex prompt), or an explicit handoff request such as /handoff:continue, /handoff:status, /handoff:view, or 'use handoff'. Once active, use for starting, continuing, checking, pausing, handing off, or committing tracked repository work. Audits later work and current code before treating old unchecked boxes as unfinished. An existing HANDOFF.md, multiple agents, or unfinished-looking work are not triggers on their own. Do not use for read-only questions that require no task tracking or repository mutation."
 license: MIT
 metadata:
   version: "1.16.0"
@@ -17,6 +17,27 @@ superseded it.
 The repository's own instructions remain authoritative. This skill supplies a
 reusable workflow; it never weakens `AGENTS.md`, `CLAUDE.md`, contribution
 rules, ownership boundaries, verification requirements, or safety policy.
+
+## Activation
+
+Handoff work starts only when the user asks for it. The triggers are:
+
+- the `/handoff:init` command, or the phrase "initialise the handoff" in a
+  host without slash commands (Codex's default prompt supplies it);
+- another explicit handoff request: `/handoff:continue`, `/handoff:status`,
+  `/handoff:view`, or a direct instruction such as "use handoff", "record
+  this in the ledger", or "take over <owner>'s tasks".
+
+Until one of these arrives, do none of this skill's work: no session name, no
+preflight, no ledger read or write, no task entry. An existing `HANDOFF.md`,
+multiple agents sharing the tree, or unfinished-looking work are not triggers.
+Answer the user's request under the repository's own instructions instead.
+
+Activation establishes tracking; it starts no task. On `/handoff:init` or
+"initialise the handoff", run the preflight below, create `HANDOFF.md` from
+`references/ledger-contract.md` when the repository prescribes no ledger and
+mutation is authorized, report the recorded state, and wait for the user's
+next request. Every later request in the session follows the steps below.
 
 ## Output discipline
 
