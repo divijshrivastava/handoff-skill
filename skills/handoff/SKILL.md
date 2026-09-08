@@ -3,7 +3,7 @@ name: handoff
 description: "Coordinate progressive repository work across agents with a shared HANDOFF.md ledger. Use before starting, continuing, checking, pausing, handing off, or committing a repository task whenever HANDOFF.md exists, multiple agents may be involved, the user mentions unfinished tasks or another agent, or work must be split into trackable steps. Audits later work and current code before treating old unchecked boxes as unfinished. Do not use for read-only questions that require no task tracking or repository mutation."
 license: MIT
 metadata:
-  version: "1.7.0"
+  version: "1.8.0"
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
 ---
 
@@ -274,7 +274,9 @@ heading owners; they do not replace the progressive audit or establish live
 activity or per-step authorship. Because that install path is version-pinned,
 `scripts/handoff-tui` is a launcher users can copy onto PATH once; it resolves
 the viewer at run time and takes the same arguments. See
-`references/progress-viewer.md` for controls, snapshot mode, and counting rules.
+`references/progress-viewer.md` for controls, snapshot mode, and counting rules,
+and `references/harness-setup.md` for wiring `scripts/handoff-bar` into a host
+status line, including which harnesses expose one.
 
 ## Named failure modes
 

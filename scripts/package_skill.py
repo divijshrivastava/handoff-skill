@@ -15,14 +15,16 @@ RUNTIME_FILES = (
     "agents/openai.yaml",
     "references/design-notes.md",
     "references/ledger-contract.md",
+    "references/harness-setup.md",
     "references/progress-viewer.md",
+    "scripts/handoff-bar",
     "scripts/handoff-tui",
     "scripts/handoff_guard.py",
     "scripts/handoff_tui.py",
 )
 # Launchers ship executable so they work once copied onto PATH. The set is
 # fixed, so archives stay byte-reproducible.
-EXECUTABLE_FILES = frozenset({"scripts/handoff-tui"})
+EXECUTABLE_FILES = frozenset({"scripts/handoff-tui", "scripts/handoff-bar"})
 
 
 def build(output: Path, root: Path = ROOT) -> list[Path]:

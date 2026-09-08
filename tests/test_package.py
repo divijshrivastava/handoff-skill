@@ -1,4 +1,5 @@
 import hashlib
+import os
 import importlib.util
 from pathlib import Path
 import subprocess
@@ -26,12 +27,15 @@ class PackageTests(unittest.TestCase):
             with ZipFile(first[0]) as archive:
                 self.assertIn("handoff/scripts/handoff_tui.py", archive.namelist())
                 self.assertIn("handoff/scripts/handoff-tui", archive.namelist())
+                self.assertIn("handoff/scripts/handoff-bar", archive.namelist())
+                self.assertIn("handoff/references/harness-setup.md", archive.namelist())
                 self.assertIn("handoff/references/progress-viewer.md", archive.namelist())
                 self.assertEqual(set(archive.namelist()), {
                     "handoff/" + name for name in (*package.RUNTIME_FILES, "LICENSE")
                 })
                 modes = {info.filename: info.external_attr >> 16 for info in archive.infolist()}
                 self.assertEqual(modes["handoff/scripts/handoff-tui"], 0o100755)
+                self.assertEqual(modes["handoff/scripts/handoff-bar"], 0o100755)
                 self.assertEqual(modes["handoff/scripts/handoff_tui.py"], 0o100644)
                 archive.extractall(base / "unpacked")
             helper = base / "unpacked/handoff/scripts/handoff_guard.py"
@@ -64,6 +68,14 @@ class PackageTests(unittest.TestCase):
             def content(text):
                 return [line for line in text.splitlines() if "Revision:" not in line]
             self.assertEqual(content(forwarded.stdout), content(report.stdout))
+            # The packaged status-line front-end runs from the extracted tree.
+            bar = subprocess.run(
+                ["sh", str(helper.with_name("handoff-bar")), "--file", str(ledger)],
+                input="", capture_output=True, text=True,
+                env={**os.environ, "HANDOFF_BAR_CACHE": str(base / "barcache")},
+            )
+            self.assertEqual(bar.returncode, 0, bar.stderr)
+            self.assertIn("0/1 tasks", bar.stdout)
 
     def test_missing_resource_fails_before_creating_output(self):
         with tempfile.TemporaryDirectory() as directory:

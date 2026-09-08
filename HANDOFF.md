@@ -1,5 +1,21 @@
 # Handoff
 
+## 2026-09-08 - Make the live progress bar work across agent harnesses (owner: Claude session 01LD89UW)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Determine which harnesses expose a status-line command hook and what payload each sends.
+- [x] Add a status-line front-end fast enough for the strictest host budget.
+- [x] Cover payload shapes, silence, and cache invalidation with tests.
+- [x] Document per-harness setup and run repository checks.
+
+Status: Complete. Surveyed the installed harnesses by reading shipped documentation or inspecting binaries on 2026-09-08: Claude Code 2.1.260 (`statusLine` command, `workspace.current_dir`/`cwd`, `refreshInterval`), Grok CLI 1.0.13 (`[ui.status_line] type = "command"`, same payload names, `refresh_interval`), and Kimi Code 0.41.0 (`[status_line] command` in `tui.toml`, flat `cwd`, first stdout line only, 300ms timeout) support a custom command. Codex CLI 0.153.4 exposes `status_line`/`status_line_use_colors` among TUI display toggles with no command hook found, opencode 1.18.3 has built-in segments only, and cursor-agent 2026.09.02 has none; these are recorded as "no hook found at that version" from binary inspection rather than as permanent limits. `--bar` already read both payload shapes, so no per-host parsing was needed. Added `skills/handoff/scripts/handoff-bar`, a POSIX sh front-end, because timing showed the existing path did not fit Kimi's budget: Python startup alone is about 100ms here and the Python launcher pays it twice, measured at 253ms against a 300ms cap. The bar caches the rendered row and starts Python only when the ledger changes, measured at 31ms per cached run against a 33KB ledger versus 136ms for the viewer alone. Its cache key is a `cksum` of the ledger contents, not modification time and size: a regression test proves a checkbox flip keeps the byte count identical (247 bytes before and after), so a size stamp would have served a stale row for exactly the edit this bar exists to show. Shipped both the script and `references/harness-setup.md` through the allowlist, with `handoff-bar` in `EXECUTABLE_FILES` at mode 0755. Verified on Python 3.9.10 and 3.12: 72 helper/viewer/launcher/bar tests and 5 repository tests pass, versions agree at 1.8.0, `claude plugin validate .` passes, `validate --root .` exits 0, archives build, whitespace clean; payload shapes, missing ledger, missing viewer, malformed stdin, cache reuse, and cache invalidation were each exercised. Not done and worth naming: the Grok and Kimi configurations are documented and their payload shapes are covered by tests, but neither was exercised inside a running Grok or Kimi session, so they are unverified end to end; a bar was installed only into Claude Code on this machine. Nothing is committed or released. Next action: release 1.8.0, then confirm the Grok and Kimi rows in live sessions and correct the matrix if a host disagrees.
+
 ## 2026-09-08 - Make /handoff:status show a live status-line bar (owner: Claude session 01LD89UW)
 
 State:

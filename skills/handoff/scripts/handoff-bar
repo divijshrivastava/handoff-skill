@@ -1,0 +1,105 @@
+#!/bin/sh
+# Status-line front-end: print one handoff row, fast enough for any host.
+#
+# Hosts re-run a status-line command every render and cap how long it may take;
+# Kimi's cap is 300ms, and a Python start alone costs about 100ms. This script
+# caches the rendered row against the ledger's modification time and size, so a
+# tick only pays for Python when the ledger actually changed.
+#
+# It reads the host's JSON payload on stdin, like the viewer's --bar mode, and
+# accepts the same --root/--file arguments. Prints nothing when there is no
+# ledger, so a status line in an unrelated repository stays empty.
+#
+# Environment: HANDOFF_TUI pins the viewer, HANDOFF_BAR_CACHE moves the cache.
+
+set -u
+
+root=""
+file=""
+passthrough=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --root) root="${2:-}"; shift 2 ;;
+        --file) file="${2:-}"; shift 2 ;;
+        --root=*) root="${1#--root=}"; shift ;;
+        --file=*) file="${1#--file=}"; shift ;;
+        *) passthrough="$passthrough $1"; shift ;;
+    esac
+done
+
+payload=""
+if [ ! -t 0 ]; then
+    payload=$(cat)
+fi
+
+# The payload is small and flat enough that sed beats starting a JSON parser.
+# Claude Code and Grok send workspace.current_dir; Kimi sends a bare cwd.
+if [ -z "$root" ] && [ -z "$file" ] && [ -n "$payload" ]; then
+    root=$(printf '%s' "$payload" | sed -n 's/.*"current_dir"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+    if [ -z "$root" ]; then
+        root=$(printf '%s' "$payload" | sed -n 's/.*"cwd"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+    fi
+fi
+[ -n "$root" ] || root=$PWD
+
+# Locate the ledger the way the guard does: nearest HANDOFF.md at or above root.
+ledger=""
+if [ -n "$file" ]; then
+    [ -f "$file" ] && ledger=$file
+else
+    search=$root
+    while [ -n "$search" ] && [ "$search" != "/" ]; do
+        if [ -f "$search/HANDOFF.md" ]; then ledger="$search/HANDOFF.md"; break; fi
+        search=$(dirname "$search")
+    done
+    [ -z "$ledger" ] && [ -f "/HANDOFF.md" ] && ledger=/HANDOFF.md
+fi
+[ -n "$ledger" ] || exit 0
+
+# Key on content, not on mtime and size. Checking a box rewrites "[ ]" as "[x]",
+# which keeps the byte count identical, so a size stamp would serve a stale row
+# for exactly the edit this bar exists to show.
+stamp=$(cksum < "$ledger" 2>/dev/null) || stamp=""
+
+cache_dir=${HANDOFF_BAR_CACHE:-${TMPDIR:-/tmp}/handoff-bar-$(id -u 2>/dev/null || echo 0)}
+key=$(printf '%s' "$ledger" | cksum | tr -d ' /')
+cache="$cache_dir/$key"
+
+if [ -n "$stamp" ] && [ -r "$cache" ]; then
+    cached_stamp=$(head -1 "$cache" 2>/dev/null)
+    if [ "$cached_stamp" = "$stamp" ]; then
+        tail -n +2 "$cache"
+        exit 0
+    fi
+fi
+
+# Cache miss. Resolve a viewer without paying for the Python launcher.
+viewer=${HANDOFF_TUI:-}
+if [ -z "$viewer" ] || [ ! -f "$viewer" ]; then
+    viewer=""
+    here=$(dirname "$0")
+    if [ -f "$here/handoff_tui.py" ]; then
+        viewer="$here/handoff_tui.py"
+    else
+        # Newest install across the harnesses that keep skills in a home directory.
+        for home in "$HOME/.claude/plugins/cache"/*/handoff/* "$HOME/.claude/plugins/marketplaces"/* \
+                    "$HOME/.claude" "$HOME/.kimi-code" "$HOME/.grok" "$HOME/.codex" \
+                    "$HOME/.cursor" "$HOME/.config/opencode" "$HOME/.agents"; do
+            candidate="$home/skills/handoff/scripts/handoff_tui.py"
+            [ -f "$candidate" ] && viewer=$candidate
+        done
+    fi
+fi
+[ -n "$viewer" ] && [ -f "$viewer" ] || exit 0
+
+line=$(printf '%s' "$payload" | "${HANDOFF_PYTHON:-python3}" "$viewer" --bar --file "$ledger" $passthrough 2>/dev/null) || exit 0
+
+if [ -n "$stamp" ]; then
+    mkdir -p "$cache_dir" 2>/dev/null && {
+        printf '%s\n%s\n' "$stamp" "$line" > "$cache.tmp$$" 2>/dev/null &&
+        mv -f "$cache.tmp$$" "$cache" 2>/dev/null
+    } || rm -f "$cache.tmp$$" 2>/dev/null
+fi
+
+[ -n "$line" ] && printf '%s\n' "$line"
+exit 0

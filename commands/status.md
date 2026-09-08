@@ -20,26 +20,33 @@ Claude Code's status line is a row at the bottom that re-runs a command and
 redraws. Point it at the viewer's one-line mode so ledger progress stays visible
 while work happens.
 
-Check that the launcher is on PATH (`command -v handoff-tui`). If it is missing,
-copy it from this skill first:
+Check that both scripts are on PATH (`command -v handoff-bar handoff-tui`). If
+either is missing, copy them from this skill first:
 
 ```sh
-cp "$SKILL_DIR/scripts/handoff-tui" ~/.local/bin/ && chmod +x ~/.local/bin/handoff-tui
+cp "$SKILL_DIR/scripts/handoff-bar" "$SKILL_DIR/scripts/handoff-tui" ~/.local/bin/
+chmod +x ~/.local/bin/handoff-bar ~/.local/bin/handoff-tui
 ```
+
+Use `handoff-bar`, not `handoff-tui --bar`: hosts cap how long a status-line
+command may take, and the bar caches its row so a tick costs about 31ms rather
+than 250ms. `references/harness-setup.md` carries the per-harness configuration
+for Claude Code, Grok, and Kimi, and records which harnesses have no such hook.
 
 Then add this to `~/.claude/settings.json`, preserving every other setting:
 
 ```json
 "statusLine": {
   "type": "command",
-  "command": "$HOME/.local/bin/handoff-tui --bar",
+  "command": "$HOME/.local/bin/handoff-bar",
   "padding": 0,
   "refreshInterval": 2
 }
 ```
 
-Use the launcher path, never a versioned plugin path, so the bar survives skill
-upgrades. `refreshInterval` re-runs the command on a timer, so the bar keeps
+If the host is not Claude Code, use its own status-line configuration from
+`references/harness-setup.md` instead of the JSON above. Use the PATH script,
+never a versioned plugin path, so the bar survives skill upgrades. `refreshInterval` re-runs the command on a timer, so the bar keeps
 moving while the session is idle and other agents write the ledger.
 
 If `statusLine` already holds something else, do not overwrite it. Report what is
@@ -49,7 +56,7 @@ Verify before claiming it works: pipe a sample payload through the command and
 show the row it prints.
 
 ```sh
-echo '{"workspace":{"current_dir":"'"$PWD"'"}}' | ~/.local/bin/handoff-tui --bar
+echo '{"workspace":{"current_dir":"'"$PWD"'"}}' | ~/.local/bin/handoff-bar
 ```
 
 The bar prints nothing outside a repository that has a ledger, which is intended:

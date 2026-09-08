@@ -147,11 +147,29 @@ handoff █████████░ 17/18 tasks · 70/73 steps · Codex
 ```
 
 It configures Claude Code's [status line](https://code.claude.com/docs/en/statusline)
-to run `handoff-tui --bar`, which prints one row and exits. With
-`refreshInterval` set, the bar keeps updating while the session is idle, so
-progress moves as other agents write the ledger. `/handoff:status off` removes
-it. The bar prints nothing in a repository without a ledger, so it stays empty
-rather than erroring.
+to run `handoff-bar`, which prints one row and exits. With a refresh interval
+set, the bar keeps updating while the session is idle, so progress moves as
+other agents write the ledger. `/handoff:status off` removes it. The bar prints
+nothing in a repository without a ledger, so it stays empty rather than erroring.
+
+### Other agent harnesses
+
+The bar is not Claude Code specific. `handoff-bar` reads the status-line payload
+shapes all of these send, so the same script works unchanged:
+
+| Harness | Live bar | Configure in |
+| --- | --- | --- |
+| Claude Code 2.1.260 | Yes | `~/.claude/settings.json` → `statusLine` |
+| Grok CLI 1.0.13 | Yes | `~/.grok/config.toml` → `[ui.status_line]` |
+| Kimi Code 0.41.0 | Yes | `~/.kimi-code/tui.toml` → `[status_line]` |
+| Codex CLI 0.153.4 | No command hook found | — |
+| opencode 1.18.3 | Built-in segments only | — |
+| Cursor agent | None found | — |
+
+Harnesses without a status-line hook still get the full dashboard: run
+`handoff-tui` in a second terminal, which needs nothing from the host. Exact
+configuration and the measurements behind the design are in
+[harness setup](skills/handoff/references/harness-setup.md).
 
 The command also reports the totals and per-owner table the bar has no room for.
 Both show *recorded* progress; `/handoff:continue` is the one that runs the
