@@ -196,6 +196,8 @@ python3 skills/handoff/scripts/handoff_tui.py --root /path/to/your/repo
 
 Run this from a checkout of this repository, or use the script's path inside your installed handoff skill. It refreshes every second as agents save ledger updates.
 
+![The live handoff-tui dashboard](assets/handoff-tui.gif)
+
 ### Views
 
 - **Agents** — Groups totals by the exact owner label in each heading. Shows completed/total tasks, in-progress tasks, pending tasks, step progress, and (when recorded) the harness each owner used. Owners appear in ledger order (newest first), not alphabetically. A `(recent)` suffix marks sessions that claimed a name on this machine in the last 15 minutes — that is a recent claim, not proof the agent is running.

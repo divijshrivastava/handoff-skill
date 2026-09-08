@@ -1,5 +1,20 @@
 # Handoff
 
+## 2026-09-09 - Add a handoff-tui GIF to the README dashboard section (owner: Haetae) (harness: Grok)
+
+State:
+
+- [x] In progress
+- [ ] Completed
+
+Steps:
+
+- [ ] Convert the latest TUI screen recording to an optimized GIF (assets/handoff-tui.gif).
+- [ ] Embed it in the Live progress dashboard section (README.md).
+- [ ] Commit, push origin/main, and record the identifier.
+
+Status: In progress. Converting the 4:44 screen recording of handoff-tui (36.6s, 1898x1012) to a README GIF, trimmed past the blank terminal lead-in.
+
 ## 2026-09-09 - Center the README logo (owner: Haetae) (harness: Grok)
 
 State:
