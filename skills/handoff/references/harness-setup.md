@@ -24,6 +24,35 @@ three supported payload shapes work without per-host configuration. A harness
 with no status line still gets the dashboard: run `handoff-tui` in a second
 terminal, which needs nothing from the host.
 
+## Platform support
+
+| Piece | Linux, macOS | Windows |
+| --- | --- | --- |
+| The skill contract itself | Yes | Yes, it is prose and needs no runtime |
+| `handoff_guard.py` | Yes, `fcntl` lock | Yes, `msvcrt` lock |
+| `handoff_tui.py --once` and `--bar` | Yes | Yes, neither path imports curses |
+| `handoff_tui.py` live dashboard | Yes | **No.** Stdlib Python has no `curses` on Windows; use WSL |
+| `handoff-bar` | Yes | **No.** Needs POSIX `sh`, `sed`, `cksum` |
+
+On Windows, point the status line at the viewer directly, which needs only
+Python:
+
+```json
+"statusLine": {
+  "type": "command",
+  "command": "python \"%USERPROFILE%\\\\handoff\\\\scripts\\\\handoff_tui.py\" --bar",
+  "refreshInterval": 2
+}
+```
+
+That path costs a Python start per tick rather than `handoff-bar`'s cached
+row, which is acceptable where no host imposes a tight timeout. `handoff-bar`
+is a POSIX fast path, not the portable one.
+
+Everything here needs Python 3.9+. Nothing needs Node: most agent harnesses
+ship native binaries, and an npm-delivered one usually vendors a compiled
+binary rather than running from source.
+
 ## Setup
 
 Copy both scripts once onto PATH, then point the host at `handoff-bar`:

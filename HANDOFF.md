@@ -1,5 +1,21 @@
 # Handoff
 
+## 2026-09-08 - Test on Windows and fix what it exposed (owner: Claude session 01LD89UW)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Add windows-latest to the CI matrix.
+- [x] Fix the product and test defects Windows CI reported.
+- [x] Document the platform matrix and the portable status-line path.
+- [x] Get all four matrix legs passing and record the handoff.
+
+Status: Complete. Every Windows claim in this repository had been design intent read off the source: CI ran ubuntu-latest only, and the `msvcrt` lock branch carries `pragma: no cover - selected by platform`. Added `windows-latest` with `fail-fast: false`. It failed immediately and found four defects, one of them a real product bug. The product bug: `handoff_tui.py` wrote its output to a stdout that defaults to cp1252 on Windows, so `--once` and `--bar` raised `UnicodeEncodeError` and exited 1 — breaking the exact path documented as the portable Windows status line, and any ledger containing non-ASCII. Fixed by reconfiguring stdout to UTF-8 with `errors="replace"`, plus an ASCII glyph fallback in the bar when the stream still cannot encode block characters. That fix then exposed a second one: the suites decoded child output with the locale codepage, so Windows raised `UnicodeDecodeError` and left stdout `None`; every `subprocess.run` in both suites now decodes UTF-8 explicitly. The remaining three were POSIX-only test assumptions, skipped or adapted rather than weakened: `os.mkfifo` for parking a writer, permission bits Windows does not have, and 8.3 short temp paths, now compared resolved. Also added `.gitattributes` forcing LF, because a CRLF checkout breaks the shell scripts under Git Bash and WSL and changes ledger hashes. Documented the platform matrix in `references/harness-setup.md` and the README: the live curses dashboard cannot run on native Windows because stdlib Python ships no `curses` there, and `handoff-bar` needs POSIX `sh`; the portable status line on Windows is `python handoff_tui.py --bar`. Verified: all four CI legs pass (ubuntu and windows, Python 3.9 and 3.12) on run 34176454390; locally 79 helper/viewer/launcher/bar tests and 5 repository tests pass, versions agree at 1.9.0, ledger validation, archive build, and whitespace checks pass. Not verified: no live Windows agent session was run, so the Windows status-line configuration is documented from the host's own schema rather than observed; Grok and Kimi status lines remain unexercised in live sessions from the earlier entry. Next action: merge PR #1 and release 1.9.0.
+
 ## 2026-09-08 - Fix status-line viewer resolution in handoff-bar (owner: Claude session 01LD89UW)
 
 State:

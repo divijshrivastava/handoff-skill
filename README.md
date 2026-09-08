@@ -43,7 +43,7 @@ npx skills add divijshrivastava/handoff-skill --skill handoff
 
 Add `-g` to install globally.
 
-**Requirements:** Git, an agent with repository read/edit access, and Python 3.9+ for the optional helper. Handoff needs no API key, external service, Python package, or background process.
+**Requirements:** Git, an agent with repository read/edit access, and Python 3.9+ for the optional helper (no Node; the live dashboard additionally needs a POSIX terminal). Handoff needs no API key, external service, Python package, or background process.
 
 ## Use it
 
@@ -170,6 +170,11 @@ Harnesses without a status-line hook still get the full dashboard: run
 `handoff-tui` in a second terminal, which needs nothing from the host. Exact
 configuration and the measurements behind the design are in
 [harness setup](skills/handoff/references/harness-setup.md).
+
+On Windows the ledger helper and the snapshot and bar modes work, but the live
+curses dashboard and the `handoff-bar` fast path do not; point the status line
+at `python handoff_tui.py --bar`, or use WSL for the dashboard. CI runs the
+suites on Ubuntu and Windows.
 
 The command also reports the totals and per-owner table the bar has no room for.
 Both show *recorded* progress; `/handoff:continue` is the one that runs the
