@@ -38,6 +38,20 @@ Reassigned 2026-09-08: moved from Chiron to Zahhak in the handoff viewer at the
 user's direction. No state or step boxes were changed, and the entry keeps its
 place in ledger order.
 
+## 2026-09-08 - Correct the README scope claim that 1.11.0 falsified (owner: Claude session handoff-skill-b5)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Narrow the scope sentence so it matches the shipped takeover protocol (README.md).
+- [x] Run repository checks and record verification.
+
+Status: Complete. The user asked to update the README. Audited it before writing anything, and no feature was missing: `--codex` is documented under `Codex with the bar`, and the viewer's `x`/`p` handoff and `--read-only` under the dashboard section. The real defect was a contradiction 1.11.0 introduced and 1.11.1 did not fix. `## Scope` claimed Handoff "does not authorize an agent to take over another agent's work", which was true before that release and is now contradicted by the same file's own dashboard section describing a bucket takeover, and by `SKILL.md`, which ships `Authorized takeover of another agent's bucket`. Narrowed rather than deleted, because the constraint did not disappear, only its scope: an agent still may not take over on its own initiative, and a takeover needs the user's explicit direction, a stopped prior owner, preserved uncommitted work, and a recorded transfer. Worked on a branch in a separate worktree rather than the shared checkout: while this edit was in progress a live Codex session moved that checkout onto `viewer-move-feedback` and committed a 1.11.1 release, so the first attempt landed on that branch by accident; both changes were saved, reverted there so that session's tree was left exactly as it was, and reapplied from `origin/main`. That session's work has since reached main as `d815782` and `cc6f51d`, and this branch was rebuilt on top of it rather than hand-resolving the ledger conflict the two entries created. Verified after the rebuild: 5 repository tests pass, `validate --root .` exits 0, `git diff --check` is clean, and versions agree at 1.11.1. The helper suite was not rerun, because no helper code changed.
+
 ## 2026-09-08 - Open the viewer with Ctrl-G from any agent session (owner: Chiron)
 
 State:
