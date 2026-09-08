@@ -130,13 +130,19 @@ does, and the same key then means two different things. To give it one meaning:
 handoff-tui --install-viewer-key
 ```
 
-That rewrites `~/.claude/keybindings.json` to release the key and move
+That detects the current terminal emulator when it can. For **Claude Code** it
+rewrites `~/.claude/keybindings.json` to release the key and move
 `chat:externalEditor` onto `ctrl+e`, the alternative Claude Code's own
-documentation uses for this rebinding. It merges: other contexts and bindings
-in the file are preserved, running it twice reports that the key is already
-released, and a file that does not parse is left untouched rather than
-replaced. It follows `$HANDOFF_VIEWER_KEY`, and skips with a message for a key
-that has no host spelling, such as a function or `Alt` key.
+documentation uses for this rebinding. Claude Code cannot bind a key to run an
+external command, so that step only stops the host from stealing the key; use
+`/handoff:view` or `handoff-tui --with <agent>` for a key that actually opens
+the viewer. For **kitty**, **wezterm**, and **iTerm2** it writes a marked
+config snippet that runs `handoff-tui`; iTerm2 ships a JSON preset to import
+from Settings → Keys. Pass `--emulator` to choose explicitly. It merges rather
+than replaces where possible, running twice reports that the key is already
+released or installed, and a file that does not parse is left untouched rather
+than replaced. It follows `$HANDOFF_VIEWER_KEY`, and skips with a message for a
+key that has no host spelling, such as a function or `Alt` key.
 
 Verification: argument forwarding, refresh, stale data, format escaping,
 failure cleanup, and packaged loading have regression tests. The optional

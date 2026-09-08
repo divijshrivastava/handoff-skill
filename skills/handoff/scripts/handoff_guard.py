@@ -404,6 +404,10 @@ MYTHIC_NAMES = (
 # A claim older than this is treated as a finished session, so a machine that
 # has run hundreds of sessions does not run out of names.
 NAME_CLAIM_SECONDS = 12 * 3600
+# First-come-first-served naming cycles A through Z, then wraps to the next
+# free A name. The slot counter lives beside per-session claim records.
+LETTER_CYCLE = tuple(chr(ord("A") + index) for index in range(26))
+FCFS_SLOT_FILE = "fcfs-slot"
 
 
 def session_seed(explicit: str | None = None) -> str:
@@ -421,16 +425,53 @@ def session_seed(explicit: str | None = None) -> str:
     return os.urandom(16).hex()
 
 
-def name_order(seed: str) -> list[str]:
-    """Order the whole roster for one seed.
+def names_starting_with(letter: str) -> list[str]:
+    """Roster names whose first letter matches, in alphabetical order."""
+    upper = letter.upper()
+    return sorted(name for name in MYTHIC_NAMES if name[0].upper() == upper)
 
-    Hashing rather than `random.shuffle` keeps the order reproducible across
-    Python versions, so a session that asks twice is told the same name.
+
+def name_for_letter(letter: str, reserved: set[str]) -> str | None:
+    """First free roster name for one initial, or None when that letter is exhausted."""
+    for name in names_starting_with(letter):
+        if name not in reserved:
+            return name
+    return None
+
+
+def name_for_slot(slot: int, reserved: set[str]) -> str:
+    """Pick the name this FCFS slot earns, cycling A through Z.
+
+    When every name for one initial is taken, the next initial is tried so a
+    busy machine still hands out a name rather than failing on empty letters
+    such as W.
     """
-    return sorted(
-        MYTHIC_NAMES,
-        key=lambda name: hashlib.sha256(("%s\0%s" % (seed, name)).encode("utf-8")).hexdigest(),
-    )
+    for offset in range(len(LETTER_CYCLE)):
+        letter = LETTER_CYCLE[(slot + offset) % len(LETTER_CYCLE)]
+        chosen = name_for_letter(letter, reserved)
+        if chosen is not None:
+            return chosen
+    return free_name(sorted(MYTHIC_NAMES), reserved)
+
+
+def allocate_fcfs_slot(directory: Path) -> int:
+    """Hand out the next first-come-first-served naming slot."""
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return int(time.time() * 1000) % (len(LETTER_CYCLE) * 1000)
+    slot_path = directory / FCFS_SLOT_FILE
+    try:
+        with ledger_lock(slot_path):
+            try:
+                slot = int(slot_path.read_text(encoding="utf-8").strip())
+            except (OSError, ValueError):
+                slot = 0
+            slot_path.write_text(str(slot + 1) + "\n", encoding="utf-8")
+            return slot
+    except (RuntimeError, OSError):
+        # Without a lock primitive, fall back to a best-effort slot.
+        return int(time.time() * 1000) % (len(LETTER_CYCLE) * 1000)
 
 
 def taken_names(text: str) -> set[str]:
@@ -502,7 +543,8 @@ def claim_name(seed: str, ledger: Path, taken: set[str]) -> tuple[str, bool]:
         remembered = ""
     if remembered:
         return remembered, True
-    chosen = free_name(name_order(seed), set(taken) | held_names(directory, record))
+    reserved = set(taken) | held_names(directory, record)
+    chosen = name_for_slot(allocate_fcfs_slot(directory), reserved)
     try:
         directory.mkdir(parents=True, exist_ok=True)
         record.write_text(chosen + "\n", encoding="utf-8")

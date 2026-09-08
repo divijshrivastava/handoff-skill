@@ -17,6 +17,7 @@ from unittest.mock import MagicMock, patch
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 import handoff_codex as codex
+import handoff_keys as keys
 import handoff_tui as tui
 sys.path.pop(0)
 
@@ -445,8 +446,8 @@ class HostKeybindingTests(unittest.TestCase):
 
     def test_the_viewer_installs_the_override_and_exits(self):
         target = self.path()
-        with patch.object(codex, "CLAUDE_KEYBINDINGS", target):
-            self.assertEqual(tui.main(["--install-viewer-key"]), 0)
+        with patch.object(keys, "CLAUDE_KEYBINDINGS", target):
+            self.assertEqual(tui.main(["--install-viewer-key", "--emulator", "claude"]), 0)
         self.assertIsNone(json.loads(target.read_text(encoding="utf-8"))
                           ["bindings"][0]["bindings"]["ctrl+g"])
 

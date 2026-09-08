@@ -21,6 +21,7 @@ RUNTIME_FILES = (
     "scripts/handoff-tui",
     "scripts/handoff_codex.py",
     "scripts/handoff_guard.py",
+    "scripts/handoff_keys.py",
     "scripts/handoff_tui.py",
 )
 # Launchers ship executable so they work once copied onto PATH. The set is
