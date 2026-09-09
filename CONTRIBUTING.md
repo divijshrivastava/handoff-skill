@@ -16,6 +16,39 @@ git diff --check
 
 The release bundle deliberately includes only `SKILL.md`, `agents/openai.yaml`, `scripts/handoff_guard.py`, `scripts/handoff_channel.py`, `scripts/handoff_tui.py`, `scripts/handoff_codex.py`, `scripts/handoff-tui`, `scripts/handoff-bar`, referenced Markdown files, and the license. Update the explicit allowlist and packaging tests if you add a runtime resource. `EXECUTABLE_FILES` in `scripts/package_skill.py` is a fixed set shipped at mode 0755, so launchers work once copied onto PATH; keep it constant so archives stay byte-reproducible. Codex mode additionally needs tmux 3.2+; its real-terminal integration test skips on Windows, missing tmux, or a sandbox that forbids sockets.
 
+## Skill descriptions
+
+The always-visible `SKILL.md` description carries the activation cues and the
+ordered guard `name`, `read`, and `apply --expect-version` sequence. A model that
+does not load the body must still see how to avoid an unguarded ledger write.
+Keep the longer activation explanation in the body. `tests/test_package.py`
+checks the frontmatter alone for the literal commands, their order, and the
+character limits; the existing CI suite runs those checks on Python 3.9 and 3.12.
+
+The portable budget is 1,024 characters, measured on the decoded description,
+with these source checks made on 2026-09-10:
+
+| Target | Limit and evidence |
+| --- | --- |
+| Agent Skills format | [The specification](https://agentskills.io/specification#description-field) requires 1–1,024 characters. This is the shared authoring budget. |
+| Claude Code, including plugin skills | [The skill frontmatter reference](https://code.claude.com/docs/en/skills#frontmatter-reference) documents truncation of the combined `description` and `when_to_use` listing text at 1,536 characters by default. This is a listing limit, not a documented loader rejection at 1,024; this skill has no `when_to_use`. User settings and the aggregate skill-listing budget can further restrict visibility. |
+| Cursor | The bundled `~/.cursor/skills-cursor/create-skill/SKILL.md` metadata table specifies a 1,024-character maximum. [Cursor's public format reference](https://cursor.com/docs/skills#frontmatter-fields) describes the required field without a numeric cap. We follow the bundled authoring contract; runtime truncation or rejection was not independently established. |
+| Vercel `skills` CLI | [`parseSkillMd`](https://github.com/vercel-labs/skills/blob/main/src/skills.ts) checks for a non-empty string and passes it through [`sanitizeMetadata`](https://github.com/vercel-labs/skills/blob/main/src/sanitize.ts), which removes terminal escapes and normalizes whitespace without truncation. That parser enforces no separate character cap; installation still targets hosts with their own limits. |
+
+These values are constants in `DESCRIPTION_CHARACTER_LIMITS` in
+`tests/test_package.py`; `None` records the absence of a CLI parser cap instead
+of inventing one. Recheck the sources before changing the budget. The
+`<repo>`, `V`, and `FILE` command arguments are placeholders for the repository,
+the version returned by `read`, and the prepared ledger payload.
+
+Plugin and marketplace descriptions retain the short capability sentence,
+"Coordinate progressive repository work across agents with a shared HANDOFF.md
+ledger." Their audience is browsing a listing; the procedure belongs in the
+model-visible skill description. The manifest generator in requirement A must
+preserve that choice rather than copy or truncate the procedure into a listing.
+Task B's structural checks do not demonstrate a behavioral improvement; that
+requires actual executed and graded evaluations under requirement C.
+
 ## Publish a release
 
 1. Update `metadata.version` in `skills/handoff/SKILL.md` and the matching

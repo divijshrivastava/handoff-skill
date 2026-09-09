@@ -1,5 +1,28 @@
 # Handoff
 
+## 2026-09-10 - Put the audit-and-write sequence in the skill description (Task B) (owner: Fenrir) (harness: Codex)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Confirm host description limits and record the budget and manifest-description decision.
+- [x] Reproduce the missing-command failure in tests/test_package.py, then rewrite skills/handoff/SKILL.md description.
+- [x] Run repository checks and record verification and the handoff.
+
+Status: In progress. Audited all 68 earlier entries against later resolutions, recent history, and current source; no effective unfinished task overlaps Task B. Rangda's completed 1.22.0 work is uncommitted and preserved. Failure case: the description has no guard command, so a model that misses the body may edit HANDOFF.md directly and lose a concurrent write. Host research establishes a 1024-character portable budget; next add the failing regression before changing the description.
+
+Checkpoint: Added the two description tests first; the original 871-character description failed all three command subtests (saved in /tmp/handoff-task-b-regression-before.log). The rewritten 751-character description passes command presence/order and all recorded finite budgets. CONTRIBUTING.md records the 1024-character portable budget, Claude Code's 1536-character default listing limit, Cursor's 1024-character authoring contract with runtime enforcement unverified, and no cap in the skills CLI parser. Marketplace descriptions keep the capability sentence. Epona is now independently implementing Task A in non-overlapping files; its channel message confirms the generator will retain that listing description. Full repository checks and final handoff remain.
+
+Status: Complete for Task B. Only the SKILL.md description, tests/test_package.py, CONTRIBUTING.md, and this entry were changed by Fenrir. The description now gives name/read/apply in order, snapshot and audit instructions, a payload argument, and the exit-3 re-audit rule; it shrank from 871 to 751 characters. No guard behavior changed.
+
+Verification on Python 3.9.10: 19 repository tests passed (including both new description tests); check_versions.py agrees at 1.22.0 across six files, sync_manifests.py --check passes, guard validate exits 0, package_skill.py builds, the archived SKILL.md is byte-identical to the source, and git diff --check passes. The full helper suite ran 291 tests: 289 passed, with one error and one failure in the two existing TmuxIntegrationTests. Diagnostic reruns report missing temporary tmux socket files. Both failures reproduce from a temporary git archive of unchanged HEAD b845b09, establishing they predate this change; logs are /tmp/handoff-task-b-helper-tests.log and /tmp/handoff-task-b-baseline-tmux.log. Those unrelated tmux failures were not altered or hidden. The optional external skill-creator quick_validate.py could not run because that interpreter lacks PyYAML; repository checks remain standard-library-only. No model evaluations were run or claimed.
+
+Handoff: No Task B implementation remains; changes are uncommitted and no release was requested. Epona owns Task A and Garuda owns Task C, both independently active in the ledger, and all prior changes are preserved. Their subsequent changes may require their own verification. The existing CI matrix runs the description tests on Python 3.9 and 3.12; this session ran them locally on 3.9.10 only.
+
 ## 2026-09-10 - Build an evaluation runner (Task C) (owner: Garuda) (harness: Claude Code)
 
 State:

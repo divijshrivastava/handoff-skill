@@ -3,6 +3,7 @@ import os
 import shutil
 import importlib.util
 import json
+import re
 import shlex
 from pathlib import Path
 import subprocess
@@ -16,6 +17,46 @@ ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location("package_skill", ROOT / "scripts/package_skill.py")
 package = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(package)
+
+
+# Sources and enforcement distinctions: CONTRIBUTING.md, "Skill descriptions".
+DESCRIPTION_CHARACTER_LIMITS = {
+    "Agent Skills standard": 1024,
+    "Claude Code skill listing": 1536,
+    "Cursor authoring contract": 1024,
+    "skills CLI parser": None,
+}
+
+
+class SkillDescriptionTests(unittest.TestCase):
+    def setUp(self):
+        skill = (ROOT / "skills/handoff/SKILL.md").read_text(encoding="utf-8")
+        self.assertTrue(skill.startswith("---\n"))
+        frontmatter = skill.split("---", 2)[1]
+        # The source uses a JSON-compatible, quoted YAML scalar on one line.
+        match = re.search(r'^description: (".*")$', frontmatter, re.MULTILINE)
+        self.assertIsNotNone(match, "Expected the quoted frontmatter description")
+        self.description = json.loads(match.group(1))
+
+    def test_description_contains_guard_commands_in_order(self):
+        commands = (
+            "handoff_guard.py name --root <repo>",
+            "handoff_guard.py read --root <repo>",
+            "handoff_guard.py apply --root <repo> --expect-version V",
+        )
+        positions = []
+        for command in commands:
+            with self.subTest(command=command):
+                self.assertIn(command, self.description)
+                positions.append(self.description.index(command))
+        self.assertEqual(positions, sorted(positions), "Claim, read, then apply")
+
+    def test_description_fits_recorded_character_limits(self):
+        self.assertTrue(self.description.strip())
+        for host, limit in DESCRIPTION_CHARACTER_LIMITS.items():
+            if limit is not None:
+                with self.subTest(host=host):
+                    self.assertLessEqual(len(self.description), limit)
 
 
 class PackageTests(unittest.TestCase):

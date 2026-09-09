@@ -392,10 +392,24 @@ For normal sequential work—or separate Git worktrees—editing `HANDOFF.md` di
 
 When several agents share **one working tree**, use the bundled `apply` command. It performs a locked, compare-and-swap update so one agent cannot silently overwrite another agent's ledger change. The helper holds an exclusive lock on a `HANDOFF.md.lock` sidecar across re-read, version check, and atomic replace. The payload is read before the lock is taken so blocking stdin cannot stall peers.
 
+The skill's always-visible description includes the sequence: claim a name with
+`name`, take one ledger snapshot with `read`, audit it, then write with
+`apply --expect-version`. This puts the essential commands in front of an agent
+before it loads the full skill instructions. On exit `3`, read again and
+re-audit before preparing a new write; retrying stale content can lose a peer's
+work. Tests check that the description retains the commands in order and fits
+the recorded host limits. Marketplace listings keep the short purpose statement;
+the [contributor guide](CONTRIBUTING.md#skill-descriptions) records the limits
+and this decision. These checks verify placement, not model behavior.
+
 <details>
 <summary>Safe concurrent update example</summary>
 
 ```bash
+# Claim this session's name before starting the audit
+python3 skills/handoff/scripts/handoff_guard.py name \
+  --root /absolute/path/to/repo
+
 # Read a consistent snapshot and its version
 python3 skills/handoff/scripts/handoff_guard.py read \
   --root /absolute/path/to/repo
