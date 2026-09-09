@@ -3,7 +3,7 @@ name: handoff
 description: "Coordinate progressive repository work across agents with a shared HANDOFF.md ledger. Active in any repository that already keeps a HANDOFF.md, which is itself the record that this repository tracks work this way; where none exists, it starts on explicit activation: the /handoff:init command, the phrase 'initialise the handoff' (the Codex prompt), or an explicit handoff request such as /handoff:continue, /handoff:status, /handoff:view, /handoff:purge, or 'use handoff'. Use for starting, continuing, checking, pausing, handing off, purging, or committing tracked repository work. Audits later work and current code before treating old unchecked boxes as unfinished. Multiple agents, or unfinished-looking work in a repository that keeps no ledger, are not triggers on their own. Do not use for read-only questions that require no task tracking or repository mutation."
 license: MIT
 metadata:
-  version: "1.20.0"
+  version: "1.21.0"
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
 ---
 

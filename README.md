@@ -12,7 +12,7 @@ Handoff is an agent skill for repositories where work continues across multiple 
 
 A real session: `/handoff:continue` claims a name and runs preflight on the left while the dashboard on the right tracks five agents against the same ledger.
 
-**Version:** 1.20.0
+**Version:** 1.21.0
 
 ## Why Handoff?
 

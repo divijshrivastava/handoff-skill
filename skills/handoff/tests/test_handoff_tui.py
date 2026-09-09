@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -351,21 +352,20 @@ class BarTests(unittest.TestCase):
         self.assertEqual(tui.bar_line(self.snapshot("# Handoff\n")), "")
         self.assertEqual(tui.bar_line(None), "")
 
-    def test_counts_and_open_owners_appear(self):
+    def test_counts_appear_without_a_session_name(self):
         text = "# Handoff\n\n" + entry(title="A", owner="Ann", state="completed", steps=(True, True))
         text += entry(title="B", owner="Bo", state="in_progress", steps=(True, False))
         line = tui.bar_line(self.snapshot(text), color=False)
         self.assertIn("1/2 tasks", line)
         self.assertIn("3/4 steps", line)
-        self.assertIn("Bo", line)
+        self.assertNotIn("Bo", line)
         self.assertNotIn("Ann", line)
 
-    def test_open_owners_are_named_newest_first(self):
-        """Ledger order, like the viewer's agent list: not alphabetical, not doubled."""
-        text = ("# Handoff\n\n" + entry(title="C", owner="Zoe")
-                + entry(title="B", owner="Ann") + entry(title="A", owner="Zoe"))
-        line = tui.bar_line(self.snapshot(text), color=False)
-        self.assertTrue(line.endswith(" Zoe, Ann"), line)
+    def test_session_name_trails_the_row(self):
+        text = "# Handoff\n\n" + entry(title="A", owner="Ann", steps=(True, False))
+        line = tui.bar_line(self.snapshot(text), color=False, session_name="Janus")
+        self.assertTrue(line.endswith(" Janus"), line)
+        self.assertNotIn("Ann", line)
 
     def test_no_color_omits_escape_codes(self):
         text = "# Handoff\n\n" + entry(steps=(True, False))
@@ -379,6 +379,46 @@ class BarTests(unittest.TestCase):
     def test_bar_is_one_line(self):
         text = "# Handoff\n\n" + entry(title="A\nB", owner="Ann", steps=(True, False))
         self.assertNotIn("\n", tui.bar_line(self.snapshot(text), color=False))
+
+
+class BarSessionNameTests(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.base = Path(self.dir.name)
+        self.ledger = (self.base / "HANDOFF.md").resolve()
+        self.ledger.write_text("# Handoff\n\n" + entry(owner="Other"), encoding="utf-8")
+        self.cache = self.base / "names"
+        self.bar_cache = self.base / "bar-cache"
+        self.env = patch.dict(os.environ, {
+            "HANDOFF_NAME_CACHE": str(self.cache),
+            "HANDOFF_BAR_CACHE": str(self.bar_cache),
+            "HANDOFF_SESSION": "",
+            "CLAUDE_CODE_SESSION_ID": "",
+            "TERM_SESSION_ID": "",
+        }, clear=False)
+        self.env.start()
+        self.addCleanup(self.env.stop)
+        self.addCleanup(self.dir.cleanup)
+
+    def test_recall_from_payload_session_id(self):
+        seed = "host-session-bar-tests-1"
+        guard.claim_name(seed, self.ledger, set())
+        payload = json.dumps({"session_id": seed, "cwd": str(self.base)})
+        self.assertEqual(tui.bar_session_name(self.ledger, payload),
+                         guard.recall_name(seed, self.ledger))
+
+    def test_bar_cli_prints_the_claimed_session(self):
+        seed = "bar-cli-session-tests-1"
+        claimed = guard.claim_name(seed, self.ledger, set())[0]
+        payload = json.dumps({"session_id": seed, "cwd": str(self.base)})
+        env = dict(os.environ)
+        result = subprocess.run(
+            [sys.executable, str(SCRIPTS / "handoff_tui.py"), "--bar",
+             "--file", str(self.ledger)],
+            input=payload, capture_output=True, text=True, encoding="utf-8", env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(claimed, result.stdout)
+        self.assertNotIn("Other", result.stdout)
 
 
 class EncodingTests(unittest.TestCase):

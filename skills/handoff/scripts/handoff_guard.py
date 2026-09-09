@@ -598,6 +598,60 @@ def free_name(order: list[str], reserved: set[str]) -> str:
         suffix += 1
 
 
+def bar_cache_dir() -> Path:
+    location = os.environ.get("HANDOFF_BAR_CACHE")
+    if location:
+        return Path(location).expanduser()
+    user = getattr(os, "getuid", lambda: 0)()
+    return Path(tempfile.gettempdir()) / ("handoff-bar-%s" % user)
+
+
+def bar_cache_key(ledger: Path) -> str:
+    """Cache file stem for one ledger, matching handoff-bar's cksum key."""
+    text = str(ledger.resolve()).encode("utf-8")
+    try:
+        result = subprocess.run(["cksum"], input=text, capture_output=True, check=False)
+    except OSError:
+        result = None
+    if result is not None and result.returncode == 0:
+        parts = result.stdout.decode("utf-8", errors="replace").split()
+        if len(parts) >= 2:
+            return parts[0] + parts[1]
+    import zlib
+
+    checksum = zlib.crc32(text) & 0xFFFFFFFF
+    return "%s%s" % (checksum, len(text))
+
+
+def invalidate_bar_cache(ledger: Path) -> None:
+    """Drop a cached status row when a name claim changes what the bar shows."""
+    try:
+        (bar_cache_dir() / bar_cache_key(ledger.resolve())).unlink()
+    except OSError:
+        pass
+
+
+def name_record(seed: str, ledger: Path) -> Path:
+    """Where this session's claim for this ledger is remembered."""
+    key = hashlib.sha256(("%s\0%s" % (seed, ledger)).encode("utf-8")).hexdigest()[:16]
+    return name_cache_dir() / key
+
+
+def recall_name(seed: str, ledger: Path) -> str | None:
+    """The name this session already claimed for this ledger, without claiming.
+
+    A status line asks who this session is far more often than the session asks
+    for its name, so recalling only reads the record: it never creates one, and
+    it never refreshes one, because a render is not the session asking.
+    """
+    try:
+        lines = name_record(seed, ledger).read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    name = lines[0].strip() if lines else ""
+    return name or None
+
+
 def claim_name(seed: str, ledger: Path, taken: set[str]) -> tuple[str, bool]:
     """Name this session for this ledger, and remember it for later calls.
 
@@ -607,9 +661,8 @@ def claim_name(seed: str, ledger: Path, taken: set[str]) -> tuple[str, bool]:
     else's. The record is a convenience: if the cache cannot be read or
     written, naming still works and only stability across calls is lost.
     """
-    directory = name_cache_dir()
-    key = hashlib.sha256(("%s\0%s" % (seed, ledger)).encode("utf-8")).hexdigest()[:16]
-    record = directory / key
+    record = name_record(seed, ledger)
+    directory = record.parent
     harness = detect_harness()
     try:
         lines = record.read_text(encoding="utf-8").splitlines()
@@ -628,6 +681,7 @@ def claim_name(seed: str, ledger: Path, taken: set[str]) -> tuple[str, bool]:
     try:
         directory.mkdir(parents=True, exist_ok=True)
         record.write_text(chosen + "\n" + (harness or "") + "\n", encoding="utf-8")
+        invalidate_bar_cache(ledger)
     except OSError:
         pass
     return chosen, False

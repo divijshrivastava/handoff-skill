@@ -139,20 +139,23 @@ handoff-tui --root /path/to/repository --read-only
 a dashboard:
 
 ```sh
-handoff-tui --bar          # handoff █████████░ 17/18 tasks · 70/73 steps · Codex
+handoff-tui --bar          # handoff █████████░ 17/18 tasks · 70/73 steps · Janus
 ```
 
 It reads the host's session JSON on stdin when stdin is not a terminal, taking
 `workspace.current_dir` (falling back to `cwd`) as the repository, so the bar
-follows the session rather than the directory the host was launched from. An
-explicit `--root` or `--file` wins over the payload; an unparsable payload is
-ignored rather than fatal. `--no-color` omits the ANSI codes.
+follows the session rather than the directory the host was launched from. When
+the payload carries `session_id`, that id is used to recall the name this
+session already claimed at preflight. An explicit `--root` or `--file` wins over
+the payload; an unparsable payload is ignored rather than fatal. `--no-color`
+omits the ANSI codes.
 
 The row is deliberately silent and exits 0 when there is no ledger or nothing
 tracked, so a status bar in an unrelated repository stays empty instead of
-showing an error. Colour is green at full completion and amber otherwise, and
-the trailing names are the owners of entries not recorded complete, listed in
-ledger order like the Agents view so the newest owner comes first.
+showing an error. Colour is green at full completion and amber otherwise. The
+trailing name is the current session's claimed owner label, not the owners of
+open tasks; per-owner progress belongs in the viewer's Agents list. Before
+preflight claims a name, the bar omits the trailer rather than guessing.
 
 In Claude Code, `/handoff:status` wires this into `statusLine`; see the README.
 Point any such configuration at the `handoff-tui` launcher rather than a

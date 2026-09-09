@@ -59,7 +59,7 @@ class PayloadTests(unittest.TestCase):
         result = run(payload, self.base)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("1/2 tasks", result.stdout)
-        self.assertIn("Bo", result.stdout)
+        self.assertNotIn("Bo", result.stdout)
 
     def test_flat_cwd_payload(self):
         """Kimi sends a bare cwd with no workspace object."""
@@ -144,6 +144,24 @@ class CacheTests(unittest.TestCase):
         (other / "HANDOFF.md").write_text(COMPLETED, encoding="utf-8")
         self.assertIn("1/2 tasks", run(self.payload, self.base).stdout)
         self.assertIn("2/2 tasks", run(json.dumps({"cwd": str(other)}), self.base).stdout)
+
+    def test_a_name_claim_invalidates_a_stale_cached_row(self):
+        seed = "bar-cache-session-tests-1"
+        payload = json.dumps({"session_id": seed, "cwd": str(self.repo.resolve())})
+        env = {
+            "HANDOFF_NAME_CACHE": str(self.base / "names"),
+            "HANDOFF_BAR_CACHE": str(self.base / "cache"),
+        }
+        run(payload, self.base, **env)
+        claim = subprocess.run(
+            [sys.executable, str(SCRIPTS / "handoff_guard.py"), "name",
+             "--root", str(self.repo), "--seed", seed],
+            env={**os.environ, **{k: str(v) for k, v in env.items()}},
+            capture_output=True, text=True, encoding="utf-8")
+        self.assertEqual(claim.returncode, 0, claim.stderr)
+        claimed = claim.stdout.strip()
+        second = run(payload, self.base, **env)
+        self.assertIn(claimed, second.stdout)
 
 
 class StdinTests(unittest.TestCase):

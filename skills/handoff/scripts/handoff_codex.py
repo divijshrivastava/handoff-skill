@@ -14,7 +14,7 @@ import sys
 import tempfile
 import time
 
-from handoff_tui import Watcher, bar_line, clean_text, count_tasks
+from handoff_tui import Watcher, bar_line, bar_session_name, clean_text, count_tasks
 from handoff_keys import (
     CLAUDE_KEYBINDINGS,
     DEFAULT_KEY as VIEWER_KEY,
@@ -42,9 +42,11 @@ def viewer_command(ledger: Path, interval: float, read_only: bool) -> str:
     return " ".join(shlex.quote(part) for part in parts)
 
 
-def footer(watcher: Watcher, color: bool = True, key: str | None = None) -> str:
+def footer(watcher: Watcher, color: bool = True, key: str | None = None,
+           session_seed: str | None = None) -> str:
     """Escape tmux formats as well as terminal controls from ledger text."""
-    row = bar_line(watcher.snapshot, color=False)
+    row = bar_line(watcher.snapshot, color=False,
+                   session_name=bar_session_name(watcher.path, seed=session_seed))
     if watcher.error:
         row = "handoff | STALE | " + row if row else "handoff | waiting for readable ledger"
     elif not row:
@@ -98,7 +100,8 @@ class AgentSession:
                         "-w", width, "-h", height, "-d", str(cwd),
                         command).returncode == 0
 
-    def start(self, agent: str, arguments: list[str], cwd: Path, row: str) -> None:
+    def start(self, agent: str, arguments: list[str], cwd: Path, row: str,
+              session_seed: str | None = None) -> None:
         size = shutil.get_terminal_size((100, 30))
         # Keep a placeholder alive until remain-on-exit and the footer are set,
         # even if the agent will fail immediately. Multiple argv items bypass sh.
@@ -117,14 +120,16 @@ class AgentSession:
         # tmux treats even an argv item consisting of ';' as a command
         # separator. Encode user arguments so its parser cannot interpret them.
         payload = base64.b64encode(json.dumps(
-            [str(cwd), [agent, *arguments], str(self.status_file)]).encode()).decode()
+            [str(cwd), [agent, *arguments], str(self.status_file),
+             session_seed or ""]).encode()).decode()
         # The shim waits for the agent rather than exec'ing it, so the exit status
         # survives a tmux that does not report pane_dead_status. It ignores
         # SIGINT so Ctrl-C reaches the agent alone, as a shell would.
         self.call("respawn-pane", "-k", "-t", "handoff:0.0", "-c", str(self.directory),
                   sys.executable, "-c",
                   "import base64,json,os,pathlib,signal,subprocess,sys; "
-                  "d,a,s=json.loads(base64.b64decode(sys.argv[1])); os.chdir(d); "
+                  "d,a,s,h=json.loads(base64.b64decode(sys.argv[1])); os.chdir(d); "
+                  "h and os.environ.__setitem__('HANDOFF_SESSION', h); "
                   "signal.signal(signal.SIGINT, signal.SIG_IGN); c=subprocess.call(a); "
                   "pathlib.Path(s).write_text(str(c)); sys.exit(c)", payload)
 
@@ -189,20 +194,23 @@ def run_agent(watcher: Watcher, cwd: Path, arguments: list[str],
         raise KeyboardInterrupt
 
     previous = signal.signal(signal.SIGTERM, stop)
+    session_seed = os.urandom(16).hex()
     try:
         with tempfile.TemporaryDirectory(prefix="hc-") as directory:
             session = AgentSession(tmux, Path(directory) / "s")
+            session.environment["HANDOFF_SESSION"] = session_seed
             try:
                 watcher.poll()
                 key = viewer_key()
-                row = footer(watcher, color, key)
-                session.start(executable, arguments, cwd, row)
+                row = footer(watcher, color, key, session_seed=session_seed)
+                session.start(executable, arguments, cwd, row,
+                              session_seed=session_seed)
                 if key and not session.bind_viewer(
                         key, viewer_command(watcher.path, interval, read_only), cwd):
                     # An unusable binding is not worth failing the session over,
                     # but the bar must stop promising a key that does nothing.
                     key = None
-                    row = footer(watcher, color, key)
+                    row = footer(watcher, color, key, session_seed=session_seed)
                     session.call("set-option", "-t", "handoff",
                                  "status-format[0]", row, check=False)
                 session.attach()
@@ -215,7 +223,7 @@ def run_agent(watcher: Watcher, cwd: Path, arguments: list[str],
                         return session.client.returncode
                     if time.monotonic() >= next_poll:
                         watcher.poll()
-                        updated = footer(watcher, color, key)
+                        updated = footer(watcher, color, key, session_seed=session_seed)
                         if updated != row:
                             session.call("set-option", "-t", "handoff", "status-format[0]", updated)
                             row = updated

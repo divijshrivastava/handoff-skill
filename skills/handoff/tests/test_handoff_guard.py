@@ -987,3 +987,17 @@ class SessionNameTests(unittest.TestCase):
         slot_path.write_text("26\n", encoding="utf-8")
         chosen = handoff_guard.claim_name("wrap-session", self.ledger, set())[0]
         self.assertEqual(chosen, handoff_guard.names_starting_with("A")[0])
+
+    def test_recall_name_reads_without_claiming(self) -> None:
+        claimed = handoff_guard.claim_name("session-one", self.ledger, set())[0]
+        self.assertEqual(handoff_guard.recall_name("session-one", self.ledger), claimed)
+        self.assertIsNone(handoff_guard.recall_name("session-two", self.ledger))
+
+    def test_a_new_name_claim_invalidates_the_bar_cache(self) -> None:
+        bar_cache = self.root / "bar-cache"
+        bar_cache.mkdir(parents=True, exist_ok=True)
+        cache_file = bar_cache / handoff_guard.bar_cache_key(self.ledger)
+        cache_file.write_text("stale\nrow\n", encoding="utf-8")
+        with unittest.mock.patch.dict(os.environ, {"HANDOFF_BAR_CACHE": str(bar_cache)}):
+            handoff_guard.claim_name("session-one", self.ledger, set())
+        self.assertFalse(cache_file.exists())

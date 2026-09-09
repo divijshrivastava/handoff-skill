@@ -17,6 +17,7 @@ from unittest.mock import MagicMock, patch
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 import handoff_codex as codex
+import handoff_guard as guard
 import handoff_keys as keys
 import handoff_tui as tui
 sys.path.pop(0)
@@ -44,14 +45,14 @@ class FooterTests(unittest.TestCase):
             watcher.poll()
             self.assertIn("STALE", codex.footer(watcher))
 
-    def test_terminal_controls_and_tmux_formats_in_owner_are_inert(self):
+    def test_terminal_controls_in_a_session_name_are_inert(self):
         watcher = tui.Watcher(Path("unused"))
-        watcher.snapshot = tui.parse_snapshot(entry("#[fg=red] #{pane_id} \x1b[2J"))
-        row = codex.footer(watcher, color=False)
+        watcher.snapshot = tui.parse_snapshot(entry())
+        with patch.object(codex, "bar_session_name",
+                          return_value="#[fg=red] #{pane_id} \x1b[2J"):
+            row = codex.footer(watcher, color=False)
         self.assertIn("##[fg=red] ##{pane_id}", row)
         self.assertNotIn("\x1b", row)
-        watcher.snapshot = tui.parse_snapshot(entry("#(touch /tmp/unwanted)"))
-        self.assertIn("##(touch /tmp/unwanted", codex.footer(watcher))
 
     def test_the_key_hint_appears_only_when_a_key_is_bound(self):
         watcher = tui.Watcher(Path("unused"))
@@ -61,12 +62,13 @@ class FooterTests(unittest.TestCase):
         self.assertIn("\u00b7 M-h open", codex.footer(watcher, key="M-h"))
         self.assertIn("\u00b7 F2 open", codex.footer(watcher, key="F2"))
 
-    def test_a_ledger_owner_cannot_forge_the_hint_into_a_tmux_format(self):
-        # The hint is appended after cleaning, so owner text stays escaped and
+    def test_a_session_name_cannot_forge_the_hint_into_a_tmux_format(self):
+        # The hint is appended after cleaning, so session text stays escaped and
         # cannot close the format the hint is written in.
         watcher = tui.Watcher(Path("unused"))
-        watcher.snapshot = tui.parse_snapshot(entry("#[fg=red]"))
-        row = codex.footer(watcher, key="C-g")
+        watcher.snapshot = tui.parse_snapshot(entry())
+        with patch.object(codex, "bar_session_name", return_value="#[fg=red]"):
+            row = codex.footer(watcher, key="C-g")
         self.assertIn("##[fg=red]", row)
         self.assertTrue(row.endswith("\u00b7 ^G open"))
 
@@ -78,6 +80,19 @@ class FooterTests(unittest.TestCase):
             watcher.path.write_text("# Handoff\n", encoding="utf-8")
             watcher.poll()
             self.assertIn("no tracked tasks", codex.footer(watcher))
+
+    def test_footer_names_a_claimed_session(self):
+        with tempfile.TemporaryDirectory() as directory:
+            ledger = Path(directory) / "HANDOFF.md"
+            ledger.write_text(entry(owner="Other"), encoding="utf-8")
+            seed = "footer-session"
+            guard.claim_name(seed, ledger, set())
+            watcher = tui.Watcher(ledger)
+            watcher.poll()
+            claimed = guard.recall_name(seed, ledger)
+            row = codex.footer(watcher, color=False, session_seed=seed)
+            self.assertIn(claimed, row)
+            self.assertNotIn("Other", row)
 
 
 class ViewerKeyTests(unittest.TestCase):
@@ -117,13 +132,16 @@ class SessionTests(unittest.TestCase):
         self.assertNotIn("TMUX_PANE", session.environment)
         arguments = ["resume", "--last", "a prompt; $(touch sentinel) `false`", ";", "--model", "example"]
         with patch.object(session, "call") as call:
-            session.start("/some path/codex", arguments, Path("/repo with space"), "bar")
+            session.start("/some path/codex", arguments, Path("/repo with space"), "bar",
+                          session_seed="seed-for-agent")
         command = call.call_args.args
-        cwd, forwarded, status = json.loads(base64.b64decode(command[-1]))
+        cwd, forwarded, status, handoff_session = json.loads(
+            base64.b64decode(command[-1]))
         self.assertEqual(forwarded, ["/some path/codex", *arguments])
         # Compare as paths: Windows renders this as a backslash path.
         self.assertEqual(Path(cwd), Path("/repo with space"))
         self.assertEqual(Path(status), session.status_file)
+        self.assertEqual(handoff_session, "seed-for-agent")
         call.assert_any_call("set-option", "-t", "handoff", "prefix", "None")
         call.assert_any_call("set-option", "-t", "handoff", "status-format[0]", "bar")
         self.assertEqual(session.command[2], "-S")
@@ -344,11 +362,11 @@ class TmuxIntegrationTests(unittest.TestCase):
                 "sys.exit(7)\n", encoding="utf-8")
             arguments = ["a prompt; $(false) `false`", ";", "--model", "example"]
             watcher = tui.Watcher(base / "HANDOFF.md")
-            watcher.path.write_text(entry("#[fg=red] #{pane_id}"), encoding="utf-8")
+            watcher.path.write_text(entry(), encoding="utf-8")
             watcher.poll()
             try:
                 session.start(sys.executable, [str(script), str(report), str(gate), *arguments],
-                              base, codex.footer(watcher))
+                              base, codex.footer(watcher), session_seed="tmux-probe")
                 session.call("send-keys", "-t", "handoff:0.0", "-l", "typed text")
                 session.call("send-keys", "-t", "handoff:0.0", "Enter")
                 deadline = time.monotonic() + 5
@@ -361,7 +379,8 @@ class TmuxIntegrationTests(unittest.TestCase):
                 initial = session.call("show-options", "-v", "-t", "handoff", "status-format[0]")
                 self.assertIn("0/1 tasks", initial)
                 expanded = session.call("display-message", "-p", "-t", "handoff:0.0", initial)
-                self.assertIn("#[fg=red] #{pane_id}", expanded)
+                self.assertIn("0/1 tasks", expanded)
+                self.assertNotIn("#{pane_id}", expanded)
                 watcher.path.write_text(entry(done=True), encoding="utf-8")
                 watcher.poll()
                 session.call("set-option", "-t", "handoff", "status-format[0]", codex.footer(watcher))

@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 import json
 import math
+import os
 from pathlib import Path
 import sys
 import textwrap
@@ -24,6 +25,7 @@ from handoff_guard import (
     owner_label_error,
     parse_tasks,
     reassign_task,
+    recall_name,
     replace_owner,
     swap_ledger,
 )
@@ -229,7 +231,7 @@ def stdout_encodes(sample: str) -> bool:
 
 
 def bar_line(snapshot: Snapshot | None, width: int = 10, color: bool = True,
-             blocks: bool = True) -> str:
+             blocks: bool = True, session_name: str | None = None) -> str:
     """One row for a host status line; empty when nothing is tracked."""
     counts = count_tasks(snapshot.tasks if snapshot else [])
     if not counts.tracked:
@@ -241,28 +243,66 @@ def bar_line(snapshot: Snapshot | None, width: int = 10, color: bool = True,
     dim = "\033[2m"
     if not color:
         shade = reset = dim = ""
-    open_tasks = [t for t in (snapshot.tasks if snapshot else []) if t.modern and task_state(t) != "completed"]
-    # Ledger order, matching the viewer's agent list: newest entries sit at the
-    # top of the ledger, so the agent who last raised open work is named first.
-    owners = list(dict.fromkeys(owner_name(t) for t in open_tasks))
-    trailer = f" {dim}{gap}{reset} " + ", ".join(owners) if open_tasks else ""
+    # The row names the session it serves, claimed at preflight, and never other
+    # owners: per-owner progress belongs to the viewer's agent list, and a status
+    # line naming someone else reads as that agent's bar.
+    trailer = f" {dim}{gap}{reset} {session_name}" if session_name else ""
     return (f"{shade}handoff{reset} {shade}{full * filled}{empty * (width - filled)}{reset} "
             f"{counts.completed}/{counts.tracked} tasks {dim}{gap}{reset} "
             f"{counts.checked}/{counts.steps} steps{trailer}")
 
 
-def status_line_root(payload: str) -> Path | None:
-    """Read workspace.current_dir from a host status-line JSON payload."""
+def status_line_payload(payload: str) -> dict | None:
     try:
         data = json.loads(payload)
     except ValueError:
         return None
-    if not isinstance(data, dict):
+    return data if isinstance(data, dict) else None
+
+
+def status_line_root(payload: str) -> Path | None:
+    """Read workspace.current_dir from a host status-line JSON payload."""
+    data = status_line_payload(payload)
+    if data is None:
         return None
     workspace = data.get("workspace")
     location = (workspace or {}).get("current_dir") if isinstance(workspace, dict) else None
     location = location or data.get("cwd")
     return Path(location) if isinstance(location, str) and location else None
+
+
+def status_line_session(payload: str) -> str | None:
+    """Read the host's session id from a status-line JSON payload, if it sends one."""
+    data = status_line_payload(payload)
+    session = data.get("session_id") if data else None
+    return session.strip() if isinstance(session, str) and session.strip() else None
+
+
+def bar_session_name(ledger: Path, payload: str | None = None,
+                     seed: str | None = None) -> str | None:
+    """The name this session already claimed for this ledger, or None before it does.
+
+    The host's reported session id leads, matching the seed the agent's own
+    preflight claim is keyed on; the environment fallbacks follow session_seed's
+    order. No record means the session has not claimed a name yet, and the bar
+    then names no one rather than guessing.
+    """
+    seeds = []
+    if seed and seed.strip():
+        seeds.append(seed.strip())
+    if payload:
+        session = status_line_session(payload)
+        if session:
+            seeds.append(session)
+    for variable in ("HANDOFF_SESSION", "CLAUDE_CODE_SESSION_ID", "TERM_SESSION_ID"):
+        value = os.environ.get(variable)
+        if value and value.strip():
+            seeds.append(value.strip())
+    for candidate in dict.fromkeys(seeds):
+        name = recall_name(candidate, ledger)
+        if name:
+            return name
+    return None
 
 
 def owner_row(owner: str, counts: Counts, width: int, harness: str = "") -> str:
@@ -776,11 +816,17 @@ def main(argv: list[str] | None = None) -> int:
     if args.agent is not None and not [word for word in args.agent if word != "--"]:
         parser.error("--with needs an agent to run, e.g. --with claude")
     root = args.root
-    if args.bar and not args.file and not sys.stdin.isatty():
-        # A host status line pipes session JSON in; prefer the directory it reports.
-        reported = status_line_root(sys.stdin.read())
-        if reported is not None and args.root == Path("."):
-            root = reported
+    payload: str | None = None
+    if args.bar and not sys.stdin.isatty():
+        # A host status line pipes session JSON in; it carries both the
+        # directory to report on and the session id the bar names. Hosts send a
+        # single JSON line, so with an explicit --file one line is enough and a
+        # host holding stdin open cannot stall the row.
+        payload = sys.stdin.readline() if args.file else sys.stdin.read()
+        if not args.file:
+            reported = status_line_root(payload)
+            if reported is not None and args.root == Path("."):
+                root = reported
     path = args.file.resolve() if args.file else find_repo_root(root) / "HANDOFF.md"
     watcher = Watcher(path)
     if wrapped is not None:
@@ -797,7 +843,8 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         watcher.poll()
         line = bar_line(watcher.snapshot, color=not args.no_color,
-                        blocks=stdout_encodes("\u2588\u2591\u00b7"))
+                        blocks=stdout_encodes("\u2588\u2591\u00b7"),
+                        session_name=bar_session_name(path, payload))
         if line:
             print(line)
         return 0

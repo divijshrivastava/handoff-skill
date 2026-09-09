@@ -1,5 +1,21 @@
 # Handoff
 
+## 2026-09-09 - Release 1.21.0 (owner: Lamassu) (harness: Cursor)
+
+State:
+
+- [x] In progress
+- [ ] Completed
+
+Steps:
+
+- [ ] Commit the bar-naming work and version bump.
+- [ ] Run the full CI set on the release commit.
+- [ ] Tag v1.21.0 and push main plus the tag.
+- [ ] Confirm the release workflow published the archives.
+
+Status: In progress. User requested commit and release after Lamassu finished Kanaloa's bar-naming task.
+
 ## 2026-09-09 - Push the agent-channel work and release 1.20.0 (owner: Janus) (harness: Claude Code)
 
 State:
@@ -20,22 +36,22 @@ Verification: the checks were run in a clean clone at cf118c8, not in this worki
 
 Note: v1.19.0 exists in the manifests' history but was never tagged, so the published sequence goes v1.18.0 to v1.20.0. Kanaloa's in-progress bar-naming task is unaffected and remains its own; nothing of theirs was staged, committed, or released.
 
-## 2026-09-09 - Name the current agent in the handoff bar (owner: Kanaloa) (harness: Kimi Code)
+## 2026-09-09 - Name the current agent in the handoff bar (owner: Lamassu) (harness: Cursor)
 
 State:
 
 - [x] In progress
-- [ ] Completed
+- [x] Completed
 
 Steps:
 
-- [ ] Recall this session's claimed name and show it in --bar and the tmux footer instead of open-task owners (skills/handoff/scripts/handoff_guard.py, handoff_tui.py, handoff_codex.py).
-- [ ] Give each wrapped agent session its own HANDOFF_SESSION seed so the footer can resolve its name (skills/handoff/scripts/handoff_codex.py).
-- [ ] Invalidate the handoff-bar cache when a name claim lands (skills/handoff/scripts/handoff-bar).
-- [ ] Update the bar, TUI, and Codex tests plus the progress-viewer reference.
-- [ ] Run both unittest suites, validate the ledger, and hand off.
+- [x] Recall this session's claimed name and show it in --bar and the tmux footer instead of open-task owners (skills/handoff/scripts/handoff_guard.py, handoff_tui.py, handoff_codex.py).
+- [x] Give each wrapped agent session its own HANDOFF_SESSION seed so the footer can resolve its name (skills/handoff/scripts/handoff_codex.py).
+- [x] Invalidate the handoff-bar cache when a name claim lands (skills/handoff/scripts/handoff_guard.py).
+- [x] Update the bar, TUI, and Codex tests plus the progress-viewer reference.
+- [x] Run both unittest suites, validate the ledger, and hand off.
 
-Status: In progress. Requested by the user: the bottom bar should name the current agent rather than other agents. Next action: implement the recall path in the bar.
+Status: Complete. Originally owned by Kanaloa (harness: Kimi Code), who left uncommitted work on `handoff_guard.py` and `handoff_tui.py`. Lamassu took over at the user's direction on 2026-09-09 to finish the remainder. Added `recall_name`, `bar_session_name`, and `bar_cache_key`/`invalidate_bar_cache` (matching `handoff-bar`'s `cksum` key); `--bar` and the tmux footer now trail the claiming session's name rather than open-task owners; `--with`/`--codex` seeds `HANDOFF_SESSION` for the wrapped agent. Verified: 264 helper tests and 6 repository tests pass, `validate --root .` exits 0. Release 1.21.0 pending at user's request.
 
 ## 2026-09-09 - Coordinate agent availability and explicit work handoffs (owner: Janus) (harness: Claude Code)
 
