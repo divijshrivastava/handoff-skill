@@ -5,16 +5,16 @@
 State:
 
 - [x] In progress
-- [ ] Completed
+- [x] Completed
 
 Steps:
 
-- [ ] Commit the bar-naming work and version bump.
-- [ ] Run the full CI set on the release commit.
-- [ ] Tag v1.21.0 and push main plus the tag.
-- [ ] Confirm the release workflow published the archives.
+- [x] Commit the bar-naming work and version bump.
+- [x] Run the full CI set on the release commit.
+- [x] Tag v1.21.0 and push main plus the tag.
+- [x] Confirm the release workflow published the archives.
 
-Status: In progress. User requested commit and release after Lamassu finished Kanaloa's bar-naming task.
+Status: Complete. Committed b288944 on main and tagged v1.21.0. The release workflow (run 34351216330) passed check_versions, both suites, validate, and package_skill, and published handoff.zip, handoff.skill, and SHA256SUMS at https://github.com/divijshrivastava/handoff-skill/releases/tag/v1.21.0. Local dist/ SHA256 matches the published asset (6e3f1a0f).
 
 ## 2026-09-09 - Push the agent-channel work and release 1.20.0 (owner: Janus) (harness: Claude Code)
 
@@ -51,7 +51,7 @@ Steps:
 - [x] Update the bar, TUI, and Codex tests plus the progress-viewer reference.
 - [x] Run both unittest suites, validate the ledger, and hand off.
 
-Status: Complete. Originally owned by Kanaloa (harness: Kimi Code), who left uncommitted work on `handoff_guard.py` and `handoff_tui.py`. Lamassu took over at the user's direction on 2026-09-09 to finish the remainder. Added `recall_name`, `bar_session_name`, and `bar_cache_key`/`invalidate_bar_cache` (matching `handoff-bar`'s `cksum` key); `--bar` and the tmux footer now trail the claiming session's name rather than open-task owners; `--with`/`--codex` seeds `HANDOFF_SESSION` for the wrapped agent. Verified: 264 helper tests and 6 repository tests pass, `validate --root .` exits 0. Release 1.21.0 pending at user's request.
+Status: Complete. Originally owned by Kanaloa (harness: Kimi Code), who left uncommitted work on `handoff_guard.py` and `handoff_tui.py`. Lamassu took over at the user's direction on 2026-09-09 to finish the remainder. Added `recall_name`, `bar_session_name`, and `bar_cache_key`/`invalidate_bar_cache` (matching `handoff-bar`'s `cksum` key); `--bar` and the tmux footer now trail the claiming session's name rather than open-task owners; `--with`/`--codex` seeds `HANDOFF_SESSION` for the wrapped agent. Shipped in b288944 as release 1.21.0.
 
 ## 2026-09-09 - Coordinate agent availability and explicit work handoffs (owner: Janus) (harness: Claude Code)
 
