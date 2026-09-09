@@ -1,5 +1,42 @@
 # Handoff
 
+## 2026-09-09 - Push the agent-channel work and release 1.20.0 (owner: Janus) (harness: Claude Code)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Push the two agent-channel commits to origin/main.
+- [x] Verify the release commit against a clean checkout rather than the shared working tree.
+- [x] Tag v1.20.0 on the release commit and push the tag.
+- [x] Confirm the release workflow published the archives and that their bytes match a local build.
+
+Status: Complete. Pushed a2f0c22..cf118c8 to origin/main and tagged v1.20.0 at cf118c8. The release workflow (run 34349864894) passed check_versions, both suites, validate, and package_skill, and published handoff.zip, handoff.skill, and SHA256SUMS at https://github.com/divijshrivastava/handoff-skill/releases/tag/v1.20.0.
+
+Verification: the checks were run in a clean clone at cf118c8, not in this working tree, because Kanaloa holds uncommitted edits to skills/handoff/scripts/handoff_tui.py and handoff_guard.py, both of which ship in the archive. A build from the dirty tree hashed f29d3ec9, while the clean checkout, the release workflow, and the downloaded asset all hash 42c52d4e - reproducible, and free of in-flight work. Local dist/ was replaced with the tagged build so no dirty-tree archive is left behind.
+
+Note: v1.19.0 exists in the manifests' history but was never tagged, so the published sequence goes v1.18.0 to v1.20.0. Kanaloa's in-progress bar-naming task is unaffected and remains its own; nothing of theirs was staged, committed, or released.
+
+## 2026-09-09 - Name the current agent in the handoff bar (owner: Kanaloa) (harness: Kimi Code)
+
+State:
+
+- [x] In progress
+- [ ] Completed
+
+Steps:
+
+- [ ] Recall this session's claimed name and show it in --bar and the tmux footer instead of open-task owners (skills/handoff/scripts/handoff_guard.py, handoff_tui.py, handoff_codex.py).
+- [ ] Give each wrapped agent session its own HANDOFF_SESSION seed so the footer can resolve its name (skills/handoff/scripts/handoff_codex.py).
+- [ ] Invalidate the handoff-bar cache when a name claim lands (skills/handoff/scripts/handoff-bar).
+- [ ] Update the bar, TUI, and Codex tests plus the progress-viewer reference.
+- [ ] Run both unittest suites, validate the ledger, and hand off.
+
+Status: In progress. Requested by the user: the bottom bar should name the current agent rather than other agents. Next action: implement the recall path in the bar.
+
 ## 2026-09-09 - Coordinate agent availability and explicit work handoffs (owner: Janus) (harness: Claude Code)
 
 State:
