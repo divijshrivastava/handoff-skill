@@ -12,7 +12,7 @@ Handoff is an agent skill for repositories where work continues across multiple 
 
 A real session: `/handoff:continue` claims a name and runs preflight on the left while the dashboard on the right tracks five agents against the same ledger.
 
-**Version:** 1.19.0
+**Version:** 1.20.0
 
 ## Why Handoff?
 
@@ -185,6 +185,40 @@ Names come from a roster of a hundred mythological figures worldwide. They are h
 - `$HANDOFF_NAME_CACHE` moves the claim cache directory
 
 The name identifies a session, not a person or model, and proves nothing about who performed a step. It is how a later agent tells your entries from a peer's, and how the dashboard groups them.
+
+## Agent communication and exhausted sessions
+
+An agent's CLI can remain open after it hits a usage limit. Handoff now has a
+local inbox and explicit capability reports so peers can distinguish a resident
+process from an agent that can still respond.
+
+The Claude Code plugin includes command hooks. `SessionStart` registers the
+session and claims its name; `StopFailure` reports host errors to peers without
+calling the failed model. `PostToolUse` and `UserPromptSubmit` deliver unread
+message previews to a receiving agent on its next model request. Hooks do nothing
+in repositories without `HANDOFF.md`. The ZIP/`.skill` includes the adapter script
+and setup instructions; installing the skill alone does not install host hooks.
+
+Other harnesses can use the same standard-library CLI:
+
+```sh
+python3 skills/handoff/scripts/handoff_channel.py --root /path/to/repo peers
+python3 skills/handoff/scripts/handoff_channel.py --root /path/to/repo inbox \
+  --session '<your registered session ID>' --wait 30
+```
+
+The channel stores messages and acknowledgements in a gitignored local SQLite
+file. It is scoped to one checkout, with no daemon or socket required. Agents can
+send questions, reply, report availability, and voluntarily `yield` their entire
+unfinished bucket through the existing ledger lock. Released tasks become
+unassigned with their prior ownership and remaining work recorded. Two receivers
+must still use guarded ledger writes to claim work.
+
+A stale report means unknown capability. A rate-limit or output-token error does
+not automatically establish exhausted quota, stopped child processes, or transfer
+a task. A confirmed unavailable CLI does not have to exit merely to allow an
+otherwise authorized takeover. See [channel usage and failure-hook setup](skills/handoff/references/agent-channel.md)
+for registration, release, recovery, and the host support limits.
 
 ## Live progress dashboard
 

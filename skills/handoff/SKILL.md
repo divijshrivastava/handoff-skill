@@ -3,7 +3,7 @@ name: handoff
 description: "Coordinate progressive repository work across agents with a shared HANDOFF.md ledger. Active in any repository that already keeps a HANDOFF.md, which is itself the record that this repository tracks work this way; where none exists, it starts on explicit activation: the /handoff:init command, the phrase 'initialise the handoff' (the Codex prompt), or an explicit handoff request such as /handoff:continue, /handoff:status, /handoff:view, /handoff:purge, or 'use handoff'. Use for starting, continuing, checking, pausing, handing off, purging, or committing tracked repository work. Audits later work and current code before treating old unchecked boxes as unfinished. Multiple agents, or unfinished-looking work in a repository that keeps no ledger, are not triggers on their own. Do not use for read-only questions that require no task tracking or repository mutation."
 license: MIT
 metadata:
-  version: "1.19.0"
+  version: "1.20.0"
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
 ---
 
@@ -76,6 +76,9 @@ requires.
    ```bash
    python3 "$SKILL_DIR/scripts/handoff_guard.py" name --root /absolute/repo/path
    ```
+
+   If the Handoff SessionStart hook already supplied your claimed name and
+   channel session ID, keep those: the hook performed this claim for you.
 
    It prints one name from a hundred mythological figures, never a name an
    owner in this ledger already holds, and returns the same name every time
@@ -236,6 +239,29 @@ when possible, and treat unrecognized uncommitted changes as someone else's
 regardless. The existence of unfinished work is never authority to adopt an
 active owner's task.
 
+### Communication and unavailable agents
+
+When coordinating with a peer or investigating a stalled owner, read
+`references/agent-channel.md`. It documents the local inbox, reported capability,
+and failure hooks in `scripts/handoff_channel.py`. Register your claimed name
+once unless a hook already supplied a channel session ID; check messages before
+shared edits and at task boundaries. The Claude plugin reports host failures
+without needing another model turn. Other harnesses use the CLI unless an adapter
+has actually been configured.
+
+A process can remain open after token exhaustion. An explicit host error or user
+report of exhaustion is evidence of unavailable capability; an open PID is not
+contrary evidence. An unanswered ping or expired working report means unknown,
+not permission to take over. A failure hook does not prove child writers stopped.
+Preserve work and follow existing ownership authority before adopting it.
+
+An agent that can still act may save its state, stop its writers, and use channel
+`yield` to release its whole unfinished bucket through `swap_ledger`. Those
+entries become unassigned with dated attribution, so another agent may audit and
+claim them through guard `read`/`apply`. Check ownership again on returning;
+released work must not be silently reclaimed. Messages and acknowledgements do
+not establish task completion.
+
 ### Authorized takeover of another agent's bucket
 
 A takeover begins only when the user explicitly directs it and names the prior
@@ -244,9 +270,11 @@ rules above otherwise withhold; without it, this protocol does not apply.
 
 Taking over:
 
-1. Confirm the prior owner is stopped: its process has exited and neither its
-   files nor the ledger have changed while you watched. If it is still active,
-   stop and report instead of taking over.
+1. Confirm the prior owner has stopped writing: either its process has exited,
+   or an explicit host/user report establishes it cannot continue and its child
+   writers have stopped. Watch its files and the ledger for concurrent changes.
+   A resident CLI alone does not veto a takeover of an exhausted agent. If it is
+   still writing, or the evidence is only silence, report that conflict.
 2. Preserve its uncommitted work before any edit: copy the changed and
    untracked files to a recovery point outside the tree, so nothing it did can
    be lost by your edits or its own return.

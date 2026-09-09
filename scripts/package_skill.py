@@ -14,6 +14,7 @@ RUNTIME_FILES = (
     "SKILL.md",
     "agents/openai.yaml",
     "references/design-notes.md",
+    "references/agent-channel.md",
     "references/ledger-contract.md",
     "references/harness-setup.md",
     "references/progress-viewer.md",
@@ -21,6 +22,7 @@ RUNTIME_FILES = (
     "scripts/handoff-tui",
     "scripts/handoff_codex.py",
     "scripts/handoff_guard.py",
+    "scripts/handoff_channel.py",
     "scripts/handoff_keys.py",
     "scripts/handoff_tui.py",
 )

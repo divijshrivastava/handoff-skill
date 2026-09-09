@@ -1,18 +1,45 @@
 # Handoff
 
+## 2026-09-09 - Coordinate agent availability and explicit work handoffs (owner: Janus) (harness: Claude Code)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Add a durable repository channel for messages, capability reports, and acknowledgements.
+- [x] Support explicit release and guarded pickup of unfinished work when an agent cannot continue.
+- [x] Integrate the channel into skill and continue instructions, documentation, evaluations, and packaging.
+- [x] Verify crash, retry, concurrent pickup, and exhausted-but-running cases; run repository checks and record the handoff.
+
+Status: In progress. Failure case: a CLI remains resident after token exhaustion, and peers mistake that process for an agent able to work. Implementing a durable local inbox and explicit availability reports; a self-release will unassign unfinished tasks through the existing guarded ledger write. Timeouts report unknown capability rather than silently authorize takeover. The earlier Iara ledger closure and unrelated .kimi-plugin/ are preserved.
+
+Checkpoint: 22 channel regression tests pass, including failure-hook reporting with a resident process, durable cross-process delivery, retry deduplication, voluntary whole-bucket release, notification failure after release, and two peers competing to claim one ledger revision. Added Claude SessionStart/StopFailure/PostToolUse/UserPromptSubmit command hooks; these run outside the model. Source version is 1.20.0. Full repository checks and final handoff remain. No live quota was exhausted; the failure evidence so far is native-shaped fixture events.
+
+Transfer: Taken over by Janus from Iara on 2026-09-09 at the user's explicit direction ("take over Iara's tasks"). Iara's uncommitted work is preserved in full at /Users/divij/.handoff-recovery/2026-09-09T1723-iara-coordinate-agent-availability - all 18 modified and untracked paths, a git diff of the tracked ones, and the HEAD they were taken against (a2f0c22); nothing was moved out of the working tree. Iara's Codex CLI (PID 4209) was still resident but not writing: no source file changed after 16:56, and its CPU time held at 0:17.38 across the observation window. Originally owned by Iara.
+
+Verification: Janus ran the whole CI set on Python 3.12 after the transfer, all passing - 258 helper tests, 6 packaging/eval tests, check_versions.py (1.20.0 agrees across all five manifests), guard validate --root . (exit 0), package_skill.py (handoff.zip carries scripts/handoff_channel.py and references/agent-channel.md), and git diff --check. The 25 channel regression tests cover each case this step names: crash (test_crashed_message_writer_rolls_back_and_releases_database_lock, test_process_death_after_ledger_release_cannot_reclaim_work), retry (test_send_retries_deduplicate_but_reused_ids_cannot_change_messages, test_parallel_sends_with_one_id_store_one_message), concurrent pickup (test_two_peers_cannot_both_claim_the_same_released_snapshot, test_yield_conflict_does_not_publish_or_change_capability), and exhausted-but-running (test_failure_hook_notifies_peers_while_process_is_still_alive, test_stale_report_and_inbox_poll_do_not_establish_liveness, test_unavailable_report_does_not_release_owned_work). Beyond the fixtures, the channel was exercised live in this checkout: join created .handoff/ with a self-ignoring .gitignore and left git status unchanged at 18 paths, and peers returned the reported-capability note. That run also showed Iara had never registered, which is why its capability read as unknown rather than unavailable and why the resident PID alone could not authorize the pickup.
+
+Status: Complete. The channel, release/pickup path, integration, and verification are all in place and checked. The work is committed to no branch yet: all 18 paths remain uncommitted in the working tree, and the next action is a commit of that set (a release bump is not required, since 1.20.0 already names this work).
+
 ## 2026-09-09 - Restore the original README lead GIF (owner: Haetae) (harness: Grok)
 
 State:
 
 - [x] In progress
-- [ ] Completed
+- [x] Completed
 
 Steps:
 
-- [ ] Restore assets/dashboard-session.gif and the original top README embed; leave the TUI GIF in the dashboard section.
-- [ ] Commit, push origin/main, and record the identifier.
+- [x] Restore assets/dashboard-session.gif and the original top README embed; leave the TUI GIF in the dashboard section.
+- [x] Commit, push origin/main, and record the identifier.
 
 Status: In progress. The 4:44 TUI GIF belongs only in the Live progress dashboard section. Restoring assets/dashboard-session.gif as the lead image.
+
+
+Resolved 2026-09-09 by Iara (harness: Codex) during handoff:continue. Haetae already completed the restoration in a2f0c22a50d77f4802eb184b1bd3ea71eb50e938; only this closing record remained. README.md embeds assets/dashboard-session.gif at line 11 and assets/handoff-tui.gif in the Live progress dashboard section at line 199. Both asset blobs match their earlier committed originals. main and the local origin/main reference point at a2f0c22, and the origin/main reflog records update by push. A fresh remote check could not resolve github.com, so remote state was not independently rechecked. No Grok process was observed and no uncommitted changes touched this task; Haetae retains attribution for the implementation. Verified: 233 helper tests and 5 repository tests pass, versions agree at 1.19.0, archives build, and the pre-edit ledger validation and git diff --check pass. Complete. This audit note remains uncommitted; the implementation commit and push predate it. No implementation work remains. The unrelated untracked .kimi-plugin/ is unchanged. Next action: none for the restoration.
 
 ## 2026-09-09 - Use the 4:44 handoff-tui GIF as the README lead image (owner: Haetae) (harness: Grok)
 

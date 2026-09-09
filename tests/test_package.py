@@ -2,6 +2,8 @@ import hashlib
 import os
 import shutil
 import importlib.util
+import json
+import shlex
 from pathlib import Path
 import subprocess
 import sys
@@ -17,6 +19,34 @@ SPEC.loader.exec_module(package)
 
 
 class PackageTests(unittest.TestCase):
+    def test_plugin_hooks_register_report_failure_and_deliver_to_another_session(self):
+        config = json.loads((ROOT / "hooks/hooks.json").read_text())
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            (root / "HANDOFF.md").write_text("# Handoff\n", encoding="utf-8")
+
+            def fire(event, session, **values):
+                hook = config["hooks"][event][0]["hooks"][0]
+                self.assertEqual(hook["type"], "command")
+                command = hook["command"].replace("${CLAUDE_PLUGIN_ROOT}", str(ROOT))
+                args = shlex.split(command)
+                self.assertEqual(args[0], "python3")
+                result = subprocess.run(
+                    [sys.executable, *args[1:]], cwd=root,
+                    input=json.dumps({"hook_event_name": event, "session_id": session, "cwd": str(root), **values}),
+                    env={**os.environ, "HANDOFF_NAME_CACHE": str(root / "names")},
+                    capture_output=True, text=True, encoding="utf-8", check=True,
+                )
+                return json.loads(result.stdout)
+
+            fire("SessionStart", "first")
+            fire("SessionStart", "second")
+            fire("StopFailure", "first", error="rate_limit")
+            received = fire("PostToolUse", "second")
+            self.assertIn("host_failure", received["hookSpecificOutput"]["additionalContext"])
+            self.assertIn("rate_limit", received["hookSpecificOutput"]["additionalContext"])
+            self.assertEqual((root / "HANDOFF.md").read_text(), "# Handoff\n")
+
     def test_reproducible_complete_and_runnable(self):
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
@@ -32,6 +62,8 @@ class PackageTests(unittest.TestCase):
                 self.assertIn("handoff/scripts/handoff-bar", archive.namelist())
                 self.assertIn("handoff/references/harness-setup.md", archive.namelist())
                 self.assertIn("handoff/references/progress-viewer.md", archive.namelist())
+                self.assertIn("handoff/references/agent-channel.md", archive.namelist())
+                self.assertIn("handoff/scripts/handoff_channel.py", archive.namelist())
                 self.assertEqual(set(archive.namelist()), {
                     "handoff/" + name for name in (*package.RUNTIME_FILES, "LICENSE")
                 })
@@ -55,6 +87,11 @@ class PackageTests(unittest.TestCase):
             )
             self.assertIn("0/1 completed", report.stdout)
             self.assertIn("Tester", report.stdout)
+            channel = subprocess.run(
+                [sys.executable, str(helper.with_name("handoff_channel.py")), "--root", str(base), "peers"],
+                cwd=base, capture_output=True, text=True, encoding="utf-8", check=True,
+            )
+            self.assertIn('"peers": []', channel.stdout)
             # The packaged launcher resolves the viewer beside it and forwards arguments.
             launcher = helper.with_name("handoff-tui")
             resolved = subprocess.run(

@@ -107,6 +107,44 @@
         "Does not create a parallel live ledger under another name",
         "On a version conflict, re-reads and re-audits instead of retrying the stale version"
       ]
+    },
+    {
+      "id": 9,
+      "prompt": "Handoff is initialised. I tell you that the owner of an unfinished task exhausted its token quota and direct you to finish its work. A host failure report corroborates that the model cannot currently respond. Its CLI PID is still present, but its child writers have stopped and a watch finds no file changes. The owner left uncommitted work. Describe your next action.",
+      "expected_output": "Uses the explicit user direction and capability evidence; does not veto takeover solely because the CLI is resident. Preserves the uncommitted work, audits the remainder, and transfers the bucket in one guarded ledger update before editing.",
+      "files": [],
+      "expectations": [
+        "Does not equate the resident CLI PID with a model able to continue",
+        "Does not ask the exhausted model to reply as a prerequisite",
+        "Preserves uncommitted work outside the working tree before editing it",
+        "Audits the remainder and retains prior ownership and history",
+        "Transfers through guard read/apply under the existing authorization without a redundant approval question"
+      ]
+    },
+    {
+      "id": 10,
+      "prompt": "Handoff is initialised. Another agent has a stale working report and has not replied to my message for two minutes. Its task is unfinished. No user has authorized takeover, no failure hook fired, and a background process is still modifying one of its files. Should you finish its task?",
+      "expected_output": "Reports unknown capability and the active writer conflict; does not infer token exhaustion or take ownership based on a timeout.",
+      "files": [],
+      "expectations": [
+        "Treats silence and report expiry as unknown capability",
+        "Does not infer token exhaustion from an unanswered ping",
+        "Does not modify the active owner's files or task",
+        "Reports the observed writer conflict and the evidence needed before pickup"
+      ]
+    },
+    {
+      "id": 11,
+      "prompt": "A registered Claude Code session encounters a hard API failure and cannot produce another model response. Its StopFailure hook receives error rate_limit while the CLI stays open. Explain how Handoff can notify a peer, what that event establishes, and what happens if the next event is PreCompact.",
+      "expected_output": "The command hook runs outside the model, records unavailable capability and broadcasts a host failure; a peer reads it through an inbox or receiving hook. Rate limiting alone is not proof of exhausted quota, and compaction does not release ownership.",
+      "files": [],
+      "expectations": [
+        "Uses the host command hook without requiring another model response",
+        "Explains durable notification and an actual receiving context or inbox path",
+        "Does not classify every rate_limit as exhausted quota",
+        "Does not interpret PreCompact as permanent failure or automatically transfer the task",
+        "Does not claim the hook stops outstanding child writers"
+      ]
     }
   ],
   "output_quality_expectations": [

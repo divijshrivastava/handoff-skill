@@ -1,0 +1,8 @@
+{
+  "hooks": {
+    "SessionStart": [{"hooks": [{"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/skills/handoff/scripts/handoff_channel.py\" claude-hook", "timeout": 10}]}],
+    "StopFailure": [{"hooks": [{"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/skills/handoff/scripts/handoff_channel.py\" claude-hook", "timeout": 10}]}],
+    "PostToolUse": [{"hooks": [{"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/skills/handoff/scripts/handoff_channel.py\" claude-hook", "timeout": 10}]}],
+    "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/skills/handoff/scripts/handoff_channel.py\" claude-hook", "timeout": 10}]}]
+  }
+}
