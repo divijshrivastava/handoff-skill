@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
-"""Assert the skill and every plugin marketplace manifest declare the same version.
+"""Assert the skill and every plugin manifest declare the same version.
 
 A plugin whose version never changes is never offered as an update, so a version
 that drifts between these files silently strands every installed copy.
+
+Manifests are discovered by globbing `*-plugin/` rather than named literally.
+A named list only checks the hosts someone remembered to add to it: this
+repository carried a `.kimi-plugin/plugin.json` a full five releases behind
+while CI stayed green, because the check named four paths and that was a fifth.
+Discovery makes a new host directory covered the moment it exists.
 """
 
 from __future__ import annotations
@@ -11,6 +17,9 @@ import json
 import re
 import sys
 from pathlib import Path
+from typing import Dict, List
+
+PLUGIN_NAME = "handoff"
 
 
 def skill_version(root: Path) -> str:
@@ -21,37 +30,54 @@ def skill_version(root: Path) -> str:
     return match.group(1)
 
 
-def marketplace_entry_version(path: Path, plugin_name: str) -> str:
+def plugin_version(path: Path) -> str:
+    plugin = json.loads(path.read_text(encoding="utf-8"))
+    if plugin.get("name") != PLUGIN_NAME:
+        raise SystemExit(f"{path} must name the {PLUGIN_NAME} plugin")
+    if "version" not in plugin:
+        raise SystemExit(f"{path} has no version")
+    return plugin["version"]
+
+
+def marketplace_entry_version(path: Path) -> str:
     marketplace = json.loads(path.read_text(encoding="utf-8"))
-    entries = [entry for entry in marketplace["plugins"] if entry["name"] == plugin_name]
+    entries = [entry for entry in marketplace["plugins"] if entry["name"] == PLUGIN_NAME]
     if len(entries) != 1:
-        raise SystemExit(f"{path} must list {plugin_name} exactly once")
+        raise SystemExit(f"{path} must list {PLUGIN_NAME} exactly once")
     return entries[0]["version"]
+
+
+def collect_versions(root: Path) -> Dict[str, str]:
+    """Every declared version, keyed by the path that declares it."""
+    versions = {"skills/handoff/SKILL.md": skill_version(root)}
+    directories = sorted(path for path in root.glob("*-plugin") if path.is_dir())
+    if not directories:
+        raise SystemExit("No *-plugin directory found")
+    for directory in directories:
+        found: List[str] = []
+        for filename, read in (
+            ("plugin.json", plugin_version),
+            ("marketplace.json", marketplace_entry_version),
+        ):
+            manifest = directory / filename
+            if not manifest.exists():
+                continue
+            found.append(filename)
+            versions[str(manifest.relative_to(root))] = read(manifest)
+        if not found:
+            raise SystemExit(
+                f"{directory.relative_to(root)}/ holds no plugin.json or marketplace.json"
+            )
+    return versions
 
 
 def main() -> int:
     root = Path(__file__).resolve().parents[1]
-    plugin_name = "handoff"
-    claude_plugin = json.loads((root / ".claude-plugin/plugin.json").read_text(encoding="utf-8"))
-    cursor_plugin = json.loads((root / ".cursor-plugin/plugin.json").read_text(encoding="utf-8"))
-    if claude_plugin["name"] != plugin_name or cursor_plugin["name"] != plugin_name:
-        raise SystemExit("plugin.json manifests must name the handoff plugin")
-
-    versions = {
-        "skills/handoff/SKILL.md": skill_version(root),
-        ".claude-plugin/plugin.json": claude_plugin["version"],
-        ".claude-plugin/marketplace.json": marketplace_entry_version(
-            root / ".claude-plugin/marketplace.json", plugin_name
-        ),
-        ".cursor-plugin/plugin.json": cursor_plugin["version"],
-        ".cursor-plugin/marketplace.json": marketplace_entry_version(
-            root / ".cursor-plugin/marketplace.json", plugin_name
-        ),
-    }
+    versions = collect_versions(root)
     if len(set(versions.values())) != 1:
-        for name, value in versions.items():
+        for name, value in sorted(versions.items()):
             print(f"  {value}  {name}", file=sys.stderr)
-        raise SystemExit("Version mismatch across skill and marketplace manifests")
+        raise SystemExit("Version mismatch across skill and plugin manifests")
 
     version = next(iter(versions.values()))
     if len(sys.argv) > 1:
@@ -60,7 +86,7 @@ def main() -> int:
             raise SystemExit(f"Tag {tag} does not match version {version}")
         print(f"Tag {tag} matches version {version} in all manifests")
     else:
-        print(f"Version {version} agrees across all manifests")
+        print(f"Version {version} agrees across {len(versions)} manifests")
     return 0
 
 

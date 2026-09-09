@@ -22,8 +22,10 @@ packages or local server are required.
 - `python3 -m unittest discover -s tests -v`: test packaging and evaluation summaries.
 - `python3 skills/handoff/scripts/handoff_guard.py validate --root .`: check
   ledger structure; this does not prove task completion.
-- `python3 scripts/check_versions.py`: verify matching skill, Claude plugin, and
-  Cursor marketplace versions.
+- `python3 scripts/check_versions.py`: verify that the skill and every manifest
+  under `*-plugin/` declare one version.
+- `python3 scripts/sync_manifests.py`: write those manifests from
+  `skills/handoff/SKILL.md`. `--check` writes nothing and fails on a difference.
 - `python3 scripts/package_skill.py`: build reproducible `handoff.zip`,
   `handoff.skill`, and `SHA256SUMS` under `dist/`.
 - `git diff --check`: catch whitespace errors.
