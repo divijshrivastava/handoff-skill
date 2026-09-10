@@ -26,6 +26,7 @@ except ImportError:  # an installed copy without the channel module beside it
 from handoff_guard import (
     OWNER_RE,
     Task,
+    assigned_pending,
     find_repo_root,
     held_sessions,
     ledger_version,
@@ -275,6 +276,12 @@ def bar_line(snapshot: Snapshot | None, width: int = 10, color: bool = True,
     # owners: per-owner progress belongs to the viewer's agent list, and a status
     # line naming someone else reads as that agent's bar.
     trailer = f" {dim}{gap}{reset} {session_name}" if session_name else ""
+    # Work recorded to this reader that nobody has started. The bar is the only
+    # surface that redraws without a model turn, so an assignment made while this
+    # session sat idle is otherwise invisible until someone types into it.
+    waiting = len(assigned_pending(snapshot.tasks if snapshot else [], session_name))
+    if waiting:
+        trailer += f" {dim}{gap}{reset} {shade}{waiting} assigned to you{reset}"
     return (f"{shade}handoff{reset} {shade}{full * filled}{empty * (width - filled)}{reset} "
             f"{counts.completed}/{counts.tracked} tasks {dim}{gap}{reset} "
             f"{counts.checked}/{counts.steps} steps{trailer}")

@@ -170,6 +170,24 @@ someone else's repository:
 handoff-tui --root /path/to/repository --read-only
 ```
 
+## What the agent you assigned sees
+
+A move writes the ledger and nothing else, which is deliberate: `HANDOFF.md`
+decides ownership, and a notification that could be missed or duplicated must not
+become a second answer to who owns a task. The assignment reaches the agent from
+that record, on two surfaces:
+
+- its status line, if it runs one, gains `N assigned to you` for the name it
+  claimed. The host re-runs that command on a timer, so this is the only thing
+  that appears in a terminal sitting idle;
+- its next event - a tool call, a prompt, or a session start - carries a hook
+  notice naming the entries, on hosts with the Claude adapter installed.
+
+Both clear when the agent checks In progress, and neither is evidence it has read
+anything. An agent with no status line and no turn to take shows nothing until
+someone types into it; if you need to know it picked the work up, look for the
+entry moving to In progress in this viewer, not at the agent's terminal.
+
 ## Status-line mode
 
 `--bar` prints a single row for a host status bar and exits, instead of drawing

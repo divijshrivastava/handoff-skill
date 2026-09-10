@@ -892,3 +892,63 @@ class MoveFeedbackTests(MoveTests):
         dashboard.refresh()
         self.assertIsNone(dashboard.moved)
         self.assertNotIn("MOVED", dashboard.banner())
+
+
+class AssignmentBarTests(unittest.TestCase):
+    """The bar is the only surface that redraws without a model turn.
+
+    The failure case, reproduced by hand before this existed: the user assigns a
+    task from the viewer to an agent that has finished its work, and that agent's
+    row reads 'handoff 0/1 tasks - 0/2 steps - Beta', which is exactly what
+    owning no work looks like.
+    """
+
+    def row(self, text, session_name="Beta"):
+        return tui.bar_line(tui.parse_snapshot(text), color=False, session_name=session_name)
+
+    def test_an_assignment_is_visible_to_the_agent_it_was_made_to(self):
+        text = "# Handoff\n\n" + entry("Settings page", owner="Beta", state="pending", steps=(False, False))
+        self.assertIn("1 assigned to you", self.row(text))
+
+    def test_another_agents_assignment_never_appears_on_this_row(self):
+        text = "# Handoff\n\n" + entry("Settings page", owner="Beta", state="pending", steps=(False, False))
+        self.assertNotIn("assigned", self.row(text, session_name="Alpha"))
+
+    def test_starting_the_work_clears_the_marker(self):
+        text = "# Handoff\n\n" + entry("Settings page", owner="Beta", state="in_progress", steps=(True, False))
+        self.assertNotIn("assigned", self.row(text))
+
+    def test_a_session_that_has_not_claimed_a_name_is_told_nothing(self):
+        text = "# Handoff\n\n" + entry("Settings page", owner="Beta", state="pending", steps=(False, False))
+        self.assertNotIn("assigned", self.row(text, session_name=None))
+
+    def test_the_count_covers_every_unstarted_entry(self):
+        text = ("# Handoff\n\n" + entry("One", owner="Beta", state="pending", steps=(False, False))
+                + entry("Two", owner="Beta", state="pending", steps=(False, False))
+                + entry("Theirs", owner="Alpha", state="pending", steps=(False, False)))
+        self.assertIn("2 assigned to you", self.row(text))
+
+    def test_the_marker_keeps_the_row_on_one_line_and_colours_with_the_bar(self):
+        text = "# Handoff\n\n" + entry("Settings page", owner="Beta", state="pending", steps=(False, False))
+        self.assertNotIn("\n", self.row(text))
+        coloured = tui.bar_line(tui.parse_snapshot(text), session_name="Beta")
+        self.assertIn("assigned to you", coloured)
+        self.assertIn("\033", coloured)
+
+    def test_a_viewer_move_makes_the_marker_appear(self):
+        """The reported path end to end, driven through the viewer's own move."""
+        with tempfile.TemporaryDirectory() as directory:
+            ledger = Path(directory) / "HANDOFF.md"
+            ledger.write_text("# Handoff\n\n" + entry("Settings page", owner=None,
+                                                      state="pending", steps=(False, False)), encoding="utf-8")
+            watcher = tui.Watcher(ledger)
+            watcher.poll()
+            self.assertNotIn("assigned", tui.bar_line(watcher.snapshot, color=False,
+                                                      session_name="Beta"))
+            dashboard = tui.Dashboard(watcher)
+            dashboard.view = "tasks"
+            dashboard.cut = watcher.snapshot.tasks[0]
+            dashboard.move_task("Beta")
+            watcher.poll()
+            self.assertIn("1 assigned to you", tui.bar_line(watcher.snapshot, color=False,
+                                                            session_name="Beta"))

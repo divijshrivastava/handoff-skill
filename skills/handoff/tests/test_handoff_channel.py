@@ -702,3 +702,108 @@ class NudgeTests(unittest.TestCase):
         refused = cli("nudge", "--session", self.a, "--to", "*")
         self.assertEqual(refused.returncode, 1)
         self.assertIn("cannot be broadcast", json.loads(refused.stderr)["error"])
+
+
+class AssignmentNoticeTests(unittest.TestCase):
+    """An assignment made in the viewer has to reach the assignee's own terminal.
+
+    The failure case, reproduced before this existed: the user assigns a task
+    from the viewer to an agent that has finished its work. The move writes the
+    ledger and publishes nothing, so that agent's inbox stays empty and its next
+    tool use carries no hook context. The assignment is invisible to it.
+    """
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name).resolve()
+        self.ledger = self.root / "HANDOFF.md"
+        self.ledger.write_text("# Handoff\n", encoding="utf-8")
+        self.cache = patch.dict(os.environ, {"HANDOFF_NAME_CACHE": str(self.root / "names")})
+        self.cache.start()
+        self.addCleanup(self.cache.stop)
+        self.channel = Channel(self.root)
+        self.session = self.channel.join("Beta", "Claude Code", "native-beta")["session"]
+
+    def entry(self, title, owner, state="pending"):
+        text = guard.make_template("2026-09-10", title, owner, ["Build it.", "Verify it."])
+        if state == "in_progress":
+            return text.replace("- [ ] In progress", "- [x] In progress")
+        if state == "completed":
+            return text.replace("- [ ]", "- [x]")
+        return text
+
+    def assign(self, owner="Beta", state="pending"):
+        self.ledger.write_text("# Handoff\n\n" + self.entry("Settings page", owner, state),
+                               encoding="utf-8")
+
+    def hook(self, event="PostToolUse"):
+        return self.channel.claude_hook({"hook_event_name": event, "session_id": "native-beta",
+                                         "cwd": str(self.root)})
+
+    def context(self, event="PostToolUse"):
+        return self.hook(event).get("hookSpecificOutput", {}).get("additionalContext", "")
+
+    def test_an_empty_ledger_says_nothing_on_a_tool_use(self):
+        self.assertEqual(self.hook(), {})
+
+    def test_an_assignment_reaches_the_assignee_on_its_next_event(self):
+        self.assign()
+        for event in ("PostToolUse", "UserPromptSubmit"):
+            with self.subTest(event=event):
+                context = self.context(event)
+                self.assertIn("Settings page", context)
+                self.assertIn("recorded to Beta", context)
+                self.assertIn("read from HANDOFF.md and not from a peer", context)
+
+    def test_the_notice_is_not_a_claim_that_anyone_read_it(self):
+        self.assign()
+        self.assertIn("repeats until", self.context())
+        self.assertNotIn("acknowledged", self.context())
+
+    def test_another_agents_assignment_is_not_delivered_here(self):
+        self.assign(owner="Alpha")
+        self.assertEqual(self.hook(), {})
+
+    def test_starting_the_task_clears_the_notice(self):
+        self.assign()
+        self.assertIn("Settings page", self.context())
+        self.assign(state="in_progress")
+        self.assertEqual(self.hook(), {})
+
+    def test_a_session_start_names_the_work_already_waiting_for_it(self):
+        self.assign()
+        context = self.context("SessionStart")
+        self.assertIn("Handoff claimed your name", context)
+        self.assertIn("Settings page", context)
+
+    def test_an_assignment_and_a_message_are_both_delivered(self):
+        peer = self.channel.join("Alpha", "Codex")["session"]
+        self.channel.send(peer, self.session, "Please look at the importer.")
+        self.assign()
+        context = self.context()
+        self.assertIn("Handoff inbox", context)
+        self.assertIn("Please look at the importer.", context)
+        self.assertIn("Settings page", context)
+
+    def test_a_failure_hook_still_reports_only_the_failure(self):
+        self.assign()
+        self.channel.claude_hook({"hook_event_name": "StopFailure", "session_id": "native-beta",
+                                  "cwd": str(self.root), "error": "rate_limit"})
+        row = next(item for item in self.channel.peers() if item["id"] == self.session)
+        self.assertEqual(row["state"], "unavailable")
+        self.assertIn("StopFailure", row["note"])
+
+    def test_a_malformed_entry_is_not_announced_as_an_assignment(self):
+        self.ledger.write_text(
+            "# Handoff\n\n## 2026-09-10 - Broken (owner: Beta) (harness: Codex)\n\nState:\n\n"
+            "- [ ] In progress\n- [x] Completed\n\nSteps:\n\n- [ ] Verify it.\n\n"
+            "Status: Completed while In progress is unchecked.\n", encoding="utf-8")
+        self.assertEqual(self.hook(), {})
+
+    def test_many_assignments_name_the_first_three_and_count_the_rest(self):
+        entries = "".join(self.entry(f"Task {index}", "Beta") + "\n" for index in range(5))
+        self.ledger.write_text("# Handoff\n\n" + entries, encoding="utf-8")
+        context = self.context()
+        self.assertIn("5 task(s)", context)
+        self.assertIn("and 2 more", context)

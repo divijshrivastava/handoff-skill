@@ -1201,3 +1201,57 @@ class LeaseTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 1)
         self.assertIn("--expect-version is required", result.stderr)
+
+
+class AssignedPendingTests(unittest.TestCase):
+    """Work recorded to an owner that nobody has started.
+
+    The failure case: the user assigns a task from the viewer, which writes the
+    owner label and leaves both state boxes unchecked. Nothing else in the
+    system could name that situation, so no surface could report it.
+    """
+
+    def tasks(self, text):
+        return handoff_guard.parse_tasks(text)
+
+    def entry(self, title, owner, state="pending"):
+        text = handoff_guard.make_template("2026-09-10", title, owner, ["Build it.", "Verify it."])
+        if state == "in_progress":
+            return text.replace("- [ ] In progress", "- [x] In progress")
+        if state == "completed":
+            return text.replace("- [ ]", "- [x]")
+        return text
+
+    def test_a_pending_task_is_reported_to_its_own_owner_only(self):
+        text = "# Handoff\n\n" + self.entry("Settings page", "Beta")
+        tasks = self.tasks(text)
+        self.assertEqual([task.heading for task in handoff_guard.assigned_pending(tasks, "Beta")],
+                         [task.heading for task in tasks])
+        self.assertEqual(handoff_guard.assigned_pending(tasks, "Alpha"), [])
+
+    def test_starting_the_task_clears_it(self):
+        started = self.tasks("# Handoff\n\n" + self.entry("Settings page", "Beta", "in_progress"))
+        self.assertEqual(handoff_guard.assigned_pending(started, "Beta"), [])
+        done = self.tasks("# Handoff\n\n" + self.entry("Settings page", "Beta", "completed"))
+        self.assertEqual(handoff_guard.assigned_pending(done, "Beta"), [])
+
+    def test_no_owner_reports_nothing_rather_than_everything(self):
+        tasks = self.tasks("# Handoff\n\n" + self.entry("Settings page", "Beta"))
+        for owner in (None, ""):
+            self.assertEqual(handoff_guard.assigned_pending(tasks, owner), [])
+
+    def test_a_malformed_entry_is_not_reported_as_an_assignment(self):
+        broken = ("## 2026-09-10 - Broken (owner: Beta) (harness: Codex)\n\nState:\n\n"
+                  "- [ ] In progress\n- [x] Completed\n\nSteps:\n\n- [ ] Verify it.\n\n"
+                  "Status: Completed box checked with progress unchecked.\n")
+        tasks = self.tasks("# Handoff\n\n" + broken)
+        self.assertTrue(tasks[0].errors)
+        self.assertEqual(handoff_guard.assigned_pending(tasks, "Beta"), [])
+
+    def test_several_assignments_are_all_reported_in_ledger_order(self):
+        text = ("# Handoff\n\n" + self.entry("Newest", "Beta") + "\n"
+                + self.entry("Older", "Beta") + "\n" + self.entry("Someone else", "Alpha"))
+        names = [task.heading for task in handoff_guard.assigned_pending(self.tasks(text), "Beta")]
+        self.assertEqual(len(names), 2)
+        self.assertIn("Newest", names[0])
+        self.assertIn("Older", names[1])

@@ -258,6 +258,19 @@ The Claude Code plugin ships `hooks/hooks.json`:
   messages to the receiving model on its next request. They do not acknowledge
   messages, refresh capability, or clear a failure. Read the full message via
   `inbox` before acknowledging it.
+- The same two events, and `SessionStart`, also name work the ledger records to
+  this session's owner with nobody started on it - what a viewer assignment
+  leaves behind. It is read from `HANDOFF.md`, not from a message, so it cannot
+  drift from the ownership it reports, and it clears itself when the owner checks
+  In progress. Because it is a standing fact rather than a message, it repeats
+  until then; that repetition is the point, and it is not evidence anyone read it.
+
+Nothing reaches an idle session. A hook fires on an event, and a CLI waiting at a
+prompt produces none, so an assignment made while an agent sits idle cannot print
+into its terminal on its own. The status line is the exception, because the host
+re-runs it on a timer: `handoff-bar` shows `N assigned to you` for the name this
+session claimed, which is the only surface that changes in an idle terminal. An
+agent that is working sees the notice on its next tool call.
 
 The adapter can also be installed as a command hook calling
 `python3 /absolute/path/to/handoff_channel.py claude-hook`. It reads native hook

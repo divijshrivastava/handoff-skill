@@ -297,6 +297,22 @@ def parse_tasks(text: str) -> list[Task]:
     return tasks
 
 
+def assigned_pending(tasks: list["Task"], owner: str | None) -> list["Task"]:
+    """Tasks recorded to this owner that nobody has started yet.
+
+    A viewer assignment writes the owner label and leaves both state boxes
+    unchecked, so this is what "assigned but not started" means in the ledger
+    itself. Deriving it here rather than from a notification means the answer
+    cannot drift from the ownership it reports, and it clears itself the moment
+    the owner checks In progress. It is not evidence that the owner has seen
+    the work: an unread assignment and an ignored one look identical.
+    """
+    if not owner:
+        return []
+    return [task for task in tasks
+            if task.state == "pending" and task.owner == owner and not task.errors]
+
+
 def structure_findings(text: str) -> list[tuple[str, str, str]]:
     """Return (heading, error, formatted message) for every structural problem.
 
