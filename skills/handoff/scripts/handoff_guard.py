@@ -15,7 +15,7 @@ import tempfile
 import time
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Callable, Iterable
 
@@ -28,6 +28,21 @@ OWNER_RE = re.compile(r"\((?P<label>owner|agent):\s*(?P<name>[^)]+)\)", re.IGNOR
 HARNESS_RE = re.compile(r"\(harness:\s*(?P<harness>[^)]+)\)", re.IGNORECASE)
 BOX_RE = re.compile(r"^\s*-\s+\[([ xX])\]\s+(.+?)\s*$")
 FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
+# A lease is the owner's own contingent release, recorded while it can still
+# write. No signal for an exhausted model exists on every harness, and silence
+# cannot tell an exhausted agent from an idle healthy one, so expiry is made
+# decidable instead: arithmetic on a deadline the owner declared, which every
+# peer computes identically from the same bytes.
+LEASE_RE = re.compile(
+    r"^Lease:\s*owner=(?P<owner>.+?);\s*expires=(?P<expires>[^;]+?);"
+    r"\s*policy=(?P<policy>[A-Za-z][A-Za-z0-9_-]*)\s*$"
+)
+LEASE_POLICIES = ("release",)
+# Only a Z-suffixed UTC deadline is accepted: a local-time one resolves
+# differently on two machines reading the same ledger, which is the single
+# thing this field exists to prevent.
+LEASE_TIME_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
+LEASE_MAX_HOURS = 720
 
 VERSION_PREFIX_MIN = 8
 APPLY_EXIT = {"applied": 0, "dry-run": 0, "conflict": 3, "rejected": 4, "error": 1}
@@ -62,6 +77,50 @@ class Task:
     errors: list[str]
     # Optional: the tool the owning session ran in, when its heading records one.
     harness: str | None = None
+    # Optional: the owner's declared deadline for renewing its claim.
+    lease: "Lease | None" = None
+
+
+@dataclass
+class Lease:
+    """One entry's declared renewal deadline and what happens when it passes."""
+
+    owner: str
+    expires: str
+    policy: str
+    line: int
+    # None when `expires` is not a usable UTC timestamp; the lease is then invalid
+    # rather than expired, because an unreadable deadline authorizes nothing.
+    epoch: float | None
+
+
+def lease_epoch(expires: str) -> float | None:
+    try:
+        moment = datetime.strptime(expires.strip(), LEASE_TIME_FORMAT)
+    except ValueError:
+        return None
+    return moment.replace(tzinfo=timezone.utc).timestamp()
+
+
+def format_lease(owner: str, epoch: float, policy: str = "release") -> str:
+    stamp = datetime.fromtimestamp(epoch, timezone.utc).strftime(LEASE_TIME_FORMAT)
+    return f"Lease: owner={owner}; expires={stamp}; policy={policy}"
+
+
+def lease_state(task: "Task", now: float | None = None) -> str:
+    """Structural verdict for one entry: none, invalid, active, or expired.
+
+    Every peer runs this same code against the same ledger, which is what makes
+    the verdict portable across harnesses: a Codex session and a Kimi one cannot
+    read the deadline differently the way two models reading prose can.
+    """
+    lease = task.lease
+    if lease is None:
+        return "none"
+    if (lease.epoch is None or lease.policy not in LEASE_POLICIES
+            or lease.owner != task.owner or task.completed is True):
+        return "invalid"
+    return "expired" if (time.time() if now is None else now) >= lease.epoch else "active"
 
 
 def outside_fence_lines(lines: list[str]) -> list[str]:
@@ -177,6 +236,30 @@ def parse_tasks(text: str) -> list[Task]:
         if modern and not has_status:
             errors.append("missing Status line")
 
+        # Fenced examples are already masked out of `block`, so a lease shown in
+        # documentation cannot be read as a live claim on this repository.
+        found = [(index, match) for index, line in enumerate(block)
+                 if (match := LEASE_RE.match(line.strip()))]
+        lease: Lease | None = None
+        if found:
+            if len(found) > 1:
+                errors.append("duplicate Lease line")
+            index, match = found[0]
+            lease = Lease(
+                owner=match.group("owner").strip(),
+                expires=match.group("expires").strip(),
+                policy=match.group("policy").strip().casefold(),
+                line=start + 2 + index,
+                epoch=lease_epoch(match.group("expires")),
+            )
+            if lease.epoch is None:
+                errors.append("lease expiry is not an ISO-8601 UTC timestamp")
+            if lease.policy not in LEASE_POLICIES:
+                errors.append("lease policy is not " + " or ".join(LEASE_POLICIES))
+            if completed:
+                errors.append("completed task carries a lease; clear it with "
+                              "lease --clear before recording completion")
+
         if not modern:
             state = "legacy"
         elif in_progress is False and completed is False:
@@ -190,10 +273,15 @@ def parse_tasks(text: str) -> list[Task]:
 
         owner_match = OWNER_RE.search(heading)
         harness_match = HARNESS_RE.search(heading)
+        owner_name = owner_match.group("name").strip() if owner_match else None
+        # A lease naming someone other than the heading owner would let one
+        # session declare a release deadline over another's work.
+        if lease is not None and lease.owner != owner_name:
+            errors.append("lease owner does not match the heading owner")
         tasks.append(
             Task(
                 heading=heading,
-                owner=owner_match.group("name").strip() if owner_match else None,
+                owner=owner_name,
                 line=start + 1,
                 modern=modern,
                 in_progress=in_progress,
@@ -203,6 +291,7 @@ def parse_tasks(text: str) -> list[Task]:
                 state=state,
                 errors=errors,
                 harness=harness_match.group("harness").strip() if harness_match else None,
+                lease=lease,
             )
         )
     return tasks
@@ -724,6 +813,64 @@ def replace_owner(heading: str, owner: str | None) -> str:
     return f"{heading[: match.start()]}({match.group('label')}: {owner}){heading[match.end() :]}"
 
 
+def task_block_end(lines: list[str], line: int) -> int:
+    """Index one past the last line belonging to the entry whose heading is at `line`."""
+    following = [index for index, _ in outside_fence_headings(lines) if index >= line]
+    return following[0] if following else len(lines)
+
+
+def status_paragraph_end(masked: list[str], line: int, end: int) -> int | None:
+    """Index of the last line of this entry's status paragraph, or None when it has none."""
+    status = next((index for index in range(line, end)
+                   if masked[index].strip().startswith("Status:")), None)
+    if status is None:
+        return None
+    while status + 1 < end and masked[status + 1].strip():
+        status += 1
+    return status
+
+
+def locate_task(lines: list[str], line: int, heading: str) -> re.Match:
+    """Confirm `line` still holds `heading`, so a stale position never edits a neighbour."""
+    match = HEADING_RE.match(lines[line - 1]) if 0 < line <= len(lines) else None
+    if match is None or match.group(1) != heading:
+        raise ValueError(f"line {line} no longer holds the task '{heading}'")
+    return match
+
+
+def set_lease(text: str, line: int, heading: str, lease: str | None) -> str:
+    """Write, replace, or remove one entry's Lease line.
+
+    The lease sits in its own paragraph under the status text, so the deadline
+    travels beside the state it applies to and a reader with no tooling can still
+    see who holds the entry and until when.
+    """
+    lines = text.splitlines()
+    locate_task(lines, line, heading)
+    masked = outside_fence_lines(lines)
+    end = task_block_end(lines, line)
+    existing = next((index for index in range(line, end)
+                     if LEASE_RE.match(masked[index].strip())), None)
+
+    if existing is not None:
+        if lease is not None:
+            lines[existing] = lease
+        else:
+            # Take the blank line that separated the lease from the status text
+            # with it, so removing a lease leaves the entry as it was before.
+            start = existing - 1 if existing > line and not masked[existing - 1].strip() else existing
+            del lines[start : existing + 1]
+        return "\n".join(lines) + "\n"
+
+    if lease is None:
+        return "\n".join(lines) + "\n"
+    status = status_paragraph_end(masked, line, end)
+    if status is None:
+        raise ValueError(f"task '{heading}' has no Status line to carry a lease")
+    lines[status + 1 : status + 1] = ["", lease]
+    return "\n".join(lines) + "\n"
+
+
 def reassign_task(text: str, line: int, heading: str, owner: str | None,
                   note: str | None = None) -> str:
     """Rewrite one task's owner label in place, optionally recording a status note.
@@ -739,22 +886,15 @@ def reassign_task(text: str, line: int, heading: str, owner: str | None,
             raise ValueError(problem)
         owner = owner.strip()
     lines = text.splitlines()
-    match = HEADING_RE.match(lines[line - 1]) if 0 < line <= len(lines) else None
-    if match is None or match.group(1) != heading:
-        raise ValueError(f"line {line} no longer holds the task '{heading}'")
+    match = locate_task(lines, line, heading)
     lines[line - 1] = lines[line - 1][: match.start(1)] + replace_owner(heading, owner)
 
     if note:
         masked = outside_fence_lines(lines)
-        following = [index for index, _ in outside_fence_headings(lines) if index >= line]
-        end = following[0] if following else len(lines)
-        status = next((index for index in range(line, end)
-                       if masked[index].strip().startswith("Status:")), None)
+        # Append inside the status paragraph so the note travels with the status
+        # text every reader and the viewer already show.
+        status = status_paragraph_end(masked, line, task_block_end(lines, line))
         if status is not None:
-            # Append inside the status paragraph so the note travels with the status
-            # text every reader and the viewer already show.
-            while status + 1 < end and masked[status + 1].strip():
-                status += 1
             lines.insert(status + 1, note)
     return "\n".join(lines) + "\n"
 
@@ -1003,6 +1143,133 @@ def apply_command(args: argparse.Namespace) -> int:
     )})
 
 
+def lease_rows(text: str, now: float | None = None) -> list[dict[str, object]]:
+    """Every entry's lease verdict, for a reader that wants the facts and no write."""
+    rows = []
+    for task in parse_tasks(text):
+        state = lease_state(task, now)
+        if state == "none":
+            continue
+        rows.append({
+            "heading": task.heading, "line": task.line, "owner": task.owner,
+            "state": state, "expires": task.lease.expires, "policy": task.lease.policy,
+        })
+    return rows
+
+
+def lease_command(args: argparse.Namespace) -> int:
+    """Report lease state, or declare and renew this owner's contingent release.
+
+    Setting a lease covers the owner's whole unfinished bucket, the same scope
+    `yield` releases, because an owner that stops stops on all of it at once.
+    """
+    repo = find_repo_root(Path(args.root))
+    ledger = repo / "HANDOFF.md"
+    if not ledger.exists():
+        print(json.dumps({"status": "error", "errors": ["HANDOFF.md not found"]}, indent=2))
+        return 1
+
+    if not args.owner:
+        text = ledger.read_text(encoding="utf-8")
+        print(json.dumps({
+            "root": str(repo), "version": ledger_version(text),
+            "leases": lease_rows(text),
+            "note": ("A lease is the owner's own declaration. An expired lease is a release "
+                     "that owner authorized in advance, not evidence about its model."),
+        }, indent=2))
+        return 0
+
+    problem = owner_label_error(args.owner)
+    if problem is None and ";" in args.owner:
+        problem = "owner name cannot contain a semicolon"
+    if problem:
+        print(f"handoff: owner label rejected ({problem})", file=sys.stderr)
+        return 1
+    if not args.clear and not 0 < args.hours <= LEASE_MAX_HOURS:
+        print(f"handoff: --hours must be above 0 and at most {LEASE_MAX_HOURS}", file=sys.stderr)
+        return 1
+    # Writing needs the version this edit was decided from, the same as apply.
+    # Falling through without one would report a version conflict, which reads
+    # as a peer write rather than the missing argument it is.
+    if not args.expect_version:
+        print("handoff: --expect-version is required with --owner", file=sys.stderr)
+        return 1
+
+    owner = args.owner.strip()
+    line = None if args.clear else format_lease(owner, time.time() + args.hours * 3600)
+    covered: list[str] = []
+
+    def build(current: str) -> str:
+        tasks = [task for task in parse_tasks(current)
+                 if task.owner == owner and task.completed is not True]
+        if not tasks:
+            raise ValueError(f"{owner} owns no unfinished tasks in this ledger")
+        for task in reversed(tasks):
+            current = set_lease(current, task.line, task.heading, line)
+        covered.extend(task.heading for task in tasks)
+        return current
+
+    try:
+        result = swap_ledger(ledger, args.expect_version, build, dry_run=args.dry_run)
+    except ValueError as error:
+        print(json.dumps({"status": "error", "errors": [str(error)]}, indent=2))
+        return 1
+    print(json.dumps({**result, "ledger": str(ledger), "tasks": covered,
+                      "lease": line}, indent=2))
+    return APPLY_EXIT.get(str(result["status"]), 1)
+
+
+def sweep_command(args: argparse.Namespace) -> int:
+    """Release every entry whose owner let its own lease expire.
+
+    This performs a release the owner authorized in advance; it establishes
+    nothing about why the owner went quiet, and it verifies no child writers.
+    """
+    repo = find_repo_root(Path(args.root))
+    ledger = repo / "HANDOFF.md"
+    if not ledger.exists():
+        print(json.dumps({"status": "error", "errors": ["HANDOFF.md not found"]}, indent=2))
+        return 1
+
+    text = ledger.read_text(encoding="utf-8")
+    expired = [row for row in lease_rows(text) if row["state"] == "expired"]
+    if not expired:
+        print(json.dumps({
+            "status": "applied", "ledger": str(ledger), "released_tasks": [],
+            "current_version": ledger_version(text),
+            "note": "No lease has expired; the ledger was not written.",
+        }, indent=2))
+        return 0
+
+    released: list[str] = []
+
+    def build(current: str) -> str:
+        today = date.today().isoformat()
+        tasks = [task for task in parse_tasks(current)
+                 if lease_state(task) == "expired" and task.owner]
+        if not tasks:
+            raise ValueError("No lease has expired; nothing was released")
+        for task in reversed(tasks):
+            note = (f"Released {today} by lease expiry: {task.owner} declared a lease "
+                    f"expiring {task.lease.expires} and did not renew it, authorizing this "
+                    "release in advance. The status above is that owner's last recorded "
+                    "state. Nothing here establishes why that session went quiet, and its "
+                    "child writers were not verified: preserve uncommitted work before "
+                    "editing, and audit the entry before resuming it.")
+            current = set_lease(current, task.line, task.heading, None)
+            current = reassign_task(current, task.line, task.heading, None, note)
+            released.append(task.heading)
+        return current
+
+    try:
+        result = swap_ledger(ledger, args.expect_version, build, dry_run=args.dry_run)
+    except ValueError as error:
+        print(json.dumps({"status": "error", "errors": [str(error)]}, indent=2))
+        return 1
+    print(json.dumps({**result, "ledger": str(ledger), "released_tasks": released}, indent=2))
+    return APPLY_EXIT.get(str(result["status"]), 1)
+
+
 def default_purge_archive(ledger: Path, version: str) -> Path:
     return ledger.with_name(f"{ledger.name}.{version[:12]}.bak")
 
@@ -1241,6 +1508,36 @@ def build_parser() -> argparse.ArgumentParser:
     apply_parser.add_argument("--dry-run", action="store_true", help="Report without writing")
     apply_parser.add_argument("--json", action="store_true", help="Emit JSON")
     apply_parser.set_defaults(handler=apply_command)
+
+    lease_parser = subparsers.add_parser(
+        "lease", help="Report lease state, or declare and renew this owner's contingent release"
+    )
+    lease_parser.add_argument("--root", default=".", help="Repository path or child path")
+    lease_parser.add_argument("--owner", help="Cover this owner's whole unfinished bucket")
+    lease_parser.add_argument(
+        "--hours", type=float, default=6.0,
+        help="Renew by this many hours from now; pick a span you will actually come back within",
+    )
+    lease_parser.add_argument(
+        "--clear", action="store_true", help="Remove this owner's leases instead of renewing them"
+    )
+    lease_parser.add_argument(
+        "--expect-version", default="",
+        help="Ledger version read before this edit; required with --owner",
+    )
+    lease_parser.add_argument("--dry-run", action="store_true", help="Report without writing")
+    lease_parser.set_defaults(handler=lease_command)
+
+    sweep_parser = subparsers.add_parser(
+        "sweep", help="Release every entry whose owner let its own lease expire"
+    )
+    sweep_parser.add_argument("--root", default=".", help="Repository path or child path")
+    sweep_parser.add_argument(
+        "--expect-version", required=True,
+        help="Ledger version read before this sweep; the write is refused if it moved",
+    )
+    sweep_parser.add_argument("--dry-run", action="store_true", help="Report without writing")
+    sweep_parser.set_defaults(handler=sweep_command)
 
     purge_parser = subparsers.add_parser("purge")
     purge_parser.add_argument("--root", default=".", help="Repository path or child path")

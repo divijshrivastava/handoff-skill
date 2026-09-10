@@ -15,7 +15,7 @@ from unittest.mock import patch
 SCRIPTS = Path(__file__).parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 import handoff_guard as guard
-from handoff_channel import Channel
+from handoff_channel import SCHEMA, Channel
 
 
 class ChannelTests(unittest.TestCase):
@@ -58,6 +58,50 @@ class ChannelTests(unittest.TestCase):
     def test_peers_without_channel_does_not_create_files(self):
         self.assertEqual(self.channel.peers(), [])
         self.assertFalse((self.root / ".handoff").exists())
+
+    def test_history_without_channel_does_not_create_files(self):
+        self.assertEqual(self.channel.history(), {"sessions": [], "messages": [], "truncated": False})
+        self.assertFalse((self.root / ".handoff").exists())
+
+    def test_history_returns_broadcast_receipts_without_acknowledging_messages(self):
+        a, b = self.actors()
+        c = self.channel.join("Gamma", "Codex")["session"]
+        self.channel.send(a, b, "Direct body", "direct")
+        self.channel.send(a, "*", "Broadcast body", "broadcast")
+        self.channel.acknowledge(b, "broadcast")
+        before = self.channel.path.read_bytes()
+        data = self.channel.history()
+        self.assertEqual([row["id"] for row in data["messages"]], ["broadcast", "direct"])
+        broadcast, direct = data["messages"]
+        self.assertEqual(broadcast["recipient_owner"], "all agents")
+        self.assertEqual(broadcast["acknowledged_by"], [b])
+        self.assertEqual((direct["sender_owner"], direct["recipient_owner"], direct["body"]),
+                         ("Alpha", "Beta", "Direct body"))
+        self.assertEqual(direct["acknowledged_by"], [])
+        self.assertEqual({row["id"] for row in data["sessions"]}, {a, b, c})
+        self.assertFalse(data["truncated"])
+        self.assertEqual(self.channel.path.read_bytes(), before)
+        self.assertEqual(len(self.channel.inbox(c)), 1)
+
+    def test_history_limit_keeps_newest_messages_and_reports_truncation(self):
+        a, b = self.actors()
+        for i in range(3):
+            self.channel.send(a, b, str(i), str(i))
+        self.assertEqual([row["id"] for row in self.channel.history(limit=2)["messages"]], ["2", "1"])
+        self.assertTrue(self.channel.history(limit=2)["truncated"])
+        for limit in (0, 201):
+            with self.assertRaises(ValueError):
+                self.channel.history(limit=limit)
+
+    def test_history_reads_an_old_channel_without_migrating_schema(self):
+        a, b = self.actors()
+        self.channel.send(a, b, "Saved", "saved")
+        with sqlite3.connect(str(self.channel.path)) as connection:
+            for table in ("attestations", "challenges"):
+                connection.execute("DROP TABLE IF EXISTS " + table)
+        before = self.channel.path.read_bytes()
+        self.assertEqual(self.channel.history()["messages"][0]["body"], "Saved")
+        self.assertEqual(self.channel.path.read_bytes(), before)
 
     def test_join_requires_a_ledger_and_keeps_messages_untracked(self):
         self.ledger.unlink()
@@ -331,3 +375,130 @@ channel.yield_work(sys.argv[3], sys.argv[4], 'token-limit', 'Next: verify')
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ChallengeTests(unittest.TestCase):
+    """A nonce-bound round trip proves a peer is up; silence still proves nothing.
+
+    The failure case: a report written an hour ago still reads as a report, so a
+    peer either trusts stale evidence or reads an owner that has resumed as
+    unavailable and takes work it is actively writing.
+    """
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name).resolve()
+        self.ledger = self.root / "HANDOFF.md"
+        self.ledger.write_text("# Handoff\n", encoding="utf-8")
+        self.cache = patch.dict(os.environ, {"HANDOFF_NAME_CACHE": str(self.root / "names")})
+        self.cache.start()
+        self.addCleanup(self.cache.stop)
+        self.channel = Channel(self.root)
+        self.a = self.channel.join("Alpha", "Claude Code")["session"]
+        self.b = self.channel.join("Beta", "Kimi Code")["session"]
+
+    def version(self):
+        return guard.ledger_version(self.ledger.read_text(encoding="utf-8"))
+
+    def peer(self, session):
+        return next(row for row in self.channel.peers() if row["id"] == session)
+
+    def test_a_challenge_cannot_be_broadcast_or_aimed_at_itself(self):
+        # Each recipient pays a turn out of the budget being asked about.
+        for target in ("*", self.a):
+            with self.assertRaises(ValueError):
+                self.channel.challenge(self.a, target)
+
+    def test_a_second_probe_inside_the_interval_returns_the_open_challenge(self):
+        first = self.channel.challenge(self.a, self.b)
+        second = self.channel.challenge(self.a, self.b)
+        self.assertTrue(first["issued"])
+        self.assertFalse(second["issued"])
+        self.assertEqual(first["nonce"], second["nonce"])
+        self.assertEqual(len(self.channel.inbox(self.b)), 1)
+
+    def test_an_answer_carrying_the_current_ledger_version_proves_a_turn(self):
+        nonce = self.channel.challenge(self.a, self.b)["nonce"]
+        result = self.channel.attest(self.b, nonce, self.version(), "Finishing the parser step.")
+        self.assertTrue(result["attested"])
+        answered = next(row for row in self.channel.inbox(self.a) if row["kind"] == "attestation")
+        self.assertEqual(json.loads(answered["body"])["nonce"], nonce)
+        self.assertEqual(answered["sender_owner"], "Beta")
+        self.assertLess(self.peer(self.b)["attested_seconds"], 30)
+
+    def test_an_attestation_clears_an_unavailable_state_a_poll_could_not(self):
+        # A host failure marks the session unavailable; the owner's wait then
+        # resumes at the reset. Leaving the stale state would invite a takeover
+        # of work that session is writing again.
+        self.channel.report(self.b, "unavailable", "Host reported a rate limit")
+        nonce = self.channel.challenge(self.a, self.b)["nonce"]
+        self.channel.attest(self.b, nonce, self.version(), "Back after the reset; resuming step two.")
+        self.assertEqual(self.peer(self.b)["availability"], "working")
+
+    def test_a_released_session_stays_released_after_attesting(self):
+        with self.channel.connect() as connection, connection:
+            connection.execute("UPDATE sessions SET state='released' WHERE id=?", (self.b,))
+        nonce = self.channel.challenge(self.a, self.b)["nonce"]
+        result = self.channel.attest(self.b, nonce, self.version(), "Alive, but I gave the work up.")
+        self.assertFalse(result["state_changed"])
+        self.assertEqual(self.peer(self.b)["state"], "released")
+
+    def test_a_wrong_ledger_version_is_not_an_answer(self):
+        nonce = self.channel.challenge(self.a, self.b)["nonce"]
+        with self.assertRaises(ValueError):
+            self.channel.attest(self.b, nonce, "0" * 64, "Guessing.")
+        self.assertIsNone(self.peer(self.b)["attested_seconds"])
+
+    def test_an_answered_nonce_cannot_be_replayed(self):
+        nonce = self.channel.challenge(self.a, self.b)["nonce"]
+        self.channel.attest(self.b, nonce, self.version(), "First answer.")
+        with self.assertRaises(ValueError):
+            self.channel.attest(self.b, nonce, self.version(), "Replay.")
+
+    def test_only_the_addressed_session_can_answer(self):
+        third = self.channel.join("Gamma", "Codex")["session"]
+        nonce = self.channel.challenge(self.a, self.b)["nonce"]
+        with self.assertRaises(ValueError):
+            self.channel.attest(third, nonce, self.version(), "Answering for a peer.")
+
+    def test_an_expired_challenge_cannot_be_answered(self):
+        nonce = self.channel.challenge(self.a, self.b, ttl=60)["nonce"]
+        with self.channel.connect() as connection, connection:
+            connection.execute("UPDATE challenges SET expires=? WHERE nonce=?",
+                               (time.time() - 1, nonce))
+        with self.assertRaises(ValueError):
+            self.channel.attest(self.b, nonce, self.version(), "Too late.")
+
+    def test_silence_leaves_capability_unknown_rather_than_unavailable(self):
+        self.channel.report(self.b, "working", "Editing the parser")
+        self.channel.challenge(self.a, self.b)
+        self.assertEqual(self.peer(self.b)["open_challenges"], 1)
+        # An hour later the peer has still said nothing and the nonce has lapsed.
+        # An idle healthy agent on any harness looks exactly like this, so the
+        # verdict stays unknown: nothing here is evidence its model is gone.
+        with patch("handoff_channel.time.time", return_value=time.time() + 3600):
+            row = self.peer(self.b)
+        self.assertEqual(row["availability"], "unknown")
+        self.assertEqual(row["state"], "working")
+        self.assertEqual(row["open_challenges"], 0)
+        self.assertIsNone(row["attested_seconds"])
+
+    def test_a_channel_made_before_challenges_existed_still_works(self):
+        older = Path(self.temp.name).resolve() / "older"
+        older.mkdir()
+        (older / "HANDOFF.md").write_text("# Handoff\n", encoding="utf-8")
+        legacy = Channel(older)
+        legacy.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        before, _, after = SCHEMA.partition("CREATE TABLE IF NOT EXISTS challenges")
+        with sqlite3.connect(str(legacy.path)) as connection:
+            # The schema as it shipped before challenges existed: everything but
+            # that one table. A channel already on disk must carry forward.
+            connection.executescript(before + after.split(");", 1)[1])
+        self.assertEqual(
+            [row[0] for row in sqlite3.connect(str(legacy.path))
+             .execute("SELECT name FROM sqlite_master WHERE name='challenges'")], [])
+        one = legacy.join("Delta", "Grok")["session"]
+        two = legacy.join("Epsilon", "Cursor")["session"]
+        self.assertTrue(legacy.challenge(one, two)["issued"])
+

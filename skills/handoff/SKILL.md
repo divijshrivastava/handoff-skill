@@ -3,7 +3,7 @@ name: handoff
 description: "Coordinate progressive repository work across agents with a shared HANDOFF.md ledger. Use in repositories with a ledger, or on explicit handoff requests: /handoff:init, 'initialise the handoff', /handoff:continue, /handoff:status, /handoff:view, /handoff:purge, or 'use handoff'. After activation: handoff_guard.py name --root <repo> claims the session name; handoff_guard.py read --root <repo> returns ledger text and version in one snapshot. Audit later entries and code before treating unchecked boxes as unfinished. For ledger writes: handoff_guard.py apply --root <repo> --expect-version V with --entry FILE or --content FILE. On exit 3, re-read and re-audit; never retry the stale write. A user viewer assignment is required queued work: finish your current task, then audit and complete it without another prompt. Skip read-only questions needing no tracking or mutation."
 license: MIT
 metadata:
-  version: "1.21.0"
+  version: "1.22.0"
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
 ---
 
@@ -293,6 +293,14 @@ entries become unassigned with dated attribution, so another agent may audit and
 claim them through guard `read`/`apply`. Check ownership again on returning;
 released work must not be silently reclaimed. Messages and acknowledgements do
 not establish task completion.
+
+No signal for an exhausted model exists on every harness, so nothing here is
+decided by detection. Declare your own contingent release instead: guard `lease`
+records a renewal deadline on your unfinished bucket, and any peer can `sweep`
+what expired, because expiry is arithmetic every harness computes alike. Renew
+it at real checkpoints and clear it when you finish. Channel `challenge` and
+`attest` bind a proof of capability to a fresh nonce; read that proof in one
+direction only, as reason not to take a peer's work. Silence remains unknown.
 
 ### Authorized takeover of another agent's bucket
 

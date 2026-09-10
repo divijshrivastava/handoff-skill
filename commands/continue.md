@@ -38,6 +38,9 @@ prior owner's attribution in the status line. If there is evidence of a live
 owner or of conflicting uncommitted work, stop and report the conflict instead of
 editing their task. Explicitly released tasks are unassigned: preserve any
 uncommitted work, audit it, and claim through guard read/apply before editing.
+An entry whose owner let its own declared lease expire is released the same way,
+by guard sweep; the expiry is that owner's prior authorization, not evidence
+about its model.
 For an authorized takeover of an exhausted owner, use the skill's stopped-writer
 checks; do not demand that an unavailable CLI exit merely to prove inactivity.
 

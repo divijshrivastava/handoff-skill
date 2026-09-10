@@ -19,13 +19,18 @@ import time
 import uuid
 
 from handoff_guard import (
-    APPLY_EXIT, claim_name, find_repo_root, owner_label_error, parse_tasks,
-    reassign_task, swap_ledger, taken_names,
+    APPLY_EXIT, claim_name, find_repo_root, ledger_version, owner_label_error,
+    parse_tasks, reassign_task, swap_ledger, taken_names, version_matches,
 )
 
 
 STATES = ("working", "waiting", "unavailable")
 MAX_BODY = 16000
+# A challenge costs its recipient a model turn, drawn from the very budget the
+# challenger is asking about, so probing is deliberately expensive to repeat and
+# cannot be broadcast.
+CHALLENGE_TTL = 900
+CHALLENGE_INTERVAL = 300
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY,
@@ -50,6 +55,16 @@ CREATE TABLE IF NOT EXISTS receipts (
     session TEXT NOT NULL REFERENCES sessions(id),
     PRIMARY KEY (message, session)
 );
+CREATE TABLE IF NOT EXISTS challenges (
+    nonce TEXT PRIMARY KEY,
+    message TEXT NOT NULL REFERENCES messages(id),
+    challenger TEXT NOT NULL REFERENCES sessions(id),
+    subject TEXT NOT NULL REFERENCES sessions(id),
+    created REAL NOT NULL,
+    expires REAL NOT NULL,
+    answered REAL,
+    note TEXT
+);
 CREATE TABLE IF NOT EXISTS bindings (
     harness TEXT NOT NULL,
     host_session TEXT NOT NULL,
@@ -57,6 +72,9 @@ CREATE TABLE IF NOT EXISTS bindings (
     PRIMARY KEY (harness, host_session)
 );
 """
+# The table added most recently. Its absence is what marks a channel file as
+# predating this version, so keep it pointing at the newest table in SCHEMA.
+NEWEST_TABLE = "challenges"
 
 
 def bounded(value: str, label: str, maximum: int = MAX_BODY) -> str:
@@ -92,7 +110,12 @@ class Channel:
         connection.row_factory = sqlite3.Row
         try:
             connection.execute("PRAGMA foreign_keys=ON")
-            if create:
+            # Carry a channel made by an older version forward, without paying
+            # for DDL on every call: the inbox hook runs on each tool use, and a
+            # write lock taken there would contend with every peer.
+            if create or connection.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                    (NEWEST_TABLE,)).fetchone() is None:
                 connection.executescript(SCHEMA)
             yield connection
         finally:
@@ -129,6 +152,7 @@ class Channel:
             return []
         with self.connect() as connection:
             rows = connection.execute("SELECT * FROM sessions ORDER BY reported DESC").fetchall()
+            proofs = {row["id"]: self.attestations(connection, row["id"]) for row in rows}
         now = time.time()
         result = []
         for row in rows:
@@ -137,6 +161,9 @@ class Channel:
             # Even a recent working report is a claim, not evidence a file is safe.
             item["availability"] = ("unknown" if row["state"] in {"working", "waiting"}
                                     and item["age_seconds"] > fresh_for else row["state"])
+            proof = proofs[row["id"]]
+            item["attested_seconds"] = None if proof["last"] is None else max(0, now - proof["last"])
+            item["open_challenges"] = proof["open"]
             result.append(item)
         return result
 
@@ -195,6 +222,43 @@ class Channel:
             """, (session, session, session, include_read, limit)).fetchall()
         return [dict(row) for row in rows]
 
+    def history(self, limit: int = 200) -> dict:
+        """Read one consistent viewer snapshot without creating or migrating a DB.
+
+        Receipts are per session, including broadcasts. Reading the view must
+        never acknowledge a message on behalf of the receiving agent.
+        """
+        if not 1 <= limit <= 200:
+            raise ValueError("limit must be between 1 and 200")
+        result = {"sessions": [], "messages": [], "truncated": False}
+        if not self.path.exists():
+            return result
+        connection = sqlite3.connect(self.path.as_uri() + "?mode=ro", uri=True, timeout=1)
+        connection.row_factory = sqlite3.Row
+        try:
+            connection.execute("BEGIN")
+            result["sessions"] = [dict(row) for row in connection.execute(
+                "SELECT * FROM sessions ORDER BY reported DESC, id")]
+            rows = connection.execute("""
+                SELECT m.*, s.owner AS sender_owner,
+                       CASE WHEN m.recipient='*' THEN 'all agents' ELSE r.owner END AS recipient_owner
+                FROM messages m JOIN sessions s ON s.id=m.sender
+                LEFT JOIN sessions r ON r.id=m.recipient
+                ORDER BY m.seq DESC LIMIT ?
+            """, (limit + 1,)).fetchall()
+            result["truncated"] = len(rows) > limit
+            result["messages"] = [dict(row, acknowledged_by=[]) for row in rows[:limit]]
+            by_id = {row["id"]: row for row in result["messages"]}
+            if by_id:
+                placeholders = ",".join("?" for _ in by_id)
+                for receipt in connection.execute(
+                        f"SELECT message, session FROM receipts WHERE message IN ({placeholders}) ORDER BY session",
+                        tuple(by_id)):
+                    by_id[receipt["message"]]["acknowledged_by"].append(receipt["session"])
+            return result
+        finally:
+            connection.close()
+
     def acknowledge(self, session: str, message_id: str) -> dict:
         with self.connect() as connection, connection:
             self.session(connection, session)
@@ -204,6 +268,105 @@ class Channel:
                 raise ValueError("Message is not addressed to this session")
             connection.execute("INSERT OR IGNORE INTO receipts VALUES (?, ?)", (message_id, session))
         return {"id": message_id, "acknowledged": True, "task_completed": False}
+
+    def challenge(self, session: str, subject: str, ttl: float = CHALLENGE_TTL) -> dict:
+        """Ask one peer to prove it can still take a turn, binding the proof to a nonce.
+
+        A report written an hour ago still reads as a report; an answer carrying a
+        nonce issued now could only have been produced after it was issued. That is
+        the whole gain: freshness, not authentication. Any computation a model can
+        do a script can also do, so this establishes that something with channel and
+        repository access answered, never that a model did.
+        """
+        if subject == "*":
+            raise ValueError("A challenge cannot be broadcast; it costs each recipient a turn")
+        if subject == session:
+            raise ValueError("A session cannot challenge itself")
+        if not 60 <= ttl <= 86400:
+            raise ValueError("ttl must be between 60 and 86400 seconds")
+        now = time.time()
+        with self.connect() as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            self.session(connection, session)
+            self.session(connection, subject)
+            recent = connection.execute(
+                "SELECT * FROM challenges WHERE challenger=? AND subject=? AND created>? "
+                "ORDER BY created DESC LIMIT 1", (session, subject, now - CHALLENGE_INTERVAL),
+            ).fetchone()
+            if recent is not None:
+                # Re-probing spends the budget being asked about. Hand back the
+                # open challenge instead of issuing a second one.
+                return {"nonce": recent["nonce"], "issued": False,
+                        "expires_in_seconds": max(0, recent["expires"] - now),
+                        "answered": recent["answered"] is not None,
+                        "note": "An earlier challenge to this peer is still recent; waiting on it."}
+            nonce = uuid.uuid4().hex
+            body = json.dumps({
+                "nonce": nonce, "expires_in_seconds": ttl,
+                "asks": ("Answer with handoff_channel.py attest --nonce <nonce> "
+                         "--ledger-version <version from handoff_guard.py read> "
+                         "--note '<the next action you would take now>'."),
+            })
+            message = self.publish(connection, session, subject, body, kind="challenge")
+            connection.execute(
+                "INSERT INTO challenges (nonce, message, challenger, subject, created, expires) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (nonce, message["id"], session, subject, now, now + ttl),
+            )
+        return {"nonce": nonce, "issued": True, "message": message["id"],
+                "expires_in_seconds": ttl,
+                "note": ("A correct answer proves this peer is up, which is reason not to take "
+                         "its work. Silence proves nothing: an idle healthy agent on any harness "
+                         "answers nothing until its next turn.")}
+
+    def attest(self, session: str, nonce: str, version: str, note: str) -> dict:
+        """Answer a challenge addressed to this session.
+
+        The ledger version is checked mechanically, so the answer shows the
+        responder read the repository as it is now. The note is the part no
+        program can check: a reader judges whether it describes real current work.
+        """
+        bounded(nonce, "nonce", 128)
+        bounded(version, "ledger version", 128)
+        bounded(note, "note", 2000)
+        now = time.time()
+        current = ledger_version(self.ledger.read_text(encoding="utf-8"))
+        with self.connect() as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute("SELECT * FROM challenges WHERE nonce=?", (nonce,)).fetchone()
+            if row is None or row["subject"] != session:
+                raise ValueError("No open challenge with that nonce is addressed to this session")
+            if row["answered"] is not None:
+                raise ValueError("That challenge was already answered")
+            if now > row["expires"]:
+                raise ValueError("That challenge expired; ask the challenger to issue another")
+            if not version_matches(current, version):
+                raise ValueError(f"Ledger version does not match the current ledger ({current})")
+            state = self.session(connection, session)["state"]
+            connection.execute("UPDATE challenges SET answered=?, note=? WHERE nonce=?",
+                               (now, note, nonce))
+            # A nonce-bound round trip is the strongest evidence of capability this
+            # protocol can carry, so it clears an unavailable state that a poll may
+            # not. A released session stays released: it is answering, but it gave
+            # its work up and does not get it back by proving it is alive.
+            if state != "released":
+                connection.execute("UPDATE sessions SET state='working', note=?, reported=? WHERE id=?",
+                                   (f"Attested to a challenge: {note}", now, session))
+            self.publish(connection, session, row["challenger"], json.dumps({
+                "nonce": nonce, "ledger_version": current, "note": note,
+            }), kind="attestation", reply_to=row["message"])
+        return {"nonce": nonce, "attested": True, "ledger_version": current,
+                "state_changed": state != "released",
+                "note": "This proves a turn happened after the challenge was issued, nothing more."}
+
+    def attestations(self, connection, session: str) -> dict:
+        row = connection.execute(
+            "SELECT MAX(answered) AS last FROM challenges WHERE subject=? AND answered IS NOT NULL",
+            (session,)).fetchone()
+        open_rows = connection.execute(
+            "SELECT COUNT(*) AS count FROM challenges WHERE subject=? AND answered IS NULL "
+            "AND expires>?", (session, time.time())).fetchone()
+        return {"last": row["last"], "open": open_rows["count"]}
 
     def claude_hook(self, payload: dict) -> dict:
         """Report a host failure without invoking a model or releasing its files.
@@ -336,7 +499,7 @@ def parser() -> argparse.ArgumentParser:
     commands.add_parser("claude-hook", help="Register sessions, deliver inbox previews, and report failures without calling a model")
     peers = commands.add_parser("peers", help="Read reported capability; stale working reports become unknown")
     peers.add_argument("--fresh-for", type=float, default=120)
-    for name in ("report", "send", "inbox", "ack", "yield"):
+    for name in ("report", "send", "inbox", "ack", "challenge", "attest", "yield"):
         command = commands.add_parser(name)
         command.add_argument("--session", required=True)
         if name == "report":
@@ -353,6 +516,16 @@ def parser() -> argparse.ArgumentParser:
             command.add_argument("--wait", type=float, default=0, help="Wait up to 30 seconds for unread messages")
         elif name == "ack":
             command.add_argument("--id", required=True)
+        elif name == "challenge":
+            command.add_argument("--to", required=True, help="Session ID to probe; broadcast is refused")
+            command.add_argument("--ttl", type=float, default=CHALLENGE_TTL,
+                                 help="Seconds the peer has to answer before the nonce lapses")
+        elif name == "attest":
+            command.add_argument("--nonce", required=True, help="Nonce from the challenge addressed to you")
+            command.add_argument("--ledger-version", required=True,
+                                 help="Current version from handoff_guard.py read")
+            command.add_argument("--note", required=True,
+                                 help="The next action you would take now; a reader judges this, no program can")
         elif name == "yield":
             command.add_argument("--expect-version", required=True)
             command.add_argument("--reason", required=True)
@@ -397,6 +570,10 @@ def main(argv: list[str] | None = None) -> int:
             result = {"messages": messages}
         elif args.command == "ack":
             result = channel.acknowledge(args.session, args.id)
+        elif args.command == "challenge":
+            result = channel.challenge(args.session, args.to, args.ttl)
+        elif args.command == "attest":
+            result = channel.attest(args.session, args.nonce, args.ledger_version, args.note)
         else:
             if not args.confirm_stopped:
                 raise ValueError("yield requires --confirm-stopped after this session and its child writers stop editing")

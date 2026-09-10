@@ -1001,3 +1001,192 @@ class SessionNameTests(unittest.TestCase):
         with unittest.mock.patch.dict(os.environ, {"HANDOFF_BAR_CACHE": str(bar_cache)}):
             handoff_guard.claim_name("session-one", self.ledger, set())
         self.assertFalse(cache_file.exists())
+
+
+class LeaseTests(unittest.TestCase):
+    """A lease is the owner's own contingent release, and expiry is arithmetic.
+
+    The failure case: no signal for an exhausted model exists on every harness,
+    and silence cannot separate an exhausted agent from an idle healthy one, so a
+    peer either waits forever or takes work from an owner who comes back writing.
+    A deadline the owner declared is decidable by every peer from the same bytes.
+    """
+
+    PAST = "2020-01-01T00:00:00Z"
+    FUTURE = "2099-01-01T00:00:00Z"
+
+    def setUp(self) -> None:
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.root = Path(self.directory.name)
+        self.ledger = self.root / "HANDOFF.md"
+
+    def entry(self, title: str, owner: str, lease: str | None = None,
+              completed: bool = False) -> str:
+        text = handoff_guard.make_template("2026-09-09", title, owner, ["Do the work."])
+        text = text.replace("- [ ] In progress", "- [x] In progress", 1)
+        if completed:
+            text = text.replace("- [ ] Completed", "- [x] Completed", 1)
+            text = text.replace("- [ ] Do the work.", "- [x] Do the work.", 1)
+        return text + (f"\n{lease}\n" if lease else "")
+
+    def write(self, *entries: str) -> str:
+        self.ledger.write_text("# Handoff\n\n" + "\n".join(entries), encoding="utf-8")
+        return handoff_guard.ledger_version(self.ledger.read_text(encoding="utf-8"))
+
+    def lease_line(self, owner: str, expires: str, policy: str = "release") -> str:
+        return f"Lease: owner={owner}; expires={expires}; policy={policy}"
+
+    def run_guard(self, *args: str) -> tuple[int, dict]:
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), *args, "--root", str(self.root)],
+            capture_output=True, text=True, encoding="utf-8", check=False,
+        )
+        return result.returncode, json.loads(result.stdout)
+
+    def states(self) -> list[str]:
+        text = self.ledger.read_text(encoding="utf-8")
+        return [handoff_guard.lease_state(task) for task in handoff_guard.parse_tasks(text)]
+
+    def test_a_lease_parses_without_disturbing_structure(self) -> None:
+        self.write(self.entry("One", "Alpha", self.lease_line("Alpha", self.FUTURE)))
+        text = self.ledger.read_text(encoding="utf-8")
+        self.assertEqual(handoff_guard.structure_findings(text), [])
+        task = handoff_guard.parse_tasks(text)[0]
+        self.assertEqual(task.lease.owner, "Alpha")
+        self.assertEqual(task.lease.policy, "release")
+        self.assertEqual(handoff_guard.lease_state(task), "active")
+
+    def test_a_lease_naming_another_owner_is_a_structural_error(self) -> None:
+        self.write(self.entry("One", "Alpha", self.lease_line("Beta", self.FUTURE)))
+        text = self.ledger.read_text(encoding="utf-8")
+        errors = [error for _, error, _ in handoff_guard.structure_findings(text)]
+        self.assertIn("lease owner does not match the heading owner", errors)
+        self.assertEqual(self.states(), ["invalid"])
+
+    def test_a_deadline_without_utc_is_invalid_rather_than_expired(self) -> None:
+        # A local-time deadline resolves differently on two machines reading the
+        # same ledger, so it authorizes nothing instead of expiring somewhere.
+        for expires in ("2020-01-01 00:00:00", "2020-01-01T00:00:00", "yesterday"):
+            self.write(self.entry("One", "Alpha", self.lease_line("Alpha", expires)))
+            self.assertEqual(self.states(), ["invalid"], expires)
+            errors = [error for _, error, _ in
+                      handoff_guard.structure_findings(self.ledger.read_text(encoding="utf-8"))]
+            self.assertIn("lease expiry is not an ISO-8601 UTC timestamp", errors)
+
+    def test_an_unsupported_policy_is_invalid(self) -> None:
+        self.write(self.entry("One", "Alpha", self.lease_line("Alpha", self.FUTURE, "transfer")))
+        self.assertEqual(self.states(), ["invalid"])
+
+    def test_a_completed_task_may_not_carry_a_lease(self) -> None:
+        self.write(self.entry("One", "Alpha", self.lease_line("Alpha", self.PAST), completed=True))
+        errors = [error for _, error, _ in
+                  handoff_guard.structure_findings(self.ledger.read_text(encoding="utf-8"))]
+        self.assertIn("completed task carries a lease; clear it with "
+                      "lease --clear before recording completion", errors)
+        self.assertEqual(self.states(), ["invalid"])
+
+    def test_a_lease_inside_a_fence_is_documentation_not_a_claim(self) -> None:
+        self.ledger.write_text(
+            "# Handoff\n\n```md\n" + self.lease_line("Alpha", self.PAST) + "\n```\n\n"
+            + self.entry("One", "Alpha"), encoding="utf-8")
+        self.assertEqual(self.states(), ["none"])
+
+    def test_lease_covers_the_whole_unfinished_bucket_and_skips_completed_work(self) -> None:
+        version = self.write(self.entry("One", "Alpha"), self.entry("Two", "Alpha"),
+                             self.entry("Done", "Alpha", completed=True),
+                             self.entry("Peer", "Beta"))
+        code, result = self.run_guard("lease", "--owner", "Alpha", "--hours", "6",
+                                      "--expect-version", version)
+        self.assertEqual(code, 0)
+        self.assertEqual(len(result["tasks"]), 2)
+        self.assertEqual(self.states(), ["active", "active", "none", "none"])
+
+    def test_renewing_replaces_the_line_instead_of_adding_a_second(self) -> None:
+        version = self.write(self.entry("One", "Alpha"))
+        _, first = self.run_guard("lease", "--owner", "Alpha", "--hours", "1",
+                                  "--expect-version", version)
+        _, second = self.run_guard("lease", "--owner", "Alpha", "--hours", "8",
+                                   "--expect-version", first["new_version"])
+        self.assertEqual(second["status"], "applied")
+        text = self.ledger.read_text(encoding="utf-8")
+        self.assertEqual(text.count("Lease: owner=Alpha"), 1)
+        self.assertNotEqual(first["lease"], second["lease"])
+        self.assertEqual(self.states(), ["active"])
+
+    def test_clearing_a_lease_restores_the_original_bytes(self) -> None:
+        version = self.write(self.entry("One", "Alpha"))
+        before = self.ledger.read_text(encoding="utf-8")
+        _, applied = self.run_guard("lease", "--owner", "Alpha", "--hours", "6",
+                                    "--expect-version", version)
+        code, _ = self.run_guard("lease", "--owner", "Alpha", "--clear",
+                                 "--expect-version", applied["new_version"])
+        self.assertEqual(code, 0)
+        self.assertEqual(self.ledger.read_text(encoding="utf-8"), before)
+
+    def test_lease_without_an_owner_reports_state_and_writes_nothing(self) -> None:
+        self.write(self.entry("One", "Alpha", self.lease_line("Alpha", self.PAST)))
+        before = self.ledger.read_text(encoding="utf-8")
+        code, result = self.run_guard("lease")
+        self.assertEqual(code, 0)
+        self.assertEqual([row["state"] for row in result["leases"]], ["expired"])
+        self.assertEqual(self.ledger.read_text(encoding="utf-8"), before)
+
+    def test_sweep_releases_only_the_expired_lease_and_records_the_expiry(self) -> None:
+        version = self.write(self.entry("Expired", "Alpha", self.lease_line("Alpha", self.PAST)),
+                             self.entry("Active", "Beta", self.lease_line("Beta", self.FUTURE)),
+                             self.entry("Unleased", "Gamma"))
+        code, result = self.run_guard("sweep", "--expect-version", version)
+        self.assertEqual(code, 0)
+        self.assertEqual(len(result["released_tasks"]), 1)
+        text = self.ledger.read_text(encoding="utf-8")
+        tasks = handoff_guard.parse_tasks(text)
+        self.assertEqual([task.owner for task in tasks], [None, "Beta", "Gamma"])
+        # Order records when work was raised, so a release must not reorder it.
+        self.assertEqual([task.heading.split(" - ")[1].split(" (")[0] for task in tasks],
+                         ["Expired", "Active", "Unleased"])
+        self.assertNotIn("Lease: owner=Alpha", text)
+        self.assertIn("Released", text)
+        self.assertIn("child writers were not verified", text)
+        self.assertEqual(handoff_guard.structure_findings(text), [])
+
+    def test_sweep_writes_nothing_when_no_lease_has_expired(self) -> None:
+        version = self.write(self.entry("One", "Alpha", self.lease_line("Alpha", self.FUTURE)))
+        before = self.ledger.read_text(encoding="utf-8")
+        code, result = self.run_guard("sweep", "--expect-version", version)
+        self.assertEqual(code, 0)
+        self.assertEqual(result["released_tasks"], [])
+        self.assertEqual(self.ledger.read_text(encoding="utf-8"), before)
+
+    def test_sweep_leaves_an_invalid_lease_alone(self) -> None:
+        # An unreadable deadline is not a release anyone authorized.
+        version = self.write(self.entry("One", "Alpha", self.lease_line("Alpha", "2020-01-01")))
+        before = self.ledger.read_text(encoding="utf-8")
+        code, result = self.run_guard("sweep", "--expect-version", version)
+        self.assertEqual((code, result["released_tasks"]), (0, []))
+        self.assertEqual(self.ledger.read_text(encoding="utf-8"), before)
+
+    def test_sweep_on_a_stale_version_releases_nothing(self) -> None:
+        version = self.write(self.entry("One", "Alpha", self.lease_line("Alpha", self.PAST)))
+        self.write(self.entry("One", "Alpha", self.lease_line("Alpha", self.PAST)),
+                   self.entry("Two", "Beta"))
+        before = self.ledger.read_text(encoding="utf-8")
+        code, result = self.run_guard("sweep", "--expect-version", version)
+        self.assertEqual(code, 3)
+        self.assertEqual(result["status"], "conflict")
+        self.assertEqual(self.ledger.read_text(encoding="utf-8"), before)
+
+    def test_lease_refuses_an_owner_with_no_unfinished_work(self) -> None:
+        version = self.write(self.entry("Done", "Alpha", completed=True))
+        code, result = self.run_guard("lease", "--owner", "Alpha", "--expect-version", version)
+        self.assertEqual(code, 1)
+        self.assertEqual(result["status"], "error")
+
+    def test_writing_a_lease_without_a_version_is_a_usage_error(self) -> None:
+        self.write(self.entry("One", "Alpha"))
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "lease", "--root", str(self.root), "--owner", "Alpha"],
+            capture_output=True, text=True, encoding="utf-8", check=False,
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("--expect-version is required", result.stderr)

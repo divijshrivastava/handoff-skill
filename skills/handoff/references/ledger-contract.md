@@ -196,6 +196,39 @@ Status: In progress with <active owner>. <your agent name> is not adopting or
 editing this task; the user's new request is tracked separately.
 ```
 
+## Leases
+
+An owner may add one `Lease` line to an entry it holds, in its own paragraph
+under the status text:
+
+```md
+Status: In progress. Parsing is complete; next action is to implement the
+validated schema in `src/schema.ts`.
+
+Lease: owner=Agent name; expires=YYYY-MM-DDTHH:MM:SSZ; policy=release
+```
+
+The line is written and renewed by `handoff_guard.py lease` and removed by the
+same command with `--clear`. It is optional and additive: entries without one
+stay valid, and it changes nothing about who owns the entry while it holds.
+
+A lease is the owner's own contingent release, recorded while that owner can
+still write. When the deadline passes without a renewal, `sweep` performs the
+release the owner already authorized: the owner label comes off, the lease line
+goes, and a dated note records the expiry. The status text is the release
+summary, which is why an entry carrying a lease has to keep its status current.
+
+The deadline is always UTC with a trailing `Z`. A local-time deadline would
+resolve differently on two machines reading the same ledger, and that
+difference is the one thing the field exists to prevent. The owner in the lease
+must be the heading's owner, and a completed entry carries no lease: clear
+yours with `--clear` before recording completion, or the write is refused.
+
+Expiry is arithmetic, not evidence. It says the owner did not renew by a time
+it chose; it says nothing about why that session went quiet, whether its model
+is exhausted, or whether its child writers stopped. Treat a swept entry the way
+you would any released work: preserve uncommitted changes, then audit it.
+
 ## Formatting invariants
 
 - Keep `In progress` and `Completed` as separate task-level boxes.
