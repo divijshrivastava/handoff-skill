@@ -127,6 +127,23 @@ class ProgressTests(unittest.TestCase):
         self.assertEqual(tui.harness_label("New", {}, {"New": "Codex"}), "Codex (recent)")
         self.assertEqual(tui.harness_label("New", {}, {"New": ""}), "unknown (recent)")
 
+    def test_recent_claim_without_ledger_entry_appears_in_agent_rows(self):
+        text = entry("First", owner="Agent A") + entry("Second", owner="Agent B")
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory)
+            (cache / "waiting").write_text("Waiting Agent\nCursor\n", encoding="utf-8")
+            with patch.object(tui, "recent_claims", return_value=[("Waiting Agent", "Cursor")]):
+                rows = tui.agent_rows(tui.parse_snapshot(text).tasks)
+        self.assertEqual([owner for owner, _ in rows[:3]],
+                         ["Waiting Agent", "Agent A", "Agent B"])
+        self.assertEqual(rows[0][1].tracked, 0)
+
+    def test_ledger_owner_is_not_duplicated_when_also_recent(self):
+        text = entry("First", owner="Agent A")
+        with patch.object(tui, "recent_claims", return_value=[("Agent A", "Cursor")]):
+            rows = tui.agent_rows(tui.parse_snapshot(text).tasks)
+        self.assertEqual([owner for owner, _ in rows], ["Agent A"])
+
     def test_owner_row_keeps_every_count_visible_when_a_harness_is_shown(self):
         counts = tui.Counts(tracked=2, completed=1, in_progress=1, checked=3, steps=4)
         plain = tui.owner_row("Zeta", counts, 110)
@@ -314,6 +331,11 @@ class ChannelAbsentTests(unittest.TestCase):
 
 
 class DashboardTests(unittest.TestCase):
+    def setUp(self):
+        self.recent_patch = patch.object(tui, "recent_claims", return_value=[])
+        self.recent_patch.start()
+        self.addCleanup(self.recent_patch.stop)
+
     def dashboard(self):
         watcher = tui.Watcher(Path("unused"))
         watcher.snapshot = tui.parse_snapshot(entry("First") + entry("Second", owner="Agent B"))
@@ -634,6 +656,14 @@ class MoveTests(unittest.TestCase):
         self.assertEqual(self.owners(), ["Agent B", "Agent B"])
         self.assertIsNone(dashboard.cut)
         self.assertIn("Agent B", dashboard.banner())
+
+    def test_cut_and_paste_hands_one_task_to_a_waiting_agent(self):
+        with patch.object(tui, "recent_claims", return_value=[("Waiting Agent", "Cursor")]):
+            dashboard = self.press(self.dashboard(), ord("x"), ord("a"))
+            dashboard.selected = [row[0] for row in dashboard.rows()].index("Waiting Agent")
+            self.press(dashboard, ord("p"))
+        self.assertEqual(self.owners(), ["Waiting Agent", "Agent B"])
+        self.assertIn("Waiting Agent must", self.read())
 
     def test_a_move_changes_ownership_only(self):
         before = tui.parse_tasks(self.read())[0]

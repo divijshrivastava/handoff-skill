@@ -1,5 +1,20 @@
 # Handoff
 
+## 2026-09-10 - Show waiting agents in the handoff viewer (owner: Zorya) (harness: Cursor)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Add recent_claims and agent_rows so name claims without ledger tasks appear in the Agents view (skills/handoff/scripts/handoff_guard.py, handoff_tui.py).
+- [x] Document the waiting-agent rows and assignment flow in references/progress-viewer.md.
+- [x] Add regression tests and run the full CI set; record verification and the handoff.
+
+Status: Complete. Concrete failure: a session that ran preflight and claimed a name never appeared in the Agents view until it wrote a ledger entry, so the user could not hand it work with `p`. `recent_claims()` in handoff_guard.py lists recent name claims newest first; `agent_rows()` prepends those without ledger tasks to the recorded-owner list. Waiting rows show empty counts and `(recent)` harness labels; `p` assigns a cut task the same as a recorded owner. Verified 2026-09-10: 348 helper tests and 54 root tests pass on Python 3.9; check_versions.py, sync_manifests.py --check, validate --root ., package_skill.py, and git diff --check pass. Five new regression tests cover ordering, listing, deduplication, and assignment to a waiting agent.
+
 ## 2026-09-10 - Treat viewer task assignments as queued execution requests (owner: Fenrir) (harness: Codex)
 
 State:

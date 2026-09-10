@@ -837,6 +837,17 @@ class HarnessFieldTests(unittest.TestCase):
         with unittest.mock.patch.dict(os.environ, {"TERM_PROGRAM": "iTerm.app"}, clear=True):
             self.assertIsNone(handoff_guard.detect_harness())
 
+    def test_recent_claims_orders_newest_first(self):
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory)
+            (cache / "older").write_text("Alpha\nCodex\n", encoding="utf-8")
+            (cache / "newer").write_text("Beta\nCursor\n", encoding="utf-8")
+            now = time.time()
+            os.utime(cache / "older", (now - 120, now - 120))
+            os.utime(cache / "newer", (now - 30, now - 30))
+            self.assertEqual(handoff_guard.recent_claims(cache),
+                             [("Beta", "Cursor"), ("Alpha", "Codex")])
+
     def test_recent_sessions_report_their_harness_within_a_short_window(self):
         with tempfile.TemporaryDirectory() as directory:
             cache = Path(directory)

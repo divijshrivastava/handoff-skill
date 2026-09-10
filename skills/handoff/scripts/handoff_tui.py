@@ -32,6 +32,7 @@ from handoff_guard import (
     outside_fence_lines,
     owner_label_error,
     parse_tasks,
+    recent_claims,
     reassign_task,
     recall_name,
     replace_owner,
@@ -98,6 +99,25 @@ def owner_counts(tasks: list[Task]) -> list[tuple[str, Counts]]:
     for task in tasks:
         groups.setdefault(owner_name(task), []).append(task)
     return [(owner, count_tasks(groups[owner])) for owner in groups]
+
+
+def agent_rows(tasks: list[Task]) -> list[tuple[str, Counts]]:
+    """Ledger owners plus recent name claims that hold no tasks yet.
+
+    A session that claimed its name during preflight but has not written a
+    ledger entry yet should still appear so the user can hand it work from the
+    viewer. Those rows lead the list, newest claim first, with empty counts.
+    """
+    recorded = owner_counts(tasks)
+    ledger_owners = {owner for owner, _ in recorded}
+    waiting: list[tuple[str, Counts]] = []
+    seen: set[str] = set()
+    for name, _harness in recent_claims():
+        if name in ledger_owners or name == UNASSIGNED or name in seen:
+            continue
+        seen.add(name)
+        waiting.append((name, Counts()))
+    return waiting + recorded
 
 
 def owner_harnesses(tasks: list[Task]) -> dict[str, str]:
@@ -334,14 +354,14 @@ def plain_report(watcher: Watcher) -> str:
         if watcher.snapshot:
             lines.append("Showing the last readable snapshot; data is stale.")
     lines.extend(summary_lines(watcher.snapshot))
-    lines.extend(["", "BY RECORDED OWNER (newest first) | harness, done/tasks, in progress, "
-                  "pending, checked steps",
+    lines.extend(["", "AGENTS (waiting first, then recorded owners newest first) | harness, "
+                  "done/tasks, in progress, pending, checked steps",
                   "! = invalid; ? = legacy (excluded from totals); (recent) = claimed its "
-                  "name here in the last 15 minutes"])
+                  "name here in the last 15 minutes with no ledger tasks yet"])
     if watcher.snapshot:
         harnesses = owner_harnesses(watcher.snapshot.tasks)
         live = held_sessions()
-        for owner, counts in owner_counts(watcher.snapshot.tasks):
+        for owner, counts in agent_rows(watcher.snapshot.tasks):
             harness = harness_label(owner, harnesses, live)
             # Avoid truncating ownership in redirected reports.
             width = max(110, sum(cell_width(c) for c in clean_text(owner))
@@ -434,7 +454,7 @@ class Dashboard:
                         or row["recipient"] in (session, "*")]
             return [(row["id"], row) for row in rows]
         if self.view == "agents":
-            return [(owner, counts) for owner, counts in owner_counts(snapshot.tasks)] if snapshot else []
+            return [(owner, counts) for owner, counts in agent_rows(snapshot.tasks)] if snapshot else []
         return [(task.heading, task) for task in self.tasks()]
 
     def refresh(self) -> None:
@@ -751,7 +771,8 @@ class Dashboard:
                 harnesses = owner_harnesses(self.tasks())
                 recent = held_sessions()
                 shown = any(harness_label(owner, harnesses, recent) for owner, _ in rows)
-                heading = "RECORDED OWNER (newest first)" + ("  HARNESS" if shown else "")
+                heading = ("WAITING / RECORDED OWNER (newest first)"
+                             + ("  HARNESS" if shown else ""))
                 write(6, f" {fit(heading, max(12, width - 55), pad=True)}"
                       "  DONE/TASK  WIP WAIT  CHECKED STEPS  !bad ?old", curses.A_DIM)
             elif self.view == "channel":

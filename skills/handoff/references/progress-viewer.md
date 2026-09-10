@@ -58,18 +58,22 @@ opens that live view on `Ctrl-G` rather than editing anything itself, and
 ## Views and controls
 
 Overall completed tasks and checked steps stay visible above the current view.
-The **Agents** view groups totals by the exact owner label in each heading and
-shows completed/total tasks, in-progress tasks, pending tasks, and step progress.
-Owners appear in ledger order rather than alphabetically, so the agent who most
-recently raised work leads the list; the header says `newest first`. Beside a
-name sits the harness that owner recorded, taken from their newest entry that
-names one, so a ledger written by Claude Code, Codex and Cursor sessions reads
-as more than a list of names. `(recent)` marks a name claimed on this machine
-within the last fifteen minutes: a session refreshes that record only when it
-asks for its name, so it evidences a recent claim, never a running process or
-current work. Unowned
-entries appear as `unassigned`. Press Enter on an owner to browse their
-tasks, then Enter on a task to read its steps and full status text.
+The **Agents** view lists every agent the user can hand work to. **Waiting**
+agents lead the list: sessions that claimed a name on this machine within the
+last fifteen minutes but hold no ledger tasks yet, newest claim first. Below
+them, **recorded owners** appear in ledger order rather than alphabetically, so
+the agent who most recently raised work leads that section; the header says
+`newest first`. Each row shows completed/total tasks, in-progress tasks, pending
+tasks, and step progress. Beside a name sits the harness that owner recorded,
+taken from their newest entry that names one, so a ledger written by Claude
+Code, Codex and Cursor sessions reads as more than a list of names. `(recent)`
+marks a waiting agent or a recorded owner whose name was also claimed recently:
+a session refreshes that record only when it asks for its name, so it evidences
+a recent claim, never a running process or current work. Unowned ledger entries
+appear as `unassigned`. Press Enter on an owner to browse their tasks, then
+Enter on a task to read its steps and full status text. Select a waiting agent
+and press `p` while holding a cut task to assign it the same way as a recorded
+owner.
 
 | Key | Action |
 | --- | --- |

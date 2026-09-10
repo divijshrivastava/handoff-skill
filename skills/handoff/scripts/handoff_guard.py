@@ -646,6 +646,38 @@ def held_names(directory: Path, record: Path) -> set[str]:
     return names - {""}
 
 
+def recent_claims(directory: Path | None = None,
+                  max_age: float = RECENT_CLAIM_SECONDS) -> list[tuple[str, str]]:
+    """Recent name claims as (name, harness), newest claim first.
+
+    A record is touched only when a session asks for its name. This reports a
+    recent claim on this machine, not a running process.
+    """
+    directory = directory or name_cache_dir()
+    live: list[tuple[float, str, str]] = []
+    fresh = time.time() - max_age
+    try:
+        entries = list(directory.iterdir())
+    except OSError:
+        return []
+    for entry in entries:
+        if entry.name == FCFS_SLOT_FILE:
+            continue
+        try:
+            mtime = entry.stat().st_mtime
+            if mtime < fresh:
+                continue
+            lines = entry.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            continue
+        if lines and lines[0].strip():
+            name = lines[0].strip()
+            harness = lines[1].strip() if len(lines) > 1 else ""
+            live.append((mtime, name, harness))
+    live.sort(key=lambda row: row[0], reverse=True)
+    return [(name, harness) for _, name, harness in live]
+
+
 def held_sessions(directory: Path | None = None,
                   max_age: float = RECENT_CLAIM_SECONDS) -> dict[str, str]:
     """Harness by name for sessions that claimed a name within `max_age`.
@@ -654,23 +686,7 @@ def held_sessions(directory: Path | None = None,
     is touched only when a session asks for its name. Callers must not present
     it as proof that an agent is working.
     """
-    directory = directory or name_cache_dir()
-    live: dict[str, str] = {}
-    fresh = time.time() - max_age
-    try:
-        entries = sorted(directory.iterdir())
-    except OSError:
-        return live
-    for entry in entries:
-        try:
-            if entry.stat().st_mtime < fresh:
-                continue
-            lines = entry.read_text(encoding="utf-8").splitlines()
-        except OSError:
-            continue
-        if lines and lines[0].strip():
-            live[lines[0].strip()] = lines[1].strip() if len(lines) > 1 else ""
-    return live
+    return {name: harness for name, harness in recent_claims(directory, max_age)}
 
 
 def free_name(order: list[str], reserved: set[str]) -> str:
