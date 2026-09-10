@@ -1,5 +1,22 @@
 # Handoff
 
+## 2026-09-11 - Speed up preflight and release 1.22.0 (owner: Ilmarinen) (harness: Claude Code)
+
+State:
+
+- [x] In progress
+- [ ] Completed
+
+Steps:
+
+- [x] Add a preflight subcommand returning name, version, open-entry digest, and Git state from one ledger read (skills/handoff/scripts/handoff_guard.py).
+- [x] Update SKILL.md Step 0, commands/init.md, README.md, and CONTRIBUTING.md to the single call.
+- [x] Add PreflightTests regression coverage (skills/handoff/tests/test_handoff_guard.py).
+- [x] Run both suites, check_versions, sync_manifests --check, validate, package_skill, and git diff --check.
+- [ ] Commit, tag v1.22.0, and push so the release workflow publishes the archives.
+
+Status: In progress. Concrete failure: Step 0 ran name, read, doctor, and git as four commands, and `read` returned the whole 188 KB ledger — 80 finished entries and one open one — so an agent spent about a minute reading history it did not need, and the four separate reads let a peer write bind an audit of old text to a newer version. `preflight` answers all of it from one read: open entries in full, finished ones as heading plus their own Status line, capped by --completed. Measured on this repository: 205,851 bytes returned before, 13,791 after. Committed as ecc4de9 and c0e284f. Verified 2026-09-11: 408 helper tests and 54 root tests pass; check_versions reports 1.22.0 across 6 manifests, sync_manifests --check, validate, and git diff --check pass; package_skill builds a 17-entry archive whose handoff_guard.py carries preflight. Remaining: tag v1.22.0 and push, so the release workflow publishes the archives. 1.22.0 was set in SKILL.md by the exhaustion-handling work at 915cad6 and never tagged; this release carries every commit since v1.21.0.
+
 ## 2026-09-10 - Record assigned work in the ledger immediately (owner: Zorya) (harness: Cursor)
 
 State:
