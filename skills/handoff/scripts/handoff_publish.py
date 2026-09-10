@@ -49,6 +49,10 @@ CONFIG_NAME = "vps.json"
 # `.handoff/` is gitignored, so machine-local destination and agent mapping live
 # beside the channel rather than in a tracked file.
 CONFIG_DIR = ".handoff"
+# Every repository published from this machine lands under one directory on
+# the destination, named by the repository it came from. Relative, so it
+# resolves under the home of whatever user ssh logs in as.
+DEFAULT_BASE = "handoff"
 MESSAGE_LIMIT = 200
 CAPTURE_ATTEMPTS = 5
 
@@ -84,10 +88,19 @@ def load_config(root: Path) -> Dict[str, Any]:
 
     destination = config.get("destination")
     if not isinstance(destination, dict):
-        raise PublishError(f"{path} needs a destination object with host and path")
-    for field in ("host", "path"):
-        if not isinstance(destination.get(field), str) or not destination[field].strip():
+        raise PublishError(f"{path} needs a destination object with a host")
+    if not isinstance(destination.get("host"), str) or not destination["host"].strip():
+        raise PublishError(f"{path}: destination.host must be a non-empty string")
+    if "base" in destination and "path" in destination:
+        raise PublishError(
+            f"{path}: give destination.base (a directory holding every repository) "
+            "or destination.path (one exact directory), not both"
+        )
+    for field in ("base", "path"):
+        if field in destination and (
+                not isinstance(destination[field], str) or not destination[field].strip()):
             raise PublishError(f"{path}: destination.{field} must be a non-empty string")
+    destination.setdefault("base", DEFAULT_BASE)
 
     agents = config.get("agents")
     if not isinstance(agents, list) or not agents:
@@ -107,7 +120,7 @@ def load_config(root: Path) -> Dict[str, Any]:
 
 
 EXAMPLE_CONFIG = {
-    "destination": {"host": "you@vps.example.com", "path": "/srv/handoff/your-repo"},
+    "destination": {"host": "you@vps.example.com", "base": "handoff"},
     "agents": [
         {"owner": "Epona", "harness": "Claude Code", "twin": "Epona"},
         {"owner": "Fenrir", "harness": "Codex", "twin": "Fenrir"},
@@ -317,17 +330,56 @@ def harness_mismatches(snapshot: Dict[str, Any], config: Dict[str, Any]) -> List
 
 # ── Transport ──────────────────────────────────────────────
 
+def target_path(config: Dict[str, Any], root: Path) -> str:
+    """Where this repository's state goes on the destination.
+
+    Each repository published from this machine gets its own directory under one
+    base, named for the repository, so several can share a host and a publish of
+    one never disturbs another. `path` overrides that with an exact directory for
+    a caller that wants to place a single repository itself.
+    """
+    destination = config["destination"]
+    exact = destination.get("path")
+    if exact:
+        return exact
+    name = root.name
+    if not name or name in (".", "..") or "/" in name:
+        raise PublishError(f"Cannot name a destination directory after {root}")
+    return destination["base"].rstrip("/") + "/" + name
+
+
+def remote_path(path: str) -> str:
+    """Quote a destination for the remote shell, keeping `~` meaningful.
+
+    `shlex.quote` is what makes a path with a space or a semicolon safe, and it
+    is also what breaks a home-relative one: quoting turns `~/handoff` into a
+    literal directory named `~`. Publishing needs both, because a destination
+    under the login user's home is the normal case when that user is not root.
+    """
+    if path == "~" or path.startswith("~/"):
+        return '"$HOME"' + shlex.quote(path[1:]) if len(path) > 1 else '"$HOME"'
+    return shlex.quote(path)
+
+
 def remote_command(path: str) -> str:
     """Unpack a tar stream into a staging directory, then swap it into place.
 
     A per-file copy leaves a reader seeing half of one publish and half of the
     next. One directory swap does not.
     """
-    quoted = shlex.quote(path)
-    staging = shlex.quote(path + ".incoming")
-    previous = shlex.quote(path + ".previous")
+    quoted = remote_path(path)
+    staging = remote_path(path + ".incoming")
+    previous = remote_path(path + ".previous")
     return (
-        f"set -e; rm -rf {staging}; mkdir -p {staging}; tar -xf - -C {staging}; "
+        f"set -e; rm -rf {staging}; mkdir -p {staging}; "
+        # --no-same-owner: the archive carries the publishing machine's numeric
+        # uid, which usually names nobody on the destination. Unpacked as root it
+        # produced a directory owned by a non-existent user at mode 700, which
+        # only root could read, so no twin could read its own slice.
+        f"tar -xf - --no-same-owner -C {staging}; "
+        # Normalise modes for the same reason: a twin is not necessarily the user
+        # that publishes, and it only ever needs to read.
+        f"chmod -R u+rwX,go+rX {staging}; "
         f"rm -rf {previous}; if [ -d {quoted} ]; then mv {quoted} {previous}; fi; "
         f"mkdir -p \"$(dirname {quoted})\"; mv {staging} {quoted}"
     )
@@ -340,11 +392,11 @@ def write_tree(directory: Path, files: Dict[str, str]) -> None:
         target.write_text(content, encoding="utf-8")
 
 
-def publish(files: Dict[str, str], destination: Dict[str, str],
+def publish(files: Dict[str, str], destination: Dict[str, str], target: str,
             dry_run: bool = False, out: Optional[Path] = None) -> Dict[str, Any]:
     """Write the tree locally, then hand it to the destination over ssh."""
     result: Dict[str, Any] = {"files": sorted(files), "host": destination["host"],
-                              "path": destination["path"], "published": False}
+                              "path": target, "published": False}
     with tempfile.TemporaryDirectory() as staging:
         directory = Path(staging)
         write_tree(directory, files)
@@ -352,13 +404,17 @@ def publish(files: Dict[str, str], destination: Dict[str, str],
             write_tree(out, files)
             result["out"] = str(out)
         if dry_run:
-            result["command"] = remote_command(destination["path"])
+            result["command"] = remote_command(target)
             return result
         try:
-            stream = subprocess.run(["tar", "-cf", "-", "-C", str(directory), "."],
-                                    capture_output=True, check=True)
+            # COPYFILE_DISABLE stops macOS tar writing a ._name AppleDouble
+            # companion for every entry, which arrived on the destination as
+            # seven junk files beside the five real ones.
+            stream = subprocess.run(["tar", "--no-xattrs", "-cf", "-", "-C", str(directory), "."],
+                                    capture_output=True, check=True,
+                                    env={**os.environ, "COPYFILE_DISABLE": "1"})
             done = subprocess.run(
-                ["ssh", destination["host"], remote_command(destination["path"])],
+                ["ssh", destination["host"], remote_command(target)],
                 input=stream.stdout, capture_output=True, timeout=120)
         except FileNotFoundError as error:
             raise PublishError(f"{error.filename} is not installed") from error
@@ -367,10 +423,15 @@ def publish(files: Dict[str, str], destination: Dict[str, str],
         except subprocess.CalledProcessError as error:
             raise PublishError(f"Could not pack the snapshot: {error}") from error
         if done.returncode != 0:
-            raise PublishError(
-                f"ssh to {destination['host']} failed: "
-                f"{done.stderr.decode('utf-8', 'replace').strip() or done.returncode}"
-            )
+            detail = done.stderr.decode("utf-8", "replace").strip() or str(done.returncode)
+            hint = ""
+            if "permission denied" in detail.lower():
+                # The usual cause is a destination the login user cannot write,
+                # such as the /srv path a root example suggests, rather than a
+                # key or host problem.
+                hint = (f"\n{target} is not writable by the user ssh logs in as. "
+                        "Use a base under that user's home, such as handoff.")
+            raise PublishError(f"ssh to {destination['host']} failed: {detail}{hint}")
     result["published"] = True
     return result
 
@@ -417,18 +478,21 @@ def main(argv: Optional[List[str]] = None) -> int:
                 + "; their entries ship inside ledger.md but get no agent file"
             )
         if args.command == "check":
-            payload = {"config": str(config_path(root)), "warnings": warnings,
+            payload = {"config": str(config_path(root)),
+                       "destination": config["destination"]["host"] + ":" + target_path(config, root),
+                       "warnings": warnings,
                        "ledger_version": snapshot["ledger"]["version"],
                        "messages_available": snapshot["channel"].get("messages_available"),
                        "agents": [agent["owner"] for agent in config["agents"]]}
             print(json.dumps(payload, indent=2) if args.json else
                   "\n".join([f"Config: {payload['config']}",
+                             f"Destination: {payload['destination']}",
                              f"Ledger version: {payload['ledger_version']}",
                              f"Agents: {', '.join(payload['agents'])}"]
                             + [f"Warning: {line}" for line in warnings]))
             return 0
         files = build_files(snapshot, config)
-        result = publish(files, config["destination"],
+        result = publish(files, config["destination"], target_path(config, root),
                          dry_run=args.dry_run or args.command == "snapshot",
                          out=Path(args.out).resolve() if args.out else None)
     except PublishError as error:

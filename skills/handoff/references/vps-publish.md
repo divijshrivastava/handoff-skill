@@ -31,7 +31,7 @@ python3 skills/handoff/scripts/handoff_publish.py example > .handoff/vps.json
 
 ```json
 {
-  "destination": { "host": "you@vps.example.com", "path": "/srv/handoff/your-repo" },
+  "destination": { "host": "you@vps.example.com", "base": "~/handoff" },
   "agents": [
     { "owner": "Epona", "harness": "Claude Code", "twin": "Epona" },
     { "owner": "Fenrir", "harness": "Codex", "twin": "Fenrir" }
@@ -47,6 +47,28 @@ defaults to the owner name and is the file the twin reads.
 Transport is `ssh`, using keys you already have. Nothing new is installed and no
 secret is stored.
 
+`base` is one directory on the host holding every repository you publish, each in
+its own subdirectory named for the repository the publish was called from:
+
+```text
+~/handoff/your-repo/
+~/handoff/another-repo/
+```
+
+Publishing one repository never touches another, so several can share a host. It
+defaults to `handoff` when the config names no destination directory. Give
+`path` instead of `base` to place a single repository at one exact directory;
+giving both is refused, since only one of them can decide where the files go.
+
+The destination needs to be writable by the user `ssh` logs in as, and nothing
+more. A relative base resolves against that user's home, `~/...` is expanded on
+the remote side, and an absolute base works when the login user can write it.
+Root is not required: verified on an unprivileged account, the unpack, the mode
+normalisation, and the directory swap all succeed under a writable home. A base
+like `/srv/...` needs root to create, which is why the default does not use one;
+publishing somewhere unwritable fails with `Permission denied` and a note naming
+the directory.
+
 ## Commands
 
 ```sh
@@ -59,14 +81,19 @@ handoff_publish.py publish  --root . --dry-run  # build, print the remote comman
 ## What lands on the host
 
 ```text
-<path>/snapshot.json        the whole capture
-<path>/ledger.md            the ledger text
-<path>/agents/<twin>.json   one file per configured agent
+<base>/<repo>/snapshot.json        the whole capture
+<base>/<repo>/ledger.md            the ledger text
+<base>/<repo>/agents/<twin>.json   one file per configured agent
 ```
+
+Files arrive owned by the login user, directories `755` and files `644`. The
+archive carries the publishing machine's numeric uid, which usually names
+nobody on the destination, so ownership is deliberately not preserved: kept,
+and unpacked as root, it produced a directory only root could read.
 
 The tree is unpacked into a staging directory and swapped into place in one
 move, so a twin reading during a publish sees the previous state or the next
-one, never half of each. The prior state stays as `<path>.previous`.
+one, never half of each. The prior state stays as `<base>/<repo>.previous`.
 
 ## What it is not
 

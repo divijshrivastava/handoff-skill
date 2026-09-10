@@ -47,7 +47,7 @@ Status: Complete.
 """
 
 CONFIG = {
-    "destination": {"host": "user@vps.example", "path": "/srv/handoff/repo"},
+    "destination": {"host": "user@vps.example", "base": "handoff"},
     "agents": [
         {"owner": "Epona", "harness": "Claude Code", "twin": "Epona"},
         {"owner": "Fenrir", "harness": "Codex", "twin": "Fenrir"},
@@ -74,7 +74,8 @@ class ConfigTests(unittest.TestCase):
 
     def test_destination_and_agents_are_required(self):
         for broken in ({"agents": CONFIG["agents"]},
-                       {"destination": {"host": "h"}, "agents": CONFIG["agents"]},
+                       {"destination": {"base": "handoff"}, "agents": CONFIG["agents"]},
+                       {"destination": {"host": ""}, "agents": CONFIG["agents"]},
                        {"destination": CONFIG["destination"], "agents": []},
                        {"destination": CONFIG["destination"], "agents": [{"owner": "A"}]}):
             with tempfile.TemporaryDirectory() as directory:
@@ -252,7 +253,7 @@ class TransportTests(unittest.TestCase):
     def test_the_remote_command_swaps_a_directory_rather_than_copying_files(self):
         """The failure: a reader seeing half of one publish and half of the next."""
         command = publish.remote_command("/srv/handoff/repo")
-        self.assertIn("tar -xf - -C", command)
+        self.assertIn("tar -xf -", command)
         self.assertIn(".incoming", command)
         self.assertIn("mv", command)
 
@@ -260,6 +261,72 @@ class TransportTests(unittest.TestCase):
         command = publish.remote_command("/srv/my handoff; rm -rf /")
         self.assertNotIn("; rm -rf /;", command)
         self.assertIn("'/srv/my handoff; rm -rf /'", command)
+
+    def test_the_remote_does_not_keep_the_publisher_uid(self):
+        """Observed on a real publish: unpacked as root, the archive's numeric uid
+        named nobody on the destination and left a mode 700 directory that only
+        root could read, so no twin could read its slice."""
+        command = publish.remote_command("/srv/handoff/repo")
+        self.assertIn("--no-same-owner", command)
+        self.assertIn("chmod -R u+rwX,go+rX", command)
+
+    def test_macos_resource_forks_are_not_packed(self):
+        """Observed on a real publish: seven ._name files arrived beside five."""
+        source = (Path(publish.__file__)).read_text(encoding="utf-8")
+        self.assertIn("COPYFILE_DISABLE", source)
+
+    def test_a_home_relative_destination_stays_expandable(self):
+        """Observed while checking the non-root case: shlex.quote turns
+        ~/handoff into a literal directory named ~, so a user without root who
+        configured a home path would publish into a bogus directory."""
+        self.assertEqual(publish.remote_path("~/handoff/repo"), '"$HOME"/handoff/repo')
+        self.assertEqual(publish.remote_path("~"), '"$HOME"')
+        self.assertIn('"$HOME"', publish.remote_command("~/handoff/repo"))
+
+    def test_a_home_relative_destination_with_a_space_is_still_quoted(self):
+        self.assertEqual(publish.remote_path("~/my repo"), '"$HOME"\'/my repo\'')
+
+    def test_a_relative_destination_is_left_for_the_login_directory(self):
+        self.assertEqual(publish.remote_path("handoff/repo"), "handoff/repo")
+
+    def test_an_absolute_destination_is_quoted_as_before(self):
+        self.assertEqual(publish.remote_path("/srv/a b"), "'/srv/a b'")
+
+    def test_each_repository_gets_its_own_directory_under_one_base(self):
+        """The user's shape: one directory on the host holding every repository,
+        named for the repository the publish was called from."""
+        config = {"destination": {"host": "h", "base": "handoff"}, "agents": []}
+        self.assertEqual(publish.target_path(config, Path("/a/b/handoff-skill")),
+                         "handoff/handoff-skill")
+        self.assertEqual(publish.target_path(config, Path("/a/b/other-repo")),
+                         "handoff/other-repo")
+
+    def test_the_base_defaults_when_the_config_names_none(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = build_repo(Path(directory), config={
+                "destination": {"host": "h"},
+                "agents": [{"owner": "Epona", "harness": "Claude Code"}]})
+            config = publish.load_config(root)
+            self.assertEqual(config["destination"]["base"], publish.DEFAULT_BASE)
+            self.assertTrue(publish.target_path(config, root).startswith("handoff/"))
+
+    def test_an_exact_path_overrides_the_per_repository_layout(self):
+        config = {"destination": {"host": "h", "path": "/srv/exact"}, "agents": []}
+        self.assertEqual(publish.target_path(config, Path("/a/b/repo")), "/srv/exact")
+
+    def test_base_and_path_together_are_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = build_repo(Path(directory), config={
+                "destination": {"host": "h", "base": "handoff", "path": "/srv/x"},
+                "agents": [{"owner": "Epona", "harness": "Claude Code"}]})
+            with self.assertRaises(publish.PublishError):
+                publish.load_config(root)
+
+    def test_the_example_config_does_not_require_root(self):
+        """/srv needs root; the example is what a first-time user copies."""
+        destination = publish.EXAMPLE_CONFIG["destination"]
+        self.assertNotIn("path", destination)
+        self.assertFalse(destination["base"].startswith("/srv"))
 
     def test_dry_run_writes_the_tree_and_sends_nothing(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -271,7 +338,8 @@ class TransportTests(unittest.TestCase):
             try:
                 snapshot = publish.capture(root)
                 result = publish.publish(publish.build_files(snapshot, CONFIG),
-                                         CONFIG["destination"], dry_run=True, out=out)
+                                         CONFIG["destination"], "handoff/repo",
+                                         dry_run=True, out=out)
             finally:
                 publish.channel_state = original
             self.assertFalse(result["published"])

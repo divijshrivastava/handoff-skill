@@ -1,5 +1,69 @@
 # Handoff
 
+## 2026-09-10 - Give every repository its own directory on the VPS and fix the transport (owner: Epona) (harness: Claude Code)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Land each repository under one configured base named for the repository it came from.
+- [x] Keep a home-relative destination expandable, which quoting had silently broken.
+- [x] Stop the archive carrying this machine's uid, which left a directory only root could read.
+- [x] Drop the macOS AppleDouble and xattr noise the archive carried to the destination.
+- [x] Document the layout and the non-root case, and verify against a real host.
+
+Status: Complete, uncommitted. The user asked that a sync create one directory on the host and put every repository inside it, named for wherever the sync was called from. `destination.base` is that directory and defaults to `handoff`; the target is `<base>/<repo>`, so publishing one repository never disturbs another sharing the host. `destination.path` remains as an exact-directory override and giving both is refused, because only one of them can decide where files go.
+
+Three defects, all found by publishing for real and reading the result back rather than by testing the plan. The archive carried this machine's numeric uid, which names nobody on the destination: unpacked as root it produced a directory at mode 700 owned by a non-existent user, so no twin could have read its own slice. It now extracts with `--no-same-owner` and normalises modes, and a non-root user on the host can read a slice, checked with `su nobody`. `shlex.quote`, which is what makes a destination with a space or a semicolon safe, also suppressed tilde expansion, so a configured `~/handoff` would have created a literal directory named `~` - exactly the case a user without root reaches for. And macOS `tar` wrote a `._name` companion for every entry plus an xattr the remote `tar` warned about on each one; seven junk files arrived beside five real ones.
+
+The user asked whether any of this works without root. It does, and the mechanism was never the problem: run as an unprivileged account against a writable directory, the unpack, the mode normalisation and the swap all succeed. What needed root was the `/srv` path the example suggested, so the default base is now home-relative and a permission failure names the directory and suggests one.
+
+Verification: 383 helper tests including 31 for the publisher, and 54 root tests, on Python 3.9.10 and 3.12.7, with check_versions at 1.22.0 across 6 manifests, sync_manifests --check, validate --root ., package_skill and git diff --check. Exercised against the user's own host: this repository and a scratch second repository published to the same base and coexist as `~/handoff/handoff-skill` and `~/handoff/second-repo`, each with three twin files, and the earlier `/srv` copy is left in place rather than removed because deleting from the user's machine is theirs to decide.
+
+## 2026-09-10 - Show each terminal's own name in the handoff bar (owner: Zorya) (harness: Cursor)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Key handoff-bar's cache by session as well as ledger content so cached rows do not reuse another agent's claimed name.
+- [x] Invalidate every per-session cache entry when a name claim changes what the bar may show.
+- [x] Document the per-session cache suffix and add regression tests; run the full CI set and record verification.
+
+Status: Complete. Concrete failure: Epona's Claude Code terminal showed Garuda in the status-bar trailer because handoff-bar cached the whole rendered row under a ledger-only key, so whichever agent warmed the cache first named every other terminal in the same repository. The cache file is now `$ledger_key-$session_part`, where `session_part` comes from the host `session_id` and the same environment fallbacks as `bar_session_name`. Verified 2026-09-10: 383 helper tests and 54 root tests pass; the new bar regression covers a cache hit for each of two sessions in one repo.
+
+## 2026-09-10 - Tell an assigned agent, in its own terminal, that it has work (owner: Garuda) (harness: Claude Code)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Add a ledger-derived assigned_pending query to the guard: tasks recorded to an owner that nobody has started.
+- [x] Show the count in the status bar, the one surface that redraws without a model turn.
+- [x] Report the assignment in the Claude hook context on session start, prompt submit, and tool use, so a working agent notices on its next event.
+- [x] Document the notice, its repetition, and the idle-session limit that no hook can close.
+- [x] Add regression tests starting from the reproduction: a viewer move leaves an empty inbox and a silent bar.
+- [x] Run the full CI set and record verification and the handoff.
+
+Status: Complete. Published as 7d5e6c4 on origin/main, at the user's direction. The four files that also carry peers' in-flight work were staged hunk by hunk - 1 of 2 hunks in handoff_guard.py, 2 of 5 in handoff_tui.py, 1 of 2 in each of the two test files - so a peer's uncommitted hashlib import, invalidate_bar_cache rewrite, bar_session_name rewrite and their tests stayed out, and the staged content was checked for their identifiers before committing. Verified on the commit's exact tree exported from the index rather than on the working tree: 370 helper tests, 54 root tests, check_versions at 1.22.0, sync_manifests --check, validate --root ., and package_skill.py.
+
+Two surfaces now carry the assignment, both derived from HANDOFF.md rather than from a notification, so neither can disagree with the ownership it reports. `assigned_pending` in the guard names tasks recorded to an owner in state pending, excluding malformed entries because an invalid entry is not an assignment. The status bar appends `N assigned to you` for the name this session claimed and no other, which matters because the host re-runs that command on a timer: it is the only thing that changes in an idle terminal. The Claude hook adds the same fact in context on SessionStart, UserPromptSubmit and PostToolUse, beside any inbox previews rather than instead of them, naming the first three entries and counting the rest. Both clear themselves when the owner checks In progress, and the wording claims only that the ledger records the work, never that anyone read it.
+
+The limit is recorded rather than papered over: a hook fires on an event and an idle CLI produces none, so nothing can print into the terminal of an agent that is sitting at a prompt. The bar is the exception and the documentation says so, and it tells the user to watch for the entry moving to In progress in the viewer rather than trusting the assignee's terminal.
+
+22 tests, each starting from the reproduction: 5 in AssignedPendingTests, 7 in AssignmentBarTests including one that drives Dashboard.move_task and asserts the marker appears where it did not before, and 10 in AssignmentNoticeTests including a viewer-assigned task delivered beside a peer message, another agent's assignment not being delivered here, and the notice clearing on In progress. Verified on Python 3.9.10 and 3.12.7: 372 helper tests and 54 root tests, check_versions at 1.22.0 across 6 manifests, sync_manifests --check, validate --root ., package_skill.py, and git diff --check clean.
+
+Original report: In progress. Reported by the user: an agent that finished its work and is then assigned a task from the viewer shows nothing in its terminal, even though it may already be working. Reproduced before changing anything, in a temporary repository with two registered sessions: driving Dashboard.move_task to hand a pending task to Beta rewrites the ledger owner correctly, and then Beta's channel inbox is empty and Beta's bar row reads `handoff 0/1 tasks - 0/2 steps - Beta`, which is indistinguishable from owning no work. Two distinct gaps: the viewer's move publishes no notification at all, and the only surface that redraws in an idle terminal without a model turn - the status bar - reports global totals and never the reader's own unstarted work. Both are ledger-derivable, so neither needs a message from the viewer: HANDOFF.md already records the owner and the unchecked boxes, and a ledger-derived notice cannot drift from the ownership it reports.
+
 ## 2026-09-10 - Show waiting agents in the handoff viewer (owner: Zorya) (harness: Cursor)
 
 State:
@@ -67,6 +131,8 @@ Two helper tests fail in this tree and are not from this task: `test_handoff_bar
 
 Next action for whoever picks this up: nothing is committed, and `Channel.history` and the viewer work it depends on are also uncommitted, so a commit of this task should follow theirs.
 
+Published 2026-09-10 as 675d8ac and 50511ca on origin/main, pushed without force from 9a4a5a9 as a clean fast-forward. Confirmed by `git ls-remote`, and the published tree was re-verified from a fresh clone rather than from this working tree: 343 helper tests, 54 root tests, check_versions at 1.22.0 across 5 manifests, sync_manifests --check, validate, and packaging all pass at 50511ca.
+
 ## 2026-09-10 - Show the agent channel in the handoff viewer (owner: Epona) (harness: Claude Code)
 
 State:
@@ -89,6 +155,8 @@ What Epona added was the defect that work introduced. `handoff_tui.py` imported 
 Verification: 343 helper tests and 54 root tests pass on Python 3.9.10 and 3.12.7, including three new `ChannelAbsentTests` that start from the failure - the dashboard builds with no channel, the channel view refreshes empty instead of raising, and task progress still reports. The two bar tests pass again. Also run: check_versions (1.22.0 across 6 manifests), sync_manifests --check, validate --root ., package_skill, and git diff --check. Reproduced by hand both ways: a viewer planted beside only handoff_guard.py exited 1 on import before the fix and now prints its progress line and exits 0.
 
 Garuda's nudge key is the coordinated follow-up and remains Garuda's; nothing here claims it.
+
+Published 2026-09-10 as 675d8ac and 50511ca on origin/main, pushed without force from 9a4a5a9 as a clean fast-forward. Confirmed by `git ls-remote`, and the published tree was re-verified from a fresh clone rather than from this working tree: 343 helper tests, 54 root tests, check_versions at 1.22.0 across 5 manifests, sync_manifests --check, validate, and packaging all pass at 50511ca.
 
 ## 2026-09-10 - Nudge an unresponsive agent from the channel view (owner: Garuda) (harness: Claude Code)
 
