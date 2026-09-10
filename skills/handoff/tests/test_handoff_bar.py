@@ -163,6 +163,43 @@ class CacheTests(unittest.TestCase):
         second = run(payload, self.base, **env)
         self.assertIn(claimed, second.stdout)
 
+    def test_different_sessions_do_not_share_a_cached_name(self):
+        """Regression: a ledger-only cache key showed whichever agent warmed it."""
+        env = {
+            "HANDOFF_NAME_CACHE": str(self.base / "names"),
+            "HANDOFF_BAR_CACHE": str(self.base / "cache"),
+        }
+        garuda_seed, epona_seed = "bar-session-garuda", "bar-session-epona"
+        for seed in (garuda_seed, epona_seed):
+            claim = subprocess.run(
+                [sys.executable, str(SCRIPTS / "handoff_guard.py"), "name",
+                 "--root", str(self.repo), "--seed", seed],
+                env={**os.environ, **{k: str(v) for k, v in env.items()}},
+                capture_output=True, text=True, encoding="utf-8")
+            self.assertEqual(claim.returncode, 0, claim.stderr)
+        garuda = subprocess.run(
+            [sys.executable, str(SCRIPTS / "handoff_guard.py"), "name",
+             "--root", str(self.repo), "--seed", garuda_seed],
+            env={**os.environ, **{k: str(v) for k, v in env.items()}},
+            capture_output=True, text=True, encoding="utf-8").stdout.strip()
+        epona = subprocess.run(
+            [sys.executable, str(SCRIPTS / "handoff_guard.py"), "name",
+             "--root", str(self.repo), "--seed", epona_seed],
+            env={**os.environ, **{k: str(v) for k, v in env.items()}},
+            capture_output=True, text=True, encoding="utf-8").stdout.strip()
+        self.assertNotEqual(garuda, epona)
+        garuda_payload = json.dumps({"session_id": garuda_seed, "cwd": str(self.repo.resolve())})
+        epona_payload = json.dumps({"session_id": epona_seed, "cwd": str(self.repo.resolve())})
+        garuda_row = run(garuda_payload, self.base, **env).stdout
+        epona_row = run(epona_payload, self.base, **env).stdout
+        self.assertIn(garuda, garuda_row)
+        self.assertNotIn(epona, garuda_row)
+        self.assertIn(epona, epona_row)
+        self.assertNotIn(garuda, epona_row)
+        # A cache hit must keep each session's own name, not the first writer's.
+        self.assertIn(garuda, run(garuda_payload, self.base, **env).stdout)
+        self.assertIn(epona, run(epona_payload, self.base, **env).stdout)
+
 
 class StdinTests(unittest.TestCase):
     """A host may write the payload and keep stdin open; waiting for EOF then

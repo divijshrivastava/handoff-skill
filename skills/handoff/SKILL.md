@@ -160,14 +160,17 @@ Use task states literally:
 | Actively being worked | `[x]` | `[ ]` |
 | Finished and verified | `[x]` | `[x]` |
 
-Check `In progress` immediately before the first implementation step. Check a
-step only after its outcome exists. Check `Completed` only after every required
-step and proportionate verification finish. Leave `In progress` checked on a
-completed task to preserve the transition history.
+Record every new request in the ledger as the first write at intake—before
+implementation—so the viewer always shows who holds what and under which state.
+If local instructions require a user choice before mutation, propose the entry
+and write it only after that choice. Otherwise apply a pending entry while the
+task waits behind other work, or check `In progress` in that same write when
+this session begins the work now. A viewer assignment to an unfinished task
+checks `In progress` in the ledger at once so the hand-off appears under WIP.
 
-If local instructions require a user choice before mutation, propose the
-pending entry and write it only after that choice. Otherwise record the request
-as pending as intake begins, so it cannot disappear while older work finishes.
+Check a step only after its outcome exists. Check `Completed` only after every
+required step and proportionate verification finish. Leave `In progress` checked
+on a completed task to preserve the transition history.
 
 ## Step 2: Perform the progressive-work audit
 

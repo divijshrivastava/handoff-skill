@@ -768,7 +768,9 @@ class AssignmentNoticeTests(unittest.TestCase):
     def test_starting_the_task_clears_the_notice(self):
         self.assign()
         self.assertIn("Settings page", self.context())
-        self.assign(state="in_progress")
+        started = self.entry("Settings page", "Beta", "in_progress").replace(
+            "- [ ] Build it.", "- [x] Build it.")
+        self.ledger.write_text("# Handoff\n\n" + started, encoding="utf-8")
         self.assertEqual(self.hook(), {})
 
     def test_a_session_start_names_the_work_already_waiting_for_it(self):

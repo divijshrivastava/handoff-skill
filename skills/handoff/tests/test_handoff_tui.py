@@ -555,6 +555,12 @@ class BarSessionNameTests(unittest.TestCase):
         self.assertEqual(tui.bar_session_name(self.ledger, payload),
                          guard.recall_name(seed, self.ledger))
 
+    def test_bar_cache_session_key_differs_by_session(self):
+        one = json.dumps({"session_id": "session-alpha", "cwd": "/repo"})
+        two = json.dumps({"session_id": "session-beta", "cwd": "/repo"})
+        self.assertNotEqual(tui.bar_cache_session_key(one), tui.bar_cache_session_key(two))
+        self.assertEqual(tui.bar_cache_session_key(None), "no-session")
+
     def test_bar_cli_prints_the_claimed_session(self):
         seed = "bar-cli-session-tests-1"
         claimed = guard.claim_name(seed, self.ledger, set())[0]
@@ -665,7 +671,7 @@ class MoveTests(unittest.TestCase):
         self.assertEqual(self.owners(), ["Waiting Agent", "Agent B"])
         self.assertIn("Waiting Agent must", self.read())
 
-    def test_a_move_changes_ownership_only(self):
+    def test_a_move_checks_in_progress_without_changing_steps(self):
         before = tui.parse_tasks(self.read())[0]
         self.press(self.dashboard(), ord("x"), ord("a"))
         dashboard = self.dashboard()
@@ -674,7 +680,9 @@ class MoveTests(unittest.TestCase):
         self.press(dashboard, ord("p"))
         after = tui.parse_tasks(self.read())[0]
         self.assertEqual(after.owner, "Agent B")
-        self.assertEqual((after.line, after.steps, after.state), (before.line, before.steps, before.state))
+        self.assertEqual(after.line, before.line)
+        self.assertEqual(after.steps, before.steps)
+        self.assertEqual(after.state, "in_progress")
         self.assertEqual(tui.parse_tasks(self.read())[1].owner, "Agent B")
         self.assertEqual(guard.structure_findings(self.read()), [])
 
@@ -952,3 +960,118 @@ class AssignmentBarTests(unittest.TestCase):
             watcher.poll()
             self.assertIn("1 assigned to you", tui.bar_line(watcher.snapshot, color=False,
                                                             session_name="Beta"))
+
+
+class NudgeKeyTests(unittest.TestCase):
+    """The nudge key on the channel view, and what it refuses to do.
+
+    A nudge is a message, so it needs a real sender. The viewer is a window, not
+    an agent: it speaks as the session whose terminal it runs in and refuses
+    rather than borrowing another agent's identity.
+    """
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name).resolve()
+        self.path = self.root / "HANDOFF.md"
+        self.path.write_text("# Handoff\n\n" + entry("Importer", owner="Beta"),
+                             encoding="utf-8")
+        self.cache = patch.dict(os.environ, {"HANDOFF_NAME_CACHE": str(self.root / "names"),
+                                            "HANDOFF_SESSION": "viewer-terminal"})
+        self.cache.start()
+        self.addCleanup(self.cache.stop)
+        self.channel = tui.Channel(self.root)
+        # The window belongs to the session that claimed a name against this seed.
+        self.mine = guard.claim_name("viewer-terminal", self.path, set())[0]
+        self.sender = self.channel.join(self.mine, "Claude Code")["session"]
+        self.beta = self.channel.join("Beta", "Codex")["session"]
+
+    def board(self, read_only=False, seed="viewer-terminal"):
+        watcher = tui.Watcher(self.path)
+        watcher.poll()
+        dashboard = tui.Dashboard(watcher, read_only=read_only, seed=seed)
+        dashboard.view, dashboard.channel_mode = "channel", "sessions"
+        dashboard.refresh()
+        rows = dashboard.rows()
+        dashboard.selected = next(index for index, row in enumerate(rows)
+                                  if row[1]["owner"] == "Beta")
+        return dashboard
+
+    def press(self, dashboard, *keys):
+        for key in keys:
+            dashboard.handle_key(key, FakeCurses, 5)
+
+    def nudges(self):
+        return [row for row in self.channel.inbox(self.beta) if row["kind"] == "nudge"]
+
+    def test_the_key_sends_one_nudge_and_says_what_it_is_not(self):
+        dashboard = self.board()
+        self.press(dashboard, ord("n"))
+        self.assertIn("Nudged Beta", dashboard.message)
+        self.assertIn("not a verdict", dashboard.message)
+        self.assertEqual(len(self.nudges()), 1)
+
+    def test_the_nudge_records_that_the_user_raised_it_in_the_viewer(self):
+        self.press(self.board(), ord("n"))
+        body = json.loads(self.nudges()[0]["body"])
+        self.assertEqual(body["via"], "handoff viewer, at the user's direction")
+        self.assertEqual(self.nudges()[0]["sender_owner"], self.mine)
+
+    def test_read_only_refuses_and_sends_nothing(self):
+        dashboard = self.board(read_only=True)
+        self.press(dashboard, ord("n"))
+        self.assertIn("disabled in read-only mode", dashboard.message)
+        self.assertEqual(self.nudges(), [])
+
+    def test_a_window_with_no_session_of_its_own_refuses(self):
+        # No seed and no host identifier: the window belongs to nobody, and the
+        # environment fallbacks bar_session_name would try are gone too.
+        with patch.dict(os.environ, {"HANDOFF_NAME_CACHE": str(self.root / "names")},
+                        clear=True):
+            dashboard = self.board(seed=None)
+            self.press(dashboard, ord("n"))
+        self.assertIn("no session of its own", dashboard.message)
+        self.assertEqual(self.nudges(), [])
+
+    def test_pressing_it_outside_the_channel_view_explains_where_it_works(self):
+        dashboard = self.board()
+        dashboard.view = "tasks"
+        self.press(dashboard, ord("n"))
+        self.assertIsNone(dashboard.message)
+        self.assertEqual(self.nudges(), [])
+
+    def test_selecting_this_windows_own_session_sends_nothing(self):
+        dashboard = self.board()
+        rows = dashboard.rows()
+        dashboard.selected = next(index for index, row in enumerate(rows)
+                                  if row[1]["owner"] == self.mine)
+        self.press(dashboard, ord("n"))
+        self.assertIn("own session", dashboard.message)
+        self.assertEqual(self.nudges(), [])
+
+    def test_a_second_press_reports_the_interval_rather_than_sending_again(self):
+        dashboard = self.board()
+        self.press(dashboard, ord("n"), ord("n"))
+        self.assertIn("already nudged", dashboard.message)
+        self.assertIn("buries the first request", dashboard.message)
+        self.assertEqual(len(self.nudges()), 1)
+
+    def test_the_key_row_offers_only_the_keys_that_work_here(self):
+        """The row is truncated to the terminal width, so it cannot list everything."""
+        screen = Screen()
+        dashboard = self.board()
+        dashboard.draw(screen, FakeCurses)
+        footer = screen.lines[screen.height - 1]
+        self.assertIn("n nudge", footer)
+        # Cut and give act on a task; there is none to hold in the channel view.
+        self.assertNotIn("x cut", footer)
+        self.assertLess(len(footer), screen.width)
+        dashboard.view = "tasks"
+        dashboard.draw(screen, FakeCurses)
+        footer = screen.lines[screen.height - 1]
+        self.assertNotIn("n nudge", footer)
+        self.assertIn("x cut", footer)
+        read_only = self.board(read_only=True)
+        read_only.draw(screen, FakeCurses)
+        self.assertNotIn("n nudge", screen.lines[screen.height - 1])

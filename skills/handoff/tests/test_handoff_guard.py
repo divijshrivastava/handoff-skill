@@ -507,7 +507,8 @@ Status: Complete.
 
 class ReassignTests(unittest.TestCase):
     """The heading label is the only record of who holds a task, so moving one
-    between agents must change that label and nothing else."""
+    between agents must change that label; a viewer hand-off also checks In
+    progress when the entry is not complete."""
 
     def test_owner_label_is_replaced_and_the_entry_keeps_its_place(self) -> None:
         text = handoff_guard.reassign_task(
@@ -575,6 +576,26 @@ class ReassignTests(unittest.TestCase):
                     MINIMAL_LEDGER, 3, "2026-09-06 - Existing task (owner: Codex)", name
                 )
         self.assertIsNone(handoff_guard.owner_label_error("Claude session 01LD89UW"))
+
+    def test_mark_in_progress_checks_a_pending_hand_off(self) -> None:
+        pending = MINIMAL_LEDGER.replace("- [x] In progress", "- [ ] In progress")
+        moved = handoff_guard.reassign_task(
+            pending, 3, "2026-09-06 - Existing task (owner: Codex)", "Claude",
+            mark_in_progress=True,
+        )
+        task = handoff_guard.parse_tasks(moved)[0]
+        self.assertEqual(task.owner, "Claude")
+        self.assertEqual(task.state, "in_progress")
+        self.assertEqual(handoff_guard.structure_findings(moved), [])
+
+    def test_mark_in_progress_leaves_a_completed_entry_alone(self) -> None:
+        done = MINIMAL_LEDGER.replace("- [ ] Completed", "- [x] Completed").replace(
+            "- [ ] Finish the work.", "- [x] Finish the work.")
+        moved = handoff_guard.reassign_task(
+            done, 3, "2026-09-06 - Existing task (owner: Codex)", "Claude",
+            mark_in_progress=True,
+        )
+        self.assertEqual(handoff_guard.parse_tasks(moved)[0].state, "completed")
 
     def test_a_fenced_example_is_never_mistaken_for_the_task_to_move(self) -> None:
         text = MINIMAL_LEDGER + """
@@ -1007,11 +1028,15 @@ class SessionNameTests(unittest.TestCase):
     def test_a_new_name_claim_invalidates_the_bar_cache(self) -> None:
         bar_cache = self.root / "bar-cache"
         bar_cache.mkdir(parents=True, exist_ok=True)
-        cache_file = bar_cache / handoff_guard.bar_cache_key(self.ledger)
-        cache_file.write_text("stale\nrow\n", encoding="utf-8")
+        prefix = handoff_guard.bar_cache_key(self.ledger)
+        legacy = bar_cache / prefix
+        per_session = bar_cache / f"{prefix}-session-a"
+        legacy.write_text("stale\nrow\n", encoding="utf-8")
+        per_session.write_text("stale\nrow\n", encoding="utf-8")
         with unittest.mock.patch.dict(os.environ, {"HANDOFF_BAR_CACHE": str(bar_cache)}):
             handoff_guard.claim_name("session-one", self.ledger, set())
-        self.assertFalse(cache_file.exists())
+        self.assertFalse(legacy.exists())
+        self.assertFalse(per_session.exists())
 
 
 class LeaseTests(unittest.TestCase):
@@ -1255,3 +1280,28 @@ class AssignedPendingTests(unittest.TestCase):
         self.assertEqual(len(names), 2)
         self.assertIn("Newest", names[0])
         self.assertIn("Older", names[1])
+
+
+class AssignedUnstartedTests(unittest.TestCase):
+    def entry(self, title, owner, state="pending", steps=(False, False)):
+        labels = ["Build it.", "Verify it."]
+        text = handoff_guard.make_template("2026-09-10", title, owner, labels)
+        if state == "in_progress":
+            text = text.replace("- [ ] In progress", "- [x] In progress")
+        if state == "completed":
+            text = text.replace("- [ ]", "- [x]")
+        for label, done in zip(labels, steps):
+            if done:
+                text = text.replace(f"- [ ] {label}", f"- [x] {label}")
+        return text
+
+    def test_a_viewer_hand_off_with_no_steps_counts_as_unstarted(self):
+        text = "# Handoff\n\n" + self.entry("Settings page", "Beta", "in_progress", (False, False))
+        tasks = handoff_guard.parse_tasks(text)
+        self.assertEqual(handoff_guard.assigned_unstarted(tasks, "Beta"), tasks)
+        self.assertEqual(handoff_guard.assigned_pending(tasks, "Beta"), [])
+
+    def test_checking_a_step_clears_an_in_progress_hand_off(self):
+        text = "# Handoff\n\n" + self.entry("Settings page", "Beta", "in_progress", (True, False))
+        tasks = handoff_guard.parse_tasks(text)
+        self.assertEqual(handoff_guard.assigned_unstarted(tasks, "Beta"), [])

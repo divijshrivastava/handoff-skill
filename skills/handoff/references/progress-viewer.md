@@ -141,10 +141,12 @@ and it leads with that agent's name so a narrow terminal clips the task title
 instead of the answer.
 
 A move rewrites the `(owner: ...)` label in that one heading and appends a dated
-sentence to the task's status naming the previous owner. It changes nothing
-else: state boxes, steps, and the entry's position in ledger order all stay as
+sentence to the task's status naming the previous owner. For an unfinished task
+handed to a named agent, it also checks `In progress` so the assignment shows
+under WIP immediately; steps and the entry's position in ledger order stay as
 they were, because ledger order records when work was raised while the label
-records who holds it. Pasting onto `unassigned` removes the label instead.
+records who holds it. Pasting onto `unassigned` removes the label instead and
+does not check `In progress`.
 
 The write is the same compare-and-swap `handoff_guard.py apply` uses: the same
 lock, the same version check against the revision on screen, and the same
@@ -169,6 +171,31 @@ someone else's repository:
 ```sh
 handoff-tui --root /path/to/repository --read-only
 ```
+
+## Nudging a silent agent
+
+In the Channel view, `n` asks the selected session to answer: read its inbox,
+acknowledge it, and report where the work stands, or release it with `yield`. It
+sends a message and nothing else. It moves no task, changes no ownership, and
+does not touch that peer's reported state, so pressing it while you are unsure
+whether an agent is alive costs nothing and settles nothing.
+
+Press `s` for the session list if you are looking at messages. `--read-only`
+disables the key, as it disables the move keys.
+
+A nudge needs a real sender, because it is a message. The viewer is a window, not
+an agent: it speaks as the session whose terminal it runs in, and refuses rather
+than borrowing another agent's identity. A viewer opened from an agent session
+carries that session's identity, which the launcher passes as `--session-seed`
+because a newly opened terminal inherits nothing. A viewer started by hand in a
+terminal that claimed no name has no session to send as and says so. The message
+records `via: handoff viewer, at the user's direction`, so the receiving agent can
+tell a keypress from the sending session's own decision.
+
+A second press within ten minutes returns the first nudge rather than sending
+another: repeating the request adds no information, and burying an inbox is how a
+returning owner misses the message that mattered. What silence means afterwards is
+unchanged - unknown. `references/agent-channel.md` carries the rest.
 
 ## What the agent you assigned sees
 

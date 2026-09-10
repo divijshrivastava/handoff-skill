@@ -338,5 +338,41 @@ class HandoffKeysTests(unittest.TestCase):
                     self.assertEqual(keys.open_candidates(), ["iterm2"])
 
 
+class OpenerSeedTests(unittest.TestCase):
+    """The window a viewer opens inherits nothing, so identity is passed to it.
+
+    Without it the opened viewer belongs to no session, and a session action such
+    as nudging has no sender to speak as.
+    """
+
+    def test_the_opener_forwards_a_real_host_identifier(self):
+        for variable in ("HANDOFF_SESSION", "CLAUDE_CODE_SESSION_ID", "TERM_SESSION_ID"):
+            with self.subTest(variable=variable):
+                with patch.dict(os.environ, {variable: "host-123"}, clear=True):
+                    self.assertEqual(keys.opener_seed(), "host-123")
+
+    def test_no_identifier_forwards_nothing_rather_than_a_random_one(self):
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertIsNone(keys.opener_seed())
+
+    def test_the_launch_command_carries_the_seed_as_an_argument(self):
+        """An argument, not an environment prefix: some emulators exec directly."""
+        with patch.dict(os.environ, {"HANDOFF_SESSION": "host 123"}, clear=True):
+            with patch.object(keys.shutil, "which", return_value="/usr/local/bin/handoff-tui"):
+                command = keys.viewer_launch_command(Path("/repo"))
+        self.assertIn("--session-seed 'host 123'", command)
+        self.assertTrue(command.startswith("/usr/local/bin/handoff-tui"))
+
+    def test_a_window_opened_by_an_unidentified_session_gets_no_seed(self):
+        with patch.dict(os.environ, {}, clear=True):
+            with patch.object(keys.shutil, "which", return_value="/usr/local/bin/handoff-tui"):
+                self.assertNotIn("--session-seed", keys.viewer_launch_command(Path("/repo")))
+
+    def test_installed_key_bindings_never_freeze_one_session_into_the_command(self):
+        """A binding outlives the session that installed it."""
+        with patch.dict(os.environ, {"HANDOFF_SESSION": "host-123"}, clear=True):
+            self.assertNotIn("--session-seed", keys.viewer_command(Path("/repo")))
+
+
 if __name__ == "__main__":
     unittest.main()

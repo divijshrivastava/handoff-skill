@@ -262,9 +262,13 @@ only when the ledger's contents change, which took a measured 31ms per cached
 run against a 33KB ledger, against 136ms for the viewer alone.
 
 The cache key is a `cksum` of the ledger's contents, deliberately not its
-modification time and size. Checking a box rewrites `[ ]` as `[x]` and leaves
-the byte count identical, so a size stamp serves a stale row for exactly the
-edit the bar exists to show. A regression test covers that case.
+modification time and size, plus a per-session suffix derived from the host's
+`session_id` and the same environment fallbacks the bar uses to recall a claimed
+name. Checking a box rewrites `[ ]` as `[x]` and leaves the byte count
+identical, so a size stamp serves a stale row for exactly the edit the bar
+exists to show. Without the session suffix, every terminal in one repository
+would show whichever agent's name warmed the cache first. A regression test
+covers both cases.
 
 ## Behavior worth knowing
 

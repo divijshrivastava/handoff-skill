@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 from datetime import datetime
+import hashlib
 import json
 import math
 import os
@@ -26,7 +27,7 @@ except ImportError:  # an installed copy without the channel module beside it
 from handoff_guard import (
     OWNER_RE,
     Task,
-    assigned_pending,
+    assigned_unstarted,
     find_repo_root,
     held_sessions,
     ledger_version,
@@ -279,7 +280,7 @@ def bar_line(snapshot: Snapshot | None, width: int = 10, color: bool = True,
     # Work recorded to this reader that nobody has started. The bar is the only
     # surface that redraws without a model turn, so an assignment made while this
     # session sat idle is otherwise invisible until someone types into it.
-    waiting = len(assigned_pending(snapshot.tasks if snapshot else [], session_name))
+    waiting = len(assigned_unstarted(snapshot.tasks if snapshot else [], session_name))
     if waiting:
         trailer += f" {dim}{gap}{reset} {shade}{waiting} assigned to you{reset}"
     return (f"{shade}handoff{reset} {shade}{full * filled}{empty * (width - filled)}{reset} "
@@ -313,16 +314,9 @@ def status_line_session(payload: str) -> str | None:
     return session.strip() if isinstance(session, str) and session.strip() else None
 
 
-def bar_session_name(ledger: Path, payload: str | None = None,
-                     seed: str | None = None) -> str | None:
-    """The name this session already claimed for this ledger, or None before it does.
-
-    The host's reported session id leads, matching the seed the agent's own
-    preflight claim is keyed on; the environment fallbacks follow session_seed's
-    order. No record means the session has not claimed a name yet, and the bar
-    then names no one rather than guessing.
-    """
-    seeds = []
+def bar_session_seeds(payload: str | None = None, seed: str | None = None) -> list[str]:
+    """Session identifiers for this status-line reader, in lookup order."""
+    seeds: list[str] = []
     if seed and seed.strip():
         seeds.append(seed.strip())
     if payload:
@@ -333,7 +327,31 @@ def bar_session_name(ledger: Path, payload: str | None = None,
         value = os.environ.get(variable)
         if value and value.strip():
             seeds.append(value.strip())
-    for candidate in dict.fromkeys(seeds):
+    return list(dict.fromkeys(seeds))
+
+
+def bar_cache_session_key(payload: str | None = None, seed: str | None = None) -> str:
+    """Cache suffix for one terminal session's bar row.
+
+    handoff-bar keys its cache on ledger content and this suffix so two agents
+    in the same repository do not serve each other's claimed name from cache.
+    """
+    seeds = bar_session_seeds(payload, seed)
+    if not seeds:
+        return "no-session"
+    return hashlib.sha256("\0".join(seeds).encode()).hexdigest()[:16]
+
+
+def bar_session_name(ledger: Path, payload: str | None = None,
+                     seed: str | None = None) -> str | None:
+    """The name this session already claimed for this ledger, or None before it does.
+
+    The host's reported session id leads, matching the seed the agent's own
+    preflight claim is keyed on; the environment fallbacks follow session_seed's
+    order. No record means the session has not claimed a name yet, and the bar
+    then names no one rather than guessing.
+    """
+    for candidate in bar_session_seeds(payload, seed):
         name = recall_name(candidate, ledger)
         if name:
             return name
@@ -399,9 +417,14 @@ def move_note(task: Task, target: str, when: datetime | None = None) -> str:
     about progress: a move does not verify a step.
     """
     stamp = (when or datetime.now()).date().isoformat()
+    if target != UNASSIGNED and task.state != "completed":
+        state_change = ("In progress was checked so the assignment shows under WIP; "
+                        "steps were not changed.")
+    else:
+        state_change = "No state or step boxes were changed."
     note = (f"Reassigned {stamp}: moved from {owner_name(task)} to {target} in the "
-            "handoff viewer at the user's direction. No state or step boxes were "
-            "changed, and the entry keeps its place in ledger order.")
+            f"handoff viewer at the user's direction. {state_change} The entry keeps "
+            "its place in ledger order.")
     if target != UNASSIGNED and task.state != "completed":
         note += (f" Execution request: {target} must finish its current task, then "
                  "audit and complete this task, including verification, without "
@@ -411,8 +434,12 @@ def move_note(task: Task, target: str, when: datetime | None = None) -> str:
 
 
 class Dashboard:
-    def __init__(self, watcher: Watcher, read_only: bool = False):
+    def __init__(self, watcher: Watcher, read_only: bool = False, seed: str | None = None):
         self.watcher = watcher
+        # How this window identifies the session it belongs to. A viewer opened
+        # in a new terminal inherits nothing, so the launcher passes the opener's
+        # seed; without it the window belongs to no session and says so.
+        self.seed = seed
         self.view = "agents"
         self.owner: str | None = None
         self.selected = 0
@@ -435,6 +462,56 @@ class Dashboard:
         self.channel_mode = "messages"
         self.channel_session: str | None = None
         self.channel_detail: dict | None = None
+
+    def nudge_sender(self) -> str | None:
+        """The channel session this viewer may speak as, or None.
+
+        A nudge is a message, and a message needs a real sender: the viewer is a
+        window, not an agent. It speaks as the session whose terminal it runs in,
+        found from the name that session already claimed, and refuses rather than
+        borrowing another agent's identity when it cannot find one.
+        """
+        if self.channel is None:
+            return None
+        name = bar_session_name(self.watcher.path, seed=self.seed)
+        return self.channel.session_for_owner(name) if name else None
+
+    def nudge_selected(self) -> None:
+        """Ask the selected session to answer. It changes nothing about that peer."""
+        if self.read_only:
+            self.message = "Nudging is disabled in read-only mode."
+            return
+        if self.channel is None:
+            self.message = f"No channel here: {self.channel_error}."
+            return
+        row = self.selected_session()
+        if row is None:
+            self.message = ("Open the Channel view and select a session to nudge it. "
+                            "Press s for the session list.")
+            return
+        sender = self.nudge_sender()
+        if sender is None:
+            self.message = ("Nothing was sent: this viewer has no session of its own to send "
+                            "as. Nudge from an agent session, or watch the entry move to In "
+                            "progress instead.")
+            return
+        if sender == row["id"]:
+            self.message = "That is this viewer's own session. Nothing was sent."
+            return
+        try:
+            result = self.channel.nudge(sender, row["id"],
+                                        via="handoff viewer, at the user's direction")
+        except (OSError, ValueError, RuntimeError) as error:
+            self.message = f"Nothing was sent: {error}"
+            return
+        name = row["owner"]
+        if not result["sent"]:
+            self.message = (f"{name} was already nudged from this session in the last "
+                            f"{round(result['repeat_in_seconds'] / 60)} minute(s). Asking again "
+                            "buries the first request; nothing was sent.")
+            return
+        self.message = (f"Nudged {name}. It is a message, not a verdict: silence still leaves "
+                        "availability unknown and moves no work.")
 
     def selected_session(self) -> dict | None:
         """Expose a stable session identity for session actions such as nudging."""
@@ -549,8 +626,10 @@ class Dashboard:
         try:
             result = swap_ledger(
                 self.watcher.path, snapshot.version,
-                lambda text: reassign_task(text, task.line, task.heading, owner,
-                                           move_note(task, label)),
+                lambda text: reassign_task(
+                    text, task.line, task.heading, owner, move_note(task, label),
+                    mark_in_progress=owner is not None and task.state != "completed",
+                ),
             )
         except (OSError, UnicodeError, ValueError, RuntimeError) as error:
             self.message = f"Nothing was moved: {error}"
@@ -660,6 +739,9 @@ class Dashboard:
             elif self.owner is not None:
                 self.owner = None
                 self.selected = self.offset = 0
+            return True
+        if self.view == "channel" and key in (ord("n"), ord("N")):
+            self.nudge_selected()
             return True
         if self.view == "channel" and key == ord("s"):
             self.channel_mode = "messages" if self.channel_mode == "sessions" else "sessions"
@@ -833,9 +915,13 @@ class Dashboard:
               + "Reading does not acknowledge. Reports and receipts do not prove live activity."
               if self.view == "channel" else
               " Checkbox counts only; owner labels do not prove authorship or live activity.", curses.A_DIM)
-        write(height - 1, " q quit | a/t/c views | j/k move | gg/G ends | Enter open"
-              " | b back | r reload"
-              + ("" if self.read_only else " | x cut | p give"))
+        # Only the keys that work here, so the row survives a narrow terminal:
+        # cut and give act on tasks, and the channel view has no task to hold.
+        keys = (" q quit | a/t/c views | j/k move | gg/G ends | Enter open"
+                " | b back | r reload")
+        if not self.read_only:
+            keys += " | n nudge" if self.view == "channel" else " | x cut | p give"
+        write(height - 1, keys)
         screen.refresh()
         return available
 
@@ -856,7 +942,8 @@ class Dashboard:
         return ""
 
 
-def run_live(watcher: Watcher, interval: float, read_only: bool = False) -> int:
+def run_live(watcher: Watcher, interval: float, read_only: bool = False,
+             seed: str | None = None) -> int:
     try:
         import curses
     except ImportError:
@@ -869,7 +956,7 @@ def run_live(watcher: Watcher, interval: float, read_only: bool = False) -> int:
         except curses.error:
             pass
         screen.keypad(True)
-        dashboard = Dashboard(watcher, read_only=read_only)
+        dashboard = Dashboard(watcher, read_only=read_only, seed=seed)
         next_poll = 0.0
         while True:
             now = time.monotonic()
@@ -918,6 +1005,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--bar", action="store_true",
                         help="Print one status-line row; reads host JSON on stdin for the directory")
     parser.add_argument("--no-color", action="store_true", help="Omit colour from --bar or --codex")
+    parser.add_argument("--session-seed",
+                        help="Identifier of the session this window belongs to; the launcher "
+                             "passes the opener's, because a new terminal inherits none")
     parser.add_argument("--codex", nargs=argparse.REMAINDER,
                         help="Run Codex with a live bottom bar (tmux 3.2+); remaining arguments go to Codex")
     parser.add_argument("--with", dest="agent", nargs=argparse.REMAINDER, metavar="AGENT",
@@ -988,7 +1078,7 @@ def main(argv: list[str] | None = None) -> int:
         watcher.poll()
         print(plain_report(watcher), end="")
         return 1 if watcher.error or (watcher.snapshot and any(task.errors for task in watcher.snapshot.tasks)) else 0
-    return run_live(watcher, args.interval, read_only=args.read_only)
+    return run_live(watcher, args.interval, read_only=args.read_only, seed=args.session_seed)
 
 
 if __name__ == "__main__":

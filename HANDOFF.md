@@ -1,5 +1,20 @@
 # Handoff
 
+## 2026-09-10 - Record assigned work in the ledger immediately (owner: Zorya) (harness: Cursor)
+
+State:
+
+- [x] In progress
+- [ ] Completed
+
+Steps:
+
+- [x] Check In progress on viewer assignment so handoffs show under WIP before any step is edited.
+- [x] Extend assigned_unstarted so the bar and hook still notice handed-off in-progress entries with no steps checked.
+- [x] Require immediate ledger intake in the skill and document the viewer move; add regression tests and run the full CI set.
+
+Status: In progress. Concrete failure: work given in chat or through the viewer often stayed invisible in the TUI until an agent finished and wrote a completed entry, so the user could not see who held what. Viewer moves now call mark_task_in_progress through reassign_task; assigned_unstarted covers pending intake and in-progress hand-offs with zero steps checked for the bar and Claude hook. SKILL.md and progress-viewer.md now require writing every new request to the ledger at intake. Verified 2026-09-10: 387 helper tests and 54 root tests pass on Python 3.9.
+
 ## 2026-09-10 - Give every repository its own directory on the VPS and fix the transport (owner: Epona) (harness: Claude Code)
 
 State:
@@ -22,6 +37,8 @@ Three defects, all found by publishing for real and reading the result back rath
 The user asked whether any of this works without root. It does, and the mechanism was never the problem: run as an unprivileged account against a writable directory, the unpack, the mode normalisation and the swap all succeed. What needed root was the `/srv` path the example suggested, so the default base is now home-relative and a permission failure names the directory and suggests one.
 
 Verification: 383 helper tests including 31 for the publisher, and 54 root tests, on Python 3.9.10 and 3.12.7, with check_versions at 1.22.0 across 6 manifests, sync_manifests --check, validate --root ., package_skill and git diff --check. Exercised against the user's own host: this repository and a scratch second repository published to the same base and coexist as `~/handoff/handoff-skill` and `~/handoff/second-repo`, each with three twin files, and the earlier `/srv` copy is left in place rather than removed because deleting from the user's machine is theirs to decide.
+
+Published 2026-09-10 as 4750547 on origin/main, fast-forwarded from 7d5e6c4 without force and confirmed with git ls-remote. Verified from a fresh clone rather than this working tree: 381 helper tests, 54 root tests, check_versions at 1.22.0 across 5 manifests, sync_manifests --check, validate, and packaging all pass at 4750547. Only this task's four files were staged; the handoff_tui.py, handoff_guard.py, handoff-bar, harness-setup.md and their test changes in the working tree belong to other owners and were left untouched.
 
 ## 2026-09-10 - Show each terminal's own name in the handoff bar (owner: Zorya) (harness: Cursor)
 

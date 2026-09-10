@@ -298,19 +298,35 @@ def parse_tasks(text: str) -> list[Task]:
 
 
 def assigned_pending(tasks: list["Task"], owner: str | None) -> list["Task"]:
-    """Tasks recorded to this owner that nobody has started yet.
+    """Tasks recorded to this owner in pending state.
 
-    A viewer assignment writes the owner label and leaves both state boxes
-    unchecked, so this is what "assigned but not started" means in the ledger
-    itself. Deriving it here rather than from a notification means the answer
-    cannot drift from the ownership it reports, and it clears itself the moment
-    the owner checks In progress. It is not evidence that the owner has seen
-    the work: an unread assignment and an ignored one look identical.
+    Intake writes pending while work waits behind an active task. Deriving the
+    answer from the ledger means it cannot drift from the ownership it reports.
     """
     if not owner:
         return []
     return [task for task in tasks
             if task.state == "pending" and task.owner == owner and not task.errors]
+
+
+def assigned_unstarted(tasks: list["Task"], owner: str | None) -> list["Task"]:
+    """Tasks recorded to this owner that nobody has checked a step on yet.
+
+    Pending intake entries and viewer assignments that checked In progress but
+    have no step progress yet both belong here, so the bar and hook can name
+    work the user just handed over before the assignee edits a step.
+    """
+    if not owner:
+        return []
+    waiting: list[Task] = []
+    for task in tasks:
+        if task.owner != owner or task.errors:
+            continue
+        if task.state == "pending":
+            waiting.append(task)
+        elif task.state == "in_progress" and not any(checked for checked, _ in task.steps):
+            waiting.append(task)
+    return waiting
 
 
 def structure_findings(text: str) -> list[tuple[str, str, str]]:
@@ -745,9 +761,12 @@ def bar_cache_key(ledger: Path) -> str:
 
 
 def invalidate_bar_cache(ledger: Path) -> None:
-    """Drop a cached status row when a name claim changes what the bar shows."""
+    """Drop cached status rows when a name claim changes what the bar shows."""
+    prefix = bar_cache_key(ledger.resolve())
     try:
-        (bar_cache_dir() / bar_cache_key(ledger.resolve())).unlink()
+        for entry in bar_cache_dir().iterdir():
+            if entry.name == prefix or entry.name.startswith(prefix + "-"):
+                entry.unlink()
     except OSError:
         pass
 
@@ -903,14 +922,42 @@ def set_lease(text: str, line: int, heading: str, lease: str | None) -> str:
     return "\n".join(lines) + "\n"
 
 
+def mark_task_in_progress(text: str, line: int, heading: str) -> str:
+    """Check In progress on one entry when it is handed to an owner and not done."""
+    lines = text.splitlines()
+    locate_task(lines, line, heading)
+    end = task_block_end(lines, line)
+    state_index = steps_index = None
+    for index in range(line, end):
+        stripped = lines[index].strip()
+        if stripped == "State:":
+            state_index = index
+        elif stripped == "Steps:":
+            steps_index = index
+            break
+    if state_index is None:
+        return text if text.endswith("\n") else text + "\n"
+    steps_index = steps_index or end
+    if any(lines[index].strip() == "- [x] Completed"
+           for index in range(state_index + 1, steps_index)):
+        return text if text.endswith("\n") else text + "\n"
+    for index in range(state_index + 1, steps_index):
+        if lines[index].strip() == "- [ ] In progress":
+            lines[index] = "- [x] In progress"
+            break
+    return "\n".join(lines) + "\n"
+
+
 def reassign_task(text: str, line: int, heading: str, owner: str | None,
-                  note: str | None = None) -> str:
+                  note: str | None = None, *, mark_in_progress: bool = False) -> str:
     """Rewrite one task's owner label in place, optionally recording a status note.
 
     The entry keeps its position: ledger order records when work was raised, while
     the heading label records who holds it, so moving a task between agents must not
     reorder history. `line` and `heading` together identify the entry, and a mismatch
-    raises rather than editing whichever entry now sits at that line.
+    raises rather than editing whichever entry now sits at that line. When
+    `mark_in_progress` is true and the entry is not complete, In progress is checked
+    so a viewer assignment is visible under WIP before any step is edited.
     """
     if owner is not None:
         problem = owner_label_error(owner)
@@ -919,7 +966,8 @@ def reassign_task(text: str, line: int, heading: str, owner: str | None,
         owner = owner.strip()
     lines = text.splitlines()
     match = locate_task(lines, line, heading)
-    lines[line - 1] = lines[line - 1][: match.start(1)] + replace_owner(heading, owner)
+    new_heading = replace_owner(heading, owner)
+    lines[line - 1] = lines[line - 1][: match.start(1)] + new_heading
 
     if note:
         masked = outside_fence_lines(lines)
@@ -928,7 +976,10 @@ def reassign_task(text: str, line: int, heading: str, owner: str | None,
         status = status_paragraph_end(masked, line, task_block_end(lines, line))
         if status is not None:
             lines.insert(status + 1, note)
-    return "\n".join(lines) + "\n"
+    result = "\n".join(lines) + "\n"
+    if mark_in_progress and owner is not None:
+        result = mark_task_in_progress(result, line, new_heading)
+    return result
 
 
 def atomic_write(path: Path, text: str) -> None:

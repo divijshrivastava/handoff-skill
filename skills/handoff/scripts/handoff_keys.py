@@ -56,17 +56,36 @@ def viewer_command(root: Path | None = None, *, read_only: bool = False) -> str:
     return " ".join(shlex.quote(part) for part in parts)
 
 
+def opener_seed() -> str | None:
+    """The host identifier of the session asking for a viewer, if it has one.
+
+    Only a real identifier is carried. `session_seed` invents a random one when a
+    host exposes none, and forwarding that would name a session that does not
+    exist. This is deliberately not baked into installed key bindings: it belongs
+    to the window being opened now, not to every future one.
+    """
+    for variable in ("HANDOFF_SESSION", "CLAUDE_CODE_SESSION_ID", "TERM_SESSION_ID"):
+        value = os.environ.get(variable)
+        if value and value.strip():
+            return value.strip()
+    return None
+
+
 def viewer_launch_command(root: Path | None = None, *, read_only: bool = False) -> str:
     """Prefer the PATH launcher so opened terminals survive skill upgrades."""
     launcher = shutil.which("handoff-tui")
+    seed = opener_seed()
     if launcher:
         parts = [launcher]
         if root is not None:
             parts.extend(["--root", str(root.resolve())])
         if read_only:
             parts.append("--read-only")
+        if seed:
+            parts.extend(["--session-seed", seed])
         return " ".join(shlex.quote(part) for part in parts)
-    return viewer_command(root, read_only=read_only)
+    command = viewer_command(root, read_only=read_only)
+    return command if not seed else f"{command} --session-seed {shlex.quote(seed)}"
 
 
 def detect_emulators() -> list[str]:

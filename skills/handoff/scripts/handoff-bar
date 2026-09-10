@@ -66,7 +66,21 @@ stamp=$(cksum < "$ledger" 2>/dev/null) || stamp=""
 
 cache_dir=${HANDOFF_BAR_CACHE:-${TMPDIR:-/tmp}/handoff-bar-$(id -u 2>/dev/null || echo 0)}
 key=$(printf '%s' "$ledger" | cksum | tr -d ' /')
-cache="$cache_dir/$key"
+# One cache file per ledger and terminal session. The row's task counts are
+# shared, but the claimed-name trailer is per session; a ledger-only key made
+# every agent in the repo show whichever name warmed the cache first.
+session_key=""
+sid=$(printf '%s' "$payload" | sed -n 's/.*"session_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+[ -n "$sid" ] && session_key="${session_key}|${sid}"
+[ -n "${HANDOFF_SESSION:-}" ] && session_key="${session_key}|${HANDOFF_SESSION}"
+[ -n "${CLAUDE_CODE_SESSION_ID:-}" ] && session_key="${session_key}|${CLAUDE_CODE_SESSION_ID}"
+[ -n "${TERM_SESSION_ID:-}" ] && session_key="${session_key}|${TERM_SESSION_ID}"
+if [ -z "$session_key" ]; then
+    session_part=no-session
+else
+    session_part=$(printf '%s' "$session_key" | cksum | awk '{print $1 $2}')
+fi
+cache="$cache_dir/$key-$session_part"
 
 if [ -n "$stamp" ] && [ -r "$cache" ]; then
     cached_stamp=$(head -1 "$cache" 2>/dev/null)

@@ -19,7 +19,7 @@ import time
 import uuid
 
 from handoff_guard import (
-    APPLY_EXIT, assigned_pending, claim_name, find_repo_root, ledger_version,
+    APPLY_EXIT, assigned_unstarted, claim_name, find_repo_root, ledger_version,
     owner_label_error, parse_tasks, reassign_task, swap_ledger, taken_names,
     version_matches,
 )
@@ -332,7 +332,7 @@ class Channel:
             return [self.silence_record(connection, item, now, fresh_for) for item in subjects]
 
     def nudge(self, session: str, subject: str, note: str | None = None,
-              interval: float = NUDGE_INTERVAL) -> dict:
+              interval: float = NUDGE_INTERVAL, via: str | None = None) -> dict:
         """Ask one silent peer to answer. It is a message, and only a message.
 
         A challenge asks a peer to spend a turn proving it is up; a nudge asks it
@@ -347,6 +347,8 @@ class Channel:
             raise ValueError("A session cannot nudge itself")
         if note is not None:
             bounded(note, "note", 2000)
+        if via is not None:
+            bounded(via, "via", 200)
         if not 60 <= interval <= 86400:
             raise ValueError("interval must be between 60 and 86400 seconds")
         now = time.time()
@@ -378,6 +380,9 @@ class Channel:
                 "establishes": ("Nothing about your capability, and no authority over your "
                                 "work. Answering does not surrender it and silence does not "
                                 "forfeit it."),
+                # Which surface raised it. A keypress in the viewer is the user
+                # asking, not the sending session deciding on its own.
+                "via": via,
                 "note": note,
             }), kind="nudge")
         note_back = ("A nudge is a request, not a verdict. An unanswered nudge leaves "
@@ -491,6 +496,19 @@ class Channel:
             "AND expires>?", (session, time.time())).fetchone()
         return {"last": row["last"], "open": open_rows["count"]}
 
+    def session_for_owner(self, owner: str | None) -> str | None:
+        """The session registered under this owner name, if any.
+
+        The viewer knows the name a terminal claimed, not its channel session id.
+        Owner names are unique in the registry, so the name is enough to act as
+        that session without inventing a second identity for it.
+        """
+        if not owner or not self.path.exists():
+            return None
+        with self.connect() as connection:
+            row = connection.execute("SELECT id FROM sessions WHERE owner=?", (owner,)).fetchone()
+        return row["id"] if row else None
+
     def assignment_notice(self, owner: str | None) -> str:
         """Name work the ledger records to this owner that nobody has started.
 
@@ -498,11 +516,11 @@ class Channel:
         move writes the ledger and nothing else: a notification could be missed,
         duplicated, or sent to a session that no longer exists, while the ledger
         is the thing that actually decides ownership. It repeats until the owner
-        checks In progress, and it is not evidence anyone has read it.
+        checks a step, and it is not evidence anyone has read it.
         """
         if not owner or not self.ledger.is_file():
             return ""
-        tasks = assigned_pending(parse_tasks(self.ledger.read_text(encoding="utf-8")), owner)
+        tasks = assigned_unstarted(parse_tasks(self.ledger.read_text(encoding="utf-8")), owner)
         if not tasks:
             return ""
         named = "; ".join(task.heading for task in tasks[:3])
@@ -682,6 +700,7 @@ def parser() -> argparse.ArgumentParser:
             command.add_argument("--note", help="What you are waiting on, in your own words")
             command.add_argument("--interval", type=float, default=NUDGE_INTERVAL,
                                  help="Seconds before this session may nudge that peer again")
+            command.add_argument("--via", help="The surface that raised this nudge")
         elif name == "challenge":
             command.add_argument("--to", required=True, help="Session ID to probe; broadcast is refused")
             command.add_argument("--ttl", type=float, default=CHALLENGE_TTL,
@@ -742,7 +761,7 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "ack":
             result = channel.acknowledge(args.session, args.id)
         elif args.command == "nudge":
-            result = channel.nudge(args.session, args.to, args.note, args.interval)
+            result = channel.nudge(args.session, args.to, args.note, args.interval, args.via)
         elif args.command == "challenge":
             result = channel.challenge(args.session, args.to, args.ttl)
         elif args.command == "attest":
