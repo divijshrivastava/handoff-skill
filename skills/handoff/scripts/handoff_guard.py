@@ -77,6 +77,9 @@ class Task:
     errors: list[str]
     # Optional: the tool the owning session ran in, when its heading records one.
     harness: str | None = None
+    # The entry's first Status: line, so a summary can quote the owner's own
+    # words instead of making a reader open the whole ledger for them.
+    status: str | None = None
     # Optional: the owner's declared deadline for renewing its claim.
     lease: "Lease | None" = None
 
@@ -233,6 +236,11 @@ def parse_tasks(text: str) -> list[Task]:
                 errors.append("pending task has checked steps")
 
         has_status = any(line.strip().startswith("Status:") for line in block)
+        status_text = next(
+            (line.strip()[len("Status:"):].strip()
+             for line in block if line.strip().startswith("Status:")),
+            None,
+        ) or None
         if modern and not has_status:
             errors.append("missing Status line")
 
@@ -291,6 +299,7 @@ def parse_tasks(text: str) -> list[Task]:
                 state=state,
                 errors=errors,
                 harness=harness_match.group("harness").strip() if harness_match else None,
+                status=status_text,
                 lease=lease,
             )
         )
@@ -1482,6 +1491,137 @@ def read_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def git_log(repo: Path, count: int) -> list[str] | None:
+    if not (repo / ".git").exists() or count <= 0:
+        return None
+    result = subprocess.run(
+        ["git", "log", "--oneline", "--no-decorate", f"-n{count}"],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return None
+    return result.stdout.splitlines()
+
+
+def task_digest(task: Task, full: bool) -> dict[str, object]:
+    """One entry reduced to what an audit reads before opening the ledger.
+
+    Unfinished entries keep their steps, because deciding effective status means
+    checking each claimed outcome. A finished entry is summarized to its heading
+    and its own status sentence: it is evidence about earlier work, not work to
+    resume, and carrying every checked step of eighty of them is what makes a
+    reader page through the whole file.
+    """
+    row: dict[str, object] = {
+        "heading": task.heading,
+        "line": task.line,
+        "owner": task.owner,
+        "harness": task.harness,
+        "state": task.state,
+        "status": task.status,
+    }
+    if task.errors:
+        row["errors"] = task.errors
+    if task.lease is not None:
+        row["lease"] = {"owner": task.lease.owner, "expires": task.lease.expires,
+                        "policy": task.lease.policy, "state": lease_state(task)}
+    checked = sum(1 for done, _ in task.steps if done)
+    row["steps_done"] = f"{checked}/{len(task.steps)}"
+    if full:
+        row["steps"] = [{"done": done, "text": text} for done, text in task.steps]
+    return row
+
+
+def ledger_digest(text: str, completed_limit: int) -> dict[str, object]:
+    """The ledger as a bounded summary: every open entry, recent finished ones.
+
+    A long-lived ledger is mostly history, and re-reading all of it before every
+    task is the slow part of preflight. Unfinished entries arrive whole because
+    they are the work; finished entries arrive newest-first and capped because
+    the audit prefers the latest specific evidence, and `read` still returns the
+    exact bytes when a rewrite needs them.
+    """
+    tasks = parse_tasks(text)
+    open_tasks = [task for task in tasks
+                  if task.state != "completed" or task.errors]
+    done_tasks = [task for task in tasks
+                  if task.state == "completed" and not task.errors]
+    shown = done_tasks if completed_limit < 0 else done_tasks[:completed_limit]
+    return {
+        "counts": {
+            "total": len(tasks),
+            "open": len(open_tasks),
+            "completed": len(done_tasks),
+        },
+        "open_tasks": [task_digest(task, True) for task in open_tasks],
+        "recent_completed": [task_digest(task, False) for task in shown],
+        "completed_omitted": len(done_tasks) - len(shown),
+    }
+
+
+def preflight_command(args: argparse.Namespace) -> int:
+    """Every read-only preflight step in one process and one ledger snapshot.
+
+    Naming, the ledger read, the structural check, and the Git look are four
+    commands that each re-resolve the root and re-read the file, and the ledger
+    they return is mostly finished history. Running them separately also reads
+    the ledger more than once, so a peer write landing between two of them binds
+    an audit of old text to a newer version. This returns one snapshot: the
+    version here belongs to the digest here, and to nothing read afterwards.
+    """
+    repo = find_repo_root(Path(args.root))
+    ledger = repo / "HANDOFF.md"
+    try:
+        text = ledger.read_text(encoding="utf-8")
+    except OSError:
+        text = None
+
+    name, remembered = claim_name(
+        session_seed(args.seed), ledger, taken_names(text or "")
+    )
+    result: dict[str, object] = {
+        "root": str(repo),
+        "session": {"name": name, "remembered": remembered,
+                    "harness": detect_harness()},
+        "instructions": [instruction for instruction in ("AGENTS.md", "CLAUDE.md")
+                         if (repo / instruction).exists()],
+        "git_status": git_status(repo),
+        "git_log": git_log(repo, args.log),
+    }
+
+    if text is None:
+        result.update({
+            "ledger": None,
+            "version": None,
+            "errors": ["HANDOFF.md not found"],
+            "note": ("Follow repository instructions before creating a ledger; "
+                     "create it from references/ledger-contract.md only when "
+                     "none are prescribed and mutation is authorized."),
+        })
+        print(json.dumps(result, indent=2))
+        return 1
+
+    tasks = parse_tasks(text)
+    result.update({
+        "ledger": str(ledger),
+        "version": ledger_version(text),
+        "errors": [message for _, _, message in structure_findings(text)],
+        "assigned_unstarted": [task.heading for task in assigned_unstarted(tasks, name)],
+        "digest": ledger_digest(text, args.completed),
+        "note": (
+            "Structural observations only, from one snapshot. Audit the open "
+            "entries against later entries, commits, current source, and live "
+            "ownership before reporting effective status. Pass this version to "
+            "apply, and use `read` when a write needs the exact ledger bytes."
+        ),
+    })
+    print(json.dumps(result, indent=2))
+    return 0
+
+
 def report_command(args: argparse.Namespace) -> int:
     repo = find_repo_root(Path(args.root))
     report = ledger_report(repo)
@@ -1539,6 +1679,24 @@ def build_parser() -> argparse.ArgumentParser:
         command.add_argument("--root", default=".", help="Repository path or child path")
         command.add_argument("--json", action="store_true", help="Emit JSON")
         command.set_defaults(handler=report_command)
+
+    preflight = subparsers.add_parser(
+        "preflight",
+        help="Claim a name and return one snapshot: ledger digest, structure, and Git state",
+    )
+    preflight.add_argument("--root", default=".", help="Repository path or child path")
+    preflight.add_argument(
+        "--seed",
+        help="Identify the session explicitly instead of using the host's session id",
+    )
+    preflight.add_argument(
+        "--completed", type=int, default=10,
+        help="Summarize this many newest finished entries; -1 keeps every one",
+    )
+    preflight.add_argument(
+        "--log", type=int, default=10, help="Include this many recent commits; 0 omits them"
+    )
+    preflight.set_defaults(handler=preflight_command)
 
     name_parser = subparsers.add_parser("name")
     name_parser.add_argument("--root", default=".", help="Repository path or child path")

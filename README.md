@@ -131,7 +131,7 @@ In a repository with no ledger and no such request, the agent does none of this 
 
 Handoff treats the ledger as progressive history, not a flat todo list. Every session follows the same contract (defined in `skills/handoff/SKILL.md`):
 
-1. **Preflight** — Claim a session name, read repository instructions, read the whole ledger (newest to oldest) from one versioned snapshot, run the structural doctor, and inspect Git history and active ownership.
+1. **Preflight** — One `preflight` call claims a session name and returns, from a single versioned snapshot, every open ledger entry with its steps, a summary of recent finished ones, structure errors, and Git state. Read repository instructions, audit the open entries newest to oldest, and check active ownership.
 2. **Intake** — Turn each request into a dated task entry with separate `In progress` and `Completed` boxes, concrete steps, verification, and a factual status line.
 3. **Progressive audit** — For each apparently unfinished entry, weigh later ledger entries, commits, current source, live ownership, and the old entry's boxes. Classify the effective scope as **Complete**, **Partially complete**, **Superseded**, **Unfinished**, or **Unknown**. Preserve history by annotating rather than deleting.
 4. **Ownership resolution** — When effective unfinished work exists alongside a new request, ask whether to finish eligible work first or leave it with its current owner and start the new task. An explicit ordering such as "finish X first, then Y" is already the choice.
@@ -475,6 +475,10 @@ Exit codes:
 All commands accept `--root` with a repository path or child directory.
 
 ```bash
+# Claim a name and audit the ledger from one snapshot
+python3 skills/handoff/scripts/handoff_guard.py preflight \
+  --root /absolute/path/to/repo
+
 # Diagnose ledger structure
 python3 skills/handoff/scripts/handoff_guard.py doctor \
   --root /absolute/path/to/repo
@@ -503,6 +507,7 @@ python3 skills/handoff/scripts/handoff_guard.py template \
 Additional flags:
 
 - `read --out FILE` — write ledger text to a file instead of stdout
+- `preflight --completed N` — summarize N newest finished entries (`-1` keeps all); `--log N` sets how many commits to include, `0` omits them
 - `name --seed ID` — identify the session explicitly; `name --json` includes detected harness
 - `template --harness auto` — record the detected tool; `--harness ""` opts out
 - `apply --dry-run` — report without writing

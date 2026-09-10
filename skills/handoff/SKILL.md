@@ -70,59 +70,61 @@ requires.
 
 ## Step 0: Preflight before task work
 
-1. Claim this session's name first, before reading or reporting anything, and
-   own every entry you write under it:
+1. Run the bundled preflight, using the directory that contains this `SKILL.md`
+   as `SKILL_DIR`. It claims this session's name, reads the ledger, checks its
+   structure, and reports Git state from one snapshot:
 
    ```bash
-   python3 "$SKILL_DIR/scripts/handoff_guard.py" name --root /absolute/repo/path
+   python3 "$SKILL_DIR/scripts/handoff_guard.py" preflight --root /absolute/repo/path
    ```
 
-   If the Handoff SessionStart hook already supplied your claimed name and
-   channel session ID, keep those: the hook performed this claim for you.
+   `--root` accepts any path inside the repository; it resolves the repository
+   root for you, so this does not wait on resolving it yourself.
 
-   It prints one name from a hundred mythological figures, never a name an
-   owner in this ledger already holds, and returns the same name every time
-   this session asks. Ask once, remember it, and use it verbatim as the owner
-   label. Do not invent a name, reuse another session's, or rename yourself
-   mid-task: the label is how a later agent tells your work from a peer's.
-   Record the tool you run in alongside it, with `template --harness auto` or a
-   `(harness: ...)` field, so a reader can tell a Codex session from a Claude
-   Code one; `HANDOFF_HARNESS` names a tool the helper cannot detect.
-   `--root` accepts any path inside the repository, so this does not wait on
-   the root resolution below. Claim it first because names are handed out first
-   come, first served: a session that audits, reports, or writes before asking
-   has been speaking anonymously, and the peer that reads its work later cannot
-   tell whose it is.
-2. Resolve the repository root without assuming the current directory is it.
-3. Read every applicable repository instruction file before mutating anything.
-4. Read the whole handoff ledger, newest entry to oldest. Do not stop at the
-   first unchecked box. When another agent may write this tree, take that text
-   and its version from one snapshot rather than two separate reads:
+   It returns:
+
+   - `session.name`: the name you own every entry you write under. It is one of
+     a hundred mythological figures, never a name an owner in this ledger
+     already holds, and the same name every time this session asks. Use it
+     verbatim; do not invent a name, reuse another session's, or rename yourself
+     mid-task, because the label is how a later agent tells your work from a
+     peer's. Record the tool you run in alongside it, with `template
+     --harness auto` or a `(harness: ...)` field, so a reader can tell a Codex
+     session from a Claude Code one; `HANDOFF_HARNESS` names a tool the helper
+     cannot detect. If the Handoff SessionStart hook already supplied your
+     claimed name and channel session ID, keep those: the hook performed this
+     claim for you.
+   - `version`: the ledger revision this snapshot describes. Pass it to `apply`.
+   - `digest.open_tasks`: every unfinished or malformed entry, with its steps.
+     This is the work; audit all of it.
+   - `digest.recent_completed`: the newest finished entries, each as its heading
+     and its own status line, with `completed_omitted` counting the rest.
+   - `assigned_unstarted`: entries recorded to your name that nobody has started.
+   - `errors`, `git_status`, `git_log`, and `instructions`.
+
+2. Read every applicable repository instruction file before mutating anything.
+3. Audit the digest's open entries newest to oldest. Do not stop at the first
+   unchecked box. Finished history is summarized, not omitted: when an audit
+   needs an older entry's steps or the exact ledger bytes, read them then.
 
    ```bash
    python3 "$SKILL_DIR/scripts/handoff_guard.py" read --root /absolute/repo/path
    ```
 
-   Audit the text it returns and pass the version it returns. Reading the ledger
-   and then asking separately for a version binds an audit of the old text to a
-   newer version, and a `--content` write built from it deletes the peer entry
-   that landed between the two reads.
-5. Run the bundled read-only doctor, using the directory that contains this
-   `SKILL.md` as `SKILL_DIR`:
+   Use `read` before any `--content` rewrite, and audit the text it returns
+   against the version it returns. Auditing one snapshot and writing from
+   another binds an audit of old text to a newer version, and the write deletes
+   the peer entry that landed in between. `preflight --completed -1` keeps every
+   finished entry when a review genuinely needs them all.
+4. Inspect relevant recent history beyond the returned commits, and, if
+   collaboration or agent-status tools exist, check which owners are actually
+   active.
+5. Before the first ledger edit, read `references/ledger-contract.md`.
 
-   ```bash
-   python3 "$SKILL_DIR/scripts/handoff_guard.py" doctor --root /absolute/repo/path
-   ```
-
-6. Run `git status` and inspect relevant recent history. If collaboration or
-   agent-status tools exist, check which owners are actually active.
-7. Before the first ledger edit, read `references/ledger-contract.md`.
-
-The doctor reports structural state only. Never present its raw pending or
+The preflight reports structural state only. Never present its raw pending or
 in-progress result as the effective status until the progressive audit below is
-complete. The doctor's `Version` is a convenience for a single-writer tree; when
-peers may write, use the snapshot from `read` instead, because only that binds
-the audited text to the version.
+complete. `doctor` remains available for a structure-only check of an existing
+ledger, and `name` for the name alone; preflight covers both.
 
 If the repository has no ledger, follow its local instructions; when none are
 prescribed and mutation is authorized, create `HANDOFF.md` from
