@@ -1,5 +1,34 @@
 # Handoff
 
+## 2026-09-10 - Commit and push Task B (owner: Fenrir) (harness: Codex)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Prepare an isolated commit containing Task B, the requested README explanation, and its handoff history.
+- [x] Verify the exact commit contents and push to origin/main.
+- [x] Record the commit and remote result in the handoff.
+
+Status: In progress. The user requested push after Task B. Task A is complete but uncommitted under Epona; Task C remains active under Garuda. Preserve their files and ledger entries. Prepare Task B from committed main plus its specific changes in an isolated checkout, because this shared tree carries unrelated work and its .git is read-only in this session.
+
+Status: Blocked on publication. The user also requested that explanations go into README.md. Added a concise explanation of the always-visible command sequence, re-auditing on exit 3, tests and host limits, plus the name command in the safe-update example. Prepared commit c802848f714ef55fdbe5762fea68815ca2bfa391 in /private/tmp/handoff-task-b-push-9agfd6vy on the verified remote base b845b09; its only changed paths are CONTRIBUTING.md, HANDOFF.md (Task B entry only), README.md (Task B explanation only), skills/handoff/SKILL.md (description only), and tests/test_package.py. The prepared checkout is clean, and /tmp/handoff-task-b.bundle plus /tmp/handoff-task-b.patch preserve the commit. Its origin is https://github.com/divijshrivastava/handoff-skill.git.
+
+Verification of the isolated publication tree: 8 root tests pass; versions agree at 1.21.0; packaging, ledger validation, and git diff --check pass. The 264 unchanged helper tests ran with the same two pre-existing tmux integration failures (262 pass), previously reproduced on unchanged HEAD. No unrelated 1.22.0 work or Task A/C source changes enter this commit. Epona created local commit f10f92f while this task was being prepared; the shared branch and its index were not changed by this task.
+
+Publication failed: shell Git cannot resolve github.com. The connected GitHub read tool verified remote main at b845b09, but create_tree was rejected with "MCP tool call requires approval, but approval policy is never". No remote object or branch was changed by this session. The session cannot request the required approval. Next action: from an authorized shell, run git -C /private/tmp/handoff-task-b-push-9agfd6vy push origin main after checking the current remote; if it advanced, rebase this prepared commit onto it before pushing, without force. Reconcile the shared branch with the resulting remote while preserving the other owners' work. Garuda now records Task C complete; it remains separate.
+
+Retry 2026-09-10 at the user's explicit direction: git push origin HEAD:main from the clean prepared checkout failed with exit 128, "Could not resolve host: github.com". The connected GitHub read again confirmed remote main at b845b09. Retrying the prepared create_tree request was again rejected because approval is required and the session's approval policy is never. Commit c802848 remains ready in the isolated checkout and verified bundle; no remote write occurred. Publication remains blocked on access, not on user authorization or unfinished implementation.
+
+Status: In progress again. The session now has filesystem and network access. At the user's request, replied to Epona's ping confirming that Fenrir retains the push and will rebase the prepared commit onto origin/main, preserving Task A and Task C, then verify and push without force. Epona has not been asked to take over.
+
+Status: Complete. With access enabled, rebased c802848 onto origin/main at 24fba89, preserving Task A f10f92f and Task C 24fba89. The only conflict was both tasks inserting ledger entries at the top; preserved both complete entries through guard read/apply. The resulting Task B commit is 2a1680a843cf6551151489ce33a37cbb6fa54167. Pushed without force and verified refs/heads/main at that exact SHA with git ls-remote. It contains the Task B description, regression tests, maintainer notes, README explanation and name-command example, and Task B ledger history; unrelated working-tree changes remain with their owners.
+
+Final verification of the rebased tree on Python 3.9.10: all 54 root tests and 264 helper tests pass, including both tmux integration tests that failed under the previous restricted environment. check_versions.py reports 1.21.0 consistently; sync_manifests.py --check, package_skill.py, guard validate, and git diff --check pass. No tag, release, or model evaluation was run. Replied to Epona confirming ownership and the plan; publication is now achieved and no permission blocker remains.
+
 ## 2026-09-10 - Put the audit-and-write sequence in the skill description (Task B) (owner: Fenrir) (harness: Codex)
 
 State:
@@ -22,6 +51,8 @@ Status: Complete for Task B. Only the SKILL.md description, tests/test_package.p
 Verification on Python 3.9.10: 19 repository tests passed (including both new description tests); check_versions.py agrees at 1.22.0 across six files, sync_manifests.py --check passes, guard validate exits 0, package_skill.py builds, the archived SKILL.md is byte-identical to the source, and git diff --check passes. The full helper suite ran 291 tests: 289 passed, with one error and one failure in the two existing TmuxIntegrationTests. Diagnostic reruns report missing temporary tmux socket files. Both failures reproduce from a temporary git archive of unchanged HEAD b845b09, establishing they predate this change; logs are /tmp/handoff-task-b-helper-tests.log and /tmp/handoff-task-b-baseline-tmux.log. Those unrelated tmux failures were not altered or hidden. The optional external skill-creator quick_validate.py could not run because that interpreter lacks PyYAML; repository checks remain standard-library-only. No model evaluations were run or claimed.
 
 Handoff: No Task B implementation remains; changes are uncommitted and no release was requested. Epona owns Task A and Garuda owns Task C, both independently active in the ledger, and all prior changes are preserved. Their subsequent changes may require their own verification. The existing CI matrix runs the description tests on Python 3.9 and 3.12; this session ran them locally on 3.9.10 only.
+
+Publication 2026-09-10: Task B and the requested README explanation are pushed in 2a1680a843cf6551151489ce33a37cbb6fa54167, rebased onto the published Task A/C history. Final checks pass: 54 root and 264 helper tests, including the previously blocked tmux integration tests. See the completed Commit and push Task B entry for the publication evidence.
 
 ## 2026-09-10 - Build an evaluation runner (Task C) (owner: Garuda) (harness: Claude Code)
 
