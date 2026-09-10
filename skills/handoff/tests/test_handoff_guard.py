@@ -1305,3 +1305,133 @@ class AssignedUnstartedTests(unittest.TestCase):
         text = "# Handoff\n\n" + self.entry("Settings page", "Beta", "in_progress", (True, False))
         tasks = handoff_guard.parse_tasks(text)
         self.assertEqual(handoff_guard.assigned_unstarted(tasks, "Beta"), [])
+
+
+class PreflightTests(unittest.TestCase):
+    """One call must answer preflight without re-reading the ledger per step.
+
+    The failure case: a session ran name, read, doctor, and git separately, so a
+    long ledger was parsed several times and every finished entry was returned
+    in full. That is slow, and the separate reads let a peer write land between
+    two of them, binding an audit of old text to a newer version.
+    """
+
+    def setUp(self) -> None:
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.root = Path(self.directory.name)
+        self.ledger = self.root / "HANDOFF.md"
+        self.cache = self.root / "names"
+        patch = unittest.mock.patch.dict(
+            os.environ, {"HANDOFF_NAME_CACHE": str(self.cache)})
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def entry(self, title: str, owner: str, state: str = "pending") -> str:
+        text = handoff_guard.make_template(
+            "2026-09-10", title, owner, ["Build it.", "Verify it."])
+        if state == "in_progress":
+            text = text.replace("- [ ] In progress", "- [x] In progress")
+        if state == "completed":
+            text = text.replace("- [ ]", "- [x]")
+        return text.replace(
+            "Status: Pending. No work has started.", f"Status: {title} is {state}.")
+
+    def write(self, *entries: str) -> None:
+        self.ledger.write_text("# Handoff\n\n" + "\n".join(entries), encoding="utf-8")
+
+    def run_preflight(self, *args: str) -> tuple[int, dict]:
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "preflight", "--root", str(self.root), *args],
+            capture_output=True, text=True, encoding="utf-8", check=False,
+            env={**os.environ, "HANDOFF_NAME_CACHE": str(self.cache)},
+        )
+        return result.returncode, json.loads(result.stdout)
+
+    def test_one_call_returns_the_name_version_and_digest_together(self) -> None:
+        self.write(self.entry("Open work", "Alpha", "in_progress"),
+                   self.entry("Old work", "Beta", "completed"))
+        code, result = self.run_preflight("--seed", "session-one")
+        self.assertEqual(code, 0)
+        self.assertIn(result["session"]["name"], handoff_guard.MYTHIC_NAMES)
+        self.assertEqual(
+            result["version"],
+            handoff_guard.ledger_version(self.ledger.read_text(encoding="utf-8")))
+        self.assertEqual(result["digest"]["counts"],
+                         {"total": 2, "open": 1, "completed": 1})
+        self.assertEqual(result["errors"], [])
+
+    def test_the_version_belongs_to_the_digest_it_was_returned_with(self) -> None:
+        # The whole point of one snapshot: a later peer write must not make the
+        # returned version describe text the audit never saw.
+        self.write(self.entry("Open work", "Alpha", "in_progress"))
+        _, first = self.run_preflight("--seed", "session-one")
+        self.write(self.entry("Peer work", "Gamma", "in_progress"),
+                   self.entry("Open work", "Alpha", "in_progress"))
+        _, second = self.run_preflight("--seed", "session-one")
+        self.assertNotEqual(first["version"], second["version"])
+        self.assertEqual(len(first["digest"]["open_tasks"]), 1)
+        self.assertEqual(len(second["digest"]["open_tasks"]), 2)
+
+    def test_open_entries_keep_their_steps_and_finished_ones_are_summarized(self) -> None:
+        self.write(self.entry("Open work", "Alpha", "in_progress"),
+                   self.entry("Old work", "Beta", "completed"))
+        _, result = self.run_preflight("--seed", "session-one")
+        open_task = result["digest"]["open_tasks"][0]
+        self.assertEqual([step["text"] for step in open_task["steps"]],
+                         ["Build it.", "Verify it."])
+        self.assertEqual(open_task["steps_done"], "0/2")
+        done = result["digest"]["recent_completed"][0]
+        self.assertNotIn("steps", done)
+        self.assertEqual(done["status"], "Old work is completed.")
+        self.assertEqual(done["steps_done"], "2/2")
+
+    def test_finished_history_is_capped_newest_first_and_the_rest_counted(self) -> None:
+        entries = [self.entry(f"Task {index}", "Beta", "completed") for index in range(6)]
+        self.write(*entries)
+        _, result = self.run_preflight("--seed", "session-one", "--completed", "2")
+        shown = [task["heading"] for task in result["digest"]["recent_completed"]]
+        self.assertEqual(len(shown), 2)
+        self.assertIn("Task 0", shown[0])
+        self.assertIn("Task 1", shown[1])
+        self.assertEqual(result["digest"]["completed_omitted"], 4)
+
+        _, everything = self.run_preflight("--seed", "session-one", "--completed", "-1")
+        self.assertEqual(len(everything["digest"]["recent_completed"]), 6)
+        self.assertEqual(everything["digest"]["completed_omitted"], 0)
+
+    def test_a_malformed_finished_entry_is_reported_as_open_work(self) -> None:
+        # A completed entry with unchecked steps is not settled history; hiding
+        # it in the summarized tail would hide the thing that needs deciding.
+        broken = self.entry("Broken", "Beta", "completed").replace(
+            "- [x] Verify it.", "- [ ] Verify it.")
+        self.write(broken)
+        code, result = self.run_preflight("--seed", "session-one")
+        self.assertEqual(code, 0)
+        self.assertEqual(result["digest"]["counts"]["open"], 1)
+        self.assertTrue(result["errors"])
+        self.assertIn("completed task has unchecked steps",
+                      result["digest"]["open_tasks"][0]["errors"])
+
+    def test_work_assigned_to_this_session_is_named_back_to_it(self) -> None:
+        _, first = self.run_preflight("--seed", "session-one")
+        name = first["session"]["name"]
+        self.write(self.entry("Handed over", name, "in_progress"))
+        _, result = self.run_preflight("--seed", "session-one")
+        self.assertTrue(result["session"]["remembered"])
+        self.assertEqual(result["session"]["name"], name)
+        self.assertEqual(len(result["assigned_unstarted"]), 1)
+
+    def test_a_missing_ledger_still_names_the_session_and_says_so(self) -> None:
+        code, result = self.run_preflight("--seed", "session-one")
+        self.assertEqual(code, 1)
+        self.assertIsNone(result["ledger"])
+        self.assertIsNone(result["version"])
+        self.assertIn(result["session"]["name"], handoff_guard.MYTHIC_NAMES)
+        self.assertEqual(result["errors"], ["HANDOFF.md not found"])
+
+    def test_preflight_never_writes_the_ledger(self) -> None:
+        self.write(self.entry("Open work", "Alpha", "in_progress"))
+        before = self.ledger.read_bytes()
+        self.run_preflight("--seed", "session-one")
+        self.assertEqual(self.ledger.read_bytes(), before)
