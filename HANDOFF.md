@@ -5,7 +5,7 @@
 State:
 
 - [x] In progress
-- [ ] Completed
+- [x] Completed
 
 Steps:
 
@@ -13,7 +13,7 @@ Steps:
 - [x] Extend assigned_unstarted so the bar and hook still notice handed-off in-progress entries with no steps checked.
 - [x] Require immediate ledger intake in the skill and document the viewer move; add regression tests and run the full CI set.
 
-Status: In progress. Concrete failure: work given in chat or through the viewer often stayed invisible in the TUI until an agent finished and wrote a completed entry, so the user could not see who held what. Viewer moves now call mark_task_in_progress through reassign_task; assigned_unstarted covers pending intake and in-progress hand-offs with zero steps checked for the bar and Claude hook. SKILL.md and progress-viewer.md now require writing every new request to the ledger at intake. Verified 2026-09-10: 387 helper tests and 54 root tests pass on Python 3.9.
+Status: Complete. Concrete failure: work given in chat or through the viewer often stayed invisible in the TUI until an agent finished and wrote a completed entry, so the user could not see who held what. Viewer moves now call mark_task_in_progress through reassign_task; assigned_unstarted covers pending intake and in-progress hand-offs with zero steps checked for the bar and Claude hook. SKILL.md and progress-viewer.md now require writing every new request to the ledger at intake. Published as 10a54eb on origin/main. Verified 2026-09-10: 408 helper tests and 54 root tests pass on Python 3.9; check_versions at 1.22.0 across 6 manifests, sync_manifests --check, validate --root ., package_skill, and git diff --check all pass at c0e284f.
 
 ## 2026-09-10 - Give every repository its own directory on the VPS and fix the transport (owner: Epona) (harness: Claude Code)
 
