@@ -19,8 +19,11 @@ completed, narrowed, or superseded it.
 
 Then choose what to resume:
 
-- With a focus above, resume the entry it names. Without one, resume the oldest
-  effectively unfinished entry, unless the ledger records an explicit ordering.
+- With a focus above, resume the entry it names. Without one, finish your current
+  task, then complete your viewer-assigned queue oldest first before considering
+  other effectively unfinished work, unless the user gave another ordering.
+  A viewer assignment is an execution request; it needs no further pickup
+  choice or user prompt. If idle, audit and start it now.
 - Resume only the remainder. Never redo a step that later evidence already
   completed.
 
@@ -42,3 +45,7 @@ Finish as the skill requires: check boxes only against real outcomes, run
 verification proportionate to the change, record the evidence and the next
 action, and validate the ledger. If verification fails, leave the task open with
 the failure evidence and the next action.
+
+After each completion and before stopping, re-read and audit your assigned
+bucket. Continue until every eligible assignment is verified complete or the
+remainder has concrete blockers; a missing second prompt is not a blocker.

@@ -1,5 +1,24 @@
 # Handoff
 
+## 2026-09-10 - Treat viewer task assignments as queued execution requests (owner: Fenrir) (harness: Codex)
+
+State:
+
+- [x] In progress
+- [ ] Completed
+
+Steps:
+
+- [x] Update the runtime protocol and repository guidance so viewer assignments must run after the current task without another prompt.
+- [x] Put the execution directive in viewer reassignment notes and add regression and behavioral coverage.
+- [ ] Verify and publish the protocol changes to origin/main.
+- [ ] Continue directly with the channel-view task already assigned to Fenrir.
+
+Status: In progress. Concrete failure: the user assigned the channel-view task to Fenrir through the viewer, but Fenrir merely reported it pending and waited for another prompt after finishing Task B. The user now explicitly requires every agent to finish its current task, then audit and execute viewer-assigned work through verification. Implement and publish that protocol now, then continue the existing channel-view assignment. Garuda owns the nudge implementation and Epona owns cloud publishing; their work is preserved.
+
+
+Verified 2026-09-10: the move-note regression failed before implementation and passes after it. The exact staged publication tree passes 270 helper tests and 54 repository tests on Python 3.9.10, version and manifest checks, packaging, and whitespace checks. Two behavioral scenarios were added (16 total); model evaluations were not run. The shared tree separately passes 311 helper tests with peers' work present. Publication is next, then immediate continuation of the existing channel-view assignment.
+
 ## 2026-09-10 - Commit and push Task B (owner: Fenrir) (harness: Codex)
 
 State:

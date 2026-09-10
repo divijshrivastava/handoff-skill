@@ -375,6 +375,60 @@
         "Verifies the row by running the command rather than asserting it works",
         "Starts no task and adopts no existing entry"
       ]
+    },
+    {
+      "id": 15,
+      "name": "Finish current work then execute a viewer assignment",
+      "kind": "structure",
+      "prompt": "The session hook has already claimed your name Amaterasu and supplied your channel session. You are implementing Fix export, which still needs verification. While you work, the user assigns Add channel view to you through handoff-tui. Its old status still says unclaimed. The user has given no later ordering. Explain what you do now, immediately after Fix export passes verification, and before you end your turn. No other agent is writing the affected files.",
+      "expected_output": "Keeps the viewer assignment queued while finishing and verifying current work, then audits and executes it through verification without another prompt, and checks the queue again before stopping.",
+      "ledger": "# Handoff\n\n## 2026-09-10 - Add channel view (owner: Amaterasu) (harness: Codex)\n\nState:\n\n- [ ] In progress\n- [ ] Completed\n\nSteps:\n\n- [ ] Implement the remaining outcome.\n- [ ] Verify and record the handoff.\n\nStatus: Pending. Originally unclaimed. Reassigned 2026-09-10 from Agent B to Amaterasu in the handoff viewer at the user's direction. No state or step boxes were changed.\n\n## 2026-09-10 - Fix export (owner: Amaterasu) (harness: Codex)\n\nState:\n\n- [x] In progress\n- [ ] Completed\n\nSteps:\n\n- [ ] Implement the remaining outcome.\n- [ ] Verify and record the handoff.\n\nStatus: In progress. Implementation exists; verification remains.\n\n",
+      "files": [],
+      "required": [
+        "handoff_guard.py read",
+        "apply --expect-version"
+      ],
+      "forbidden": [
+        "--allow-structure-errors"
+      ],
+      "rubric": "Finishes and verifies the current task before proceeding directly through the viewer assignment and checks for further assignments before stopping, without treating stale unclaimed prose as a missing authorization.",
+      "expectations": [
+        "Does not ask for another user prompt or pickup permission",
+        "Audits current source, later entries and active writers before editing",
+        "Preserves prior work and attribution, uses the existing entry, and records its own harness",
+        "Requires real implementation and verification before marking completion; does not treat ownership as completed work",
+        "Keeps the current task active and the assignment pending until current verification finishes",
+        "Treats the current owner and user transfer as authority despite older unclaimed prose",
+        "Proceeds directly to implement and verify the assigned task after the current task",
+        "Re-reads the assigned bucket before stopping and continues eligible assignments"
+      ]
+    },
+    {
+      "id": 16,
+      "name": "An idle agent must act on its viewer queue",
+      "kind": "structure",
+      "prompt": "The session hook has claimed your name Amaterasu. Your current task is verified complete. The user has assigned Add channel view to you through handoff-tui and has not sent a second prompt. You are preparing to report yourself waiting. Also in your bucket is a completed task moved by the viewer; another task you used to own now belongs to Agent B. Describe your next actions and what you do if an actual blocker prevents the assigned task from finishing.",
+      "expected_output": "Audits and starts the assigned unfinished task immediately, leaves completed and transferred-away work alone, and records concrete blockers while continuing other eligible assignments.",
+      "ledger": "# Handoff\n\n## 2026-09-10 - Add channel view (owner: Amaterasu) (harness: Codex)\n\nState:\n\n- [ ] In progress\n- [ ] Completed\n\nSteps:\n\n- [ ] Implement the remaining outcome.\n- [ ] Verify and record the handoff.\n\nStatus: Pending. Originally unclaimed. Reassigned 2026-09-10 from Agent B to Amaterasu in the handoff viewer at the user's direction. No state or step boxes were changed.\n\n## 2026-09-10 - Completed documentation (owner: Amaterasu) (harness: Codex)\n\nState:\n\n- [x] In progress\n- [x] Completed\n\nSteps:\n\n- [x] Implement the remaining outcome.\n- [x] Verify and record the handoff.\n\nStatus: Verified complete before viewer reassignment; no boxes changed.\n\n## 2026-09-10 - Former assignment (owner: Agent B) (harness: Codex)\n\nState:\n\n- [ ] In progress\n- [ ] Completed\n\nSteps:\n\n- [ ] Implement the remaining outcome.\n- [ ] Verify and record the handoff.\n\nStatus: Reassigned from Amaterasu at user direction.\n\n## 2026-09-10 - Fix export (owner: Amaterasu) (harness: Codex)\n\nState:\n\n- [x] In progress\n- [x] Completed\n\nSteps:\n\n- [x] Implement the remaining outcome.\n- [x] Verify and record the handoff.\n\nStatus: Verified complete.\n\n",
+      "files": [],
+      "required": [
+        "handoff_guard.py read",
+        "apply --expect-version"
+      ],
+      "forbidden": [
+        "--allow-structure-errors"
+      ],
+      "rubric": "Starts the idle agent's eligible viewer assignment without another prompt, avoids reopening completed or transferred-away work, and distinguishes an evidenced blocker from simply waiting for a request.",
+      "expectations": [
+        "Does not ask for another user prompt or pickup permission",
+        "Audits current source, later entries and active writers before editing",
+        "Preserves prior work and attribution, uses the existing entry, and records its own harness",
+        "Requires real implementation and verification before marking completion; does not treat ownership as completed work",
+        "Does not stop or report waiting while an eligible viewer assignment remains",
+        "Does not reopen completed work or reclaim work now assigned to Agent B",
+        "Records blocker evidence, the next action and required input or external change; continues other eligible assignments",
+        "Does not claim that the viewer wakes an unavailable model or that a missing second prompt is a blocker"
+      ]
     }
   ],
   "output_quality_expectations": [

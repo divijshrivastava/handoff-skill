@@ -179,9 +179,15 @@ as moved: it reports the transfer instead of resuming the entry.
 
 A user moving one task in the live viewer writes the same record mechanically:
 the heading's owner label is rewritten and a dated line naming the previous
-owner is appended to that task's status. The receiving agent still audits the
-entry and records its own takeover; the note reports the reassignment, not the
-work.
+owner is appended to that task's status. For unfinished work assigned to an
+agent, the note also records a user execution request: finish the current task,
+then audit and complete the assignment through verification without another
+prompt. The receiving agent records its own takeover and harness in the
+existing entry. Older "unclaimed" prose does not override the current owner
+and user transfer. Agents check their bucket before stopping and continue
+eligible assignments; concrete blockers must include evidence and a next action.
+The note itself never proves work or verification, and completed tasks remain
+complete. Removing the owner releases work instead of assigning execution.
 
 When another owner remains active:
 

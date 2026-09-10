@@ -123,9 +123,16 @@ cut, nothing is written and the view reloads so the move can be reconsidered
 against the new entries - that refusal is the point, so do not repeat the move
 without reading what changed.
 
-Moving a task assigns it; it does not perform it, notify anyone, or transfer
-context. Tell the receiving agent, and expect that agent to record its own
-takeover in the status text per the ledger contract. Use `--read-only` for a
+Moving an unfinished task to an agent is a user execution request. The saved
+note directs that agent to finish its current task, then audit and complete the
+assignment, including verification, without another user prompt. An idle agent
+starts after its audit. Agents must check their bucket at task boundaries and
+before stopping, continue eligible assignments, and record concrete blockers.
+Completed tasks are not reopened; moving to `unassigned` releases ownership.
+
+The viewer persists this instruction but does not wake a stopped model or
+transfer its context. The receiving agent discovers the assignment on its next
+audit and records its own takeover under the ledger contract. Use `--read-only` for a
 terminal that should never write - a shared screen, or a session watching
 someone else's repository:
 

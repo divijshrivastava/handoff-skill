@@ -1,6 +1,6 @@
 ---
 name: handoff
-description: "Coordinate progressive repository work across agents with a shared HANDOFF.md ledger. Use in repositories with a ledger, or on explicit handoff requests: /handoff:init, 'initialise the handoff', /handoff:continue, /handoff:status, /handoff:view, /handoff:purge, or 'use handoff'. After activation: handoff_guard.py name --root <repo> claims the session name; handoff_guard.py read --root <repo> returns ledger text and version in one snapshot. Audit later entries and code before treating unchecked boxes as unfinished. For ledger writes: handoff_guard.py apply --root <repo> --expect-version V with --entry FILE or --content FILE. On exit 3, re-read and re-audit; never retry the stale write. Skip read-only questions needing no tracking or mutation."
+description: "Coordinate progressive repository work across agents with a shared HANDOFF.md ledger. Use in repositories with a ledger, or on explicit handoff requests: /handoff:init, 'initialise the handoff', /handoff:continue, /handoff:status, /handoff:view, /handoff:purge, or 'use handoff'. After activation: handoff_guard.py name --root <repo> claims the session name; handoff_guard.py read --root <repo> returns ledger text and version in one snapshot. Audit later entries and code before treating unchecked boxes as unfinished. For ledger writes: handoff_guard.py apply --root <repo> --expect-version V with --entry FILE or --content FILE. On exit 3, re-read and re-audit; never retry the stale write. A user viewer assignment is required queued work: finish your current task, then audit and complete it without another prompt. Skip read-only questions needing no tracking or mutation."
 license: MIT
 metadata:
   version: "1.21.0"
@@ -239,6 +239,38 @@ when possible, and treat unrecognized uncommitted changes as someone else's
 regardless. The existence of unfinished work is never authority to adopt an
 active owner's task.
 
+### Viewer assignments are execution requests
+
+A user assigning a task to you through `handoff-tui` (`x`/`p` or `P`) is an
+explicit instruction to finish it after your current task. It supplies both
+authorization and ordering; do not ask the pickup question above, wait for
+another prompt, or merely report the assignment as pending and stop. This
+obligation applies to every receiving agent, including the current session.
+
+Check your assigned bucket during preflight, at real work checkpoints, after
+finishing each task, and before stopping or reporting yourself waiting. Finish
+and verify your current task first; keep assignments queued while doing so.
+If idle, begin the assigned work immediately after its progressive audit.
+Unless the user gives another order, process your eligible assignments oldest
+first, ahead of optional or unassigned work.
+
+For each assignment, audit later entries, code, prior work, and active writers.
+The current heading and dated user reassignment override older "unclaimed" or
+"waiting for pickup" prose. Preserve attribution and uncommitted work, record
+your harness and takeover in the existing entry through `read`/`apply`, then
+implement the effective remainder through verification and the required
+handoff/commit. Do not duplicate entries, redo completed or superseded work,
+or reclaim tasks assigned away from you. User assignment authorizes ownership;
+it does not authorize overwriting a peer who is still writing the same files.
+
+If a concrete blocker prevents completion, record its evidence, next action,
+and required input or external change; continue other eligible assignments.
+Missing a second user prompt is never a blocker. Re-read and audit the queue
+after each completion until it is empty or every remainder is concretely
+blocked. A later user stop, cancellation, or explicit ordering takes precedence.
+The viewer persists the request; it cannot wake a stopped model. An agent that
+resumes must discover and act on its assignments at its next preflight.
+
 ### Communication and unavailable agents
 
 When coordinating with a peer or investigating a stalled owner, read
@@ -377,8 +409,11 @@ Before committing or stopping:
 3. Update the task's step boxes, state, owner, status, blocker, and next
    action, then validate the ledger.
 4. Stage explicit paths only. Never sweep another agent's changes into a commit.
-5. Report the outcome, verification, commit identifier, and any effective
-   unfinished work.
+5. Re-read and audit your assigned bucket. Continue eligible viewer assignments
+   under Step 3 before stopping; do not end with an available assignment merely
+   marked pending. Report progress while continuing the queue.
+6. Report the outcome, verification, commit identifier, and any effective
+   unfinished work with its concrete blocker or user-directed deferral.
 
 If the task pauses, another agent must be able to continue from the ledger and
 repository alone, without this conversation.
@@ -392,8 +427,9 @@ they do not replace the progressive audit or establish live activity or per-step
 authorship. The live view also lets the user hand one task to another agent
 (`x` to cut, `p` to give), which rewrites that heading's owner label and
 appends a dated note to its status through the same compare-and-swap as `apply`;
-`--read-only` disables it. A task that arrives this way is assigned, not
-explained: audit it and record the takeover in its status before working on it. Because that install path is version-pinned,
+`--read-only` disables it. The move is a user execution request: finish your
+current task, then audit and complete the assignment under Step 3 without
+another prompt. Because that install path is version-pinned,
 `scripts/handoff-tui` is a launcher users can copy onto PATH once; it resolves
 the viewer at run time and takes the same arguments. See
 `references/progress-viewer.md` for controls, snapshot mode, and counting rules,

@@ -540,6 +540,23 @@ class MoveTests(unittest.TestCase):
         self.assertEqual(self.owners(), [None, None])
         self.assertNotIn("(owner:", self.read())
 
+    def test_assignment_requires_execution_after_current_task_without_another_prompt(self):
+        dashboard = self.press(self.dashboard(), ord("x"))
+        dashboard.selected = 1
+        self.press(dashboard, ord("p"))
+        status = " ".join(tui.parse_snapshot(self.read()).statuses[0].split())
+        self.assertIn("Agent B must finish its current task, then audit and complete this task", status)
+        self.assertIn("without waiting for another user prompt", status)
+        self.assertIn("verification", status)
+
+    def test_reassigning_completed_work_does_not_request_execution_again(self):
+        task = tui.parse_tasks(entry(state="completed", steps=(True, True)))[0]
+        self.assertNotIn("must finish", tui.move_note(task, "Agent B"))
+
+    def test_releasing_work_does_not_request_execution_by_unassigned(self):
+        task = tui.parse_tasks(entry())[0]
+        self.assertNotIn("must finish", tui.move_note(task, tui.UNASSIGNED))
+
     def test_a_typed_name_reaches_an_agent_with_no_ledger_entry_yet(self):
         dashboard = self.dashboard()
         self.press(dashboard, ord("x"), ord("P"))

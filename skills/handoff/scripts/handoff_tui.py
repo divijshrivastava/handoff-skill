@@ -367,6 +367,11 @@ def move_note(task: Task, target: str, when: datetime | None = None) -> str:
     note = (f"Reassigned {stamp}: moved from {owner_name(task)} to {target} in the "
             "handoff viewer at the user's direction. No state or step boxes were "
             "changed, and the entry keeps its place in ledger order.")
+    if target != UNASSIGNED and task.state != "completed":
+        note += (f" Execution request: {target} must finish its current task, then "
+                 "audit and complete this task, including verification, without "
+                 "waiting for another user prompt. If idle, start after the audit. "
+                 "Preserve prior work; record any concrete blocker and next action.")
     return "\n".join(textwrap.wrap(clean_text(note), width=79))
 
 

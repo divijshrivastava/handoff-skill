@@ -259,6 +259,16 @@ Live mode needs at least 64 columns and 14 rows. Pass `--read-only` for a termin
 
 When an agent is about to run out of context, select the task, press `x` to cut it, then press `p` on the receiving agent (or `P` to type a name). That rewrites the task's owner label, drops its harness field, appends a dated note to its status, and uses the same locked compare-and-swap as the writer helper. State, steps, and ledger order stay untouched — order records when work was raised; the label records who holds it.
 
+**An assignment is an instruction to finish the task.** Every receiving agent
+must finish its current task, then audit and complete viewer-assigned work,
+including verification, without waiting for another prompt. An idle agent
+starts after its audit. Agents check their queue at task boundaries and before
+stopping, preserve prior work, and record any concrete blocker while continuing
+other eligible assignments. The saved move note carries this instruction.
+Completed work is not reopened, and moving to `unassigned` releases it.
+The viewer cannot wake a stopped model; the instruction takes effect when the
+agent next runs and reads its queue.
+
 You can also hand one agent another agent's whole bucket: tell the receiving agent to take over, naming the prior owner. It preserves the prior owner's uncommitted work to a recovery point outside the tree, moves every open entry in one locked ledger write, and records the transfer in each entry's status, so the prior owner sees the move the next time it audits the ledger and reports it instead of resuming.
 
 ### Snapshot and path options

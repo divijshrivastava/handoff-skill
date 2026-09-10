@@ -63,3 +63,9 @@ Read `CONTRIBUTING.md` and audit `HANDOFF.md` against later entries and code bef
 resuming work. Preserve history and ownership; record steps and verification.
 When agents share a working tree, use the helper's `read`/`apply` workflow for
 ledger updates and re-audit after version conflicts.
+
+A user assignment through `handoff-tui` is a required execution request for
+every receiving agent. Finish the current task, then audit and complete assigned
+work, including verification and publication when required, without another
+prompt. Check your queue at task boundaries and before stopping. Record concrete
+blockers and continue other eligible assignments; preserve prior work and owners.
