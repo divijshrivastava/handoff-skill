@@ -298,9 +298,12 @@ No signal for an exhausted model exists on every harness, so nothing here is
 decided by detection. Declare your own contingent release instead: guard `lease`
 records a renewal deadline on your unfinished bucket, and any peer can `sweep`
 what expired, because expiry is arithmetic every harness computes alike. Renew
-it at real checkpoints and clear it when you finish. Channel `challenge` and
-`attest` bind a proof of capability to a fresh nonce; read that proof in one
-direction only, as reason not to take a peer's work. Silence remains unknown.
+it at real checkpoints and clear it when you finish. Channel `nudge` asks a
+silent peer to answer and is only a message: it decides nothing, changes no
+state, and cannot be broadcast or repeated inside its interval. Channel
+`challenge` and `attest` bind a proof of capability to a fresh nonce; read that
+proof in one direction only, as reason not to take a peer's work. Silence
+remains unknown.
 
 ### Authorized takeover of another agent's bucket
 

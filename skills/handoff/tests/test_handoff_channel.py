@@ -502,3 +502,203 @@ class ChallengeTests(unittest.TestCase):
         two = legacy.join("Epsilon", "Cursor")["session"]
         self.assertTrue(legacy.challenge(one, two)["issued"])
 
+
+class NudgeTests(unittest.TestCase):
+    """Asking a silent peer to answer, without deciding anything about it.
+
+    The failure case: a peer's task is unfinished, its report has aged out and
+    its inbox is unread, so the only moves available are to guess it is gone and
+    take work it may be writing, or to spend its remaining budget on a
+    challenge. There was no way to say 'you have mail' and leave the record
+    exactly as uncertain as it was.
+    """
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name).resolve()
+        self.ledger = self.root / "HANDOFF.md"
+        self.ledger.write_text("# Handoff\n", encoding="utf-8")
+        self.cache = patch.dict(os.environ, {"HANDOFF_NAME_CACHE": str(self.root / "names")})
+        self.cache.start()
+        self.addCleanup(self.cache.stop)
+        self.channel = Channel(self.root)
+        self.a = self.channel.join("Alpha", "Claude Code")["session"]
+        self.b = self.channel.join("Beta", "Kimi Code")["session"]
+
+    def record(self, session=None):
+        return self.channel.silence(session or self.b)[0]
+
+    def peer(self, session):
+        return next(row for row in self.channel.peers() if row["id"] == session)
+
+    def unread(self, age):
+        """One message to Beta, sent `age` seconds ago and never acknowledged."""
+        with patch("handoff_channel.time.time", return_value=time.time() - age):
+            self.channel.send(self.a, self.b, "Are you still on the parser task?")
+
+    def stale_report(self, age):
+        with patch("handoff_channel.time.time", return_value=time.time() - age):
+            self.channel.report(self.b, "working", "Editing the parser")
+
+    def test_a_nudge_cannot_be_broadcast_or_aimed_at_itself(self):
+        for target in ("*", self.a):
+            with self.assertRaises(ValueError):
+                self.channel.nudge(self.a, target)
+
+    def test_a_nudge_leaves_the_peer_state_and_capability_exactly_as_it_was(self):
+        self.stale_report(600)
+        before = self.peer(self.b)
+        result = self.channel.nudge(self.a, self.b)
+        after = self.peer(self.b)
+        self.assertTrue(result["sent"])
+        # Being asked is not evidence, so nothing about the peer may move.
+        for field in ("state", "note", "reported", "availability", "attested_seconds"):
+            self.assertEqual(before[field], after[field], field)
+        self.assertEqual(after["availability"], "unknown")
+
+    def test_an_unanswered_nudge_leaves_availability_unknown(self):
+        self.stale_report(600)
+        self.channel.nudge(self.a, self.b)
+        # An hour later Beta has still said nothing. An idle healthy agent looks
+        # exactly like this, so the record must not have hardened into a verdict.
+        with patch("handoff_channel.time.time", return_value=time.time() + 3600):
+            row = self.peer(self.b)
+            record = self.record()
+        self.assertEqual(row["availability"], "unknown")
+        self.assertEqual(row["state"], "working")
+        self.assertTrue(record["silent"])
+        self.assertIsNone(record["attested_seconds"])
+
+    def test_a_second_nudge_inside_the_interval_returns_the_first(self):
+        self.unread(300)
+        first = self.channel.nudge(self.a, self.b)
+        second = self.channel.nudge(self.a, self.b)
+        self.assertTrue(first["sent"])
+        self.assertFalse(second["sent"])
+        self.assertEqual(first["message"], second["message"])
+        self.assertGreater(second["repeat_in_seconds"], 0)
+        # One nudge reached the inbox, beside the message it is about.
+        kinds = [row["kind"] for row in self.channel.inbox(self.b)]
+        self.assertEqual(kinds.count("nudge"), 1)
+
+    def test_the_interval_expires_and_another_peer_is_never_blocked(self):
+        self.unread(300)
+        self.channel.nudge(self.a, self.b)
+        later = time.time() + 601
+        with patch("handoff_channel.time.time", return_value=later):
+            self.assertTrue(self.channel.nudge(self.a, self.b)["sent"])
+        # The interval is per sender and subject: a third session waiting on the
+        # same peer is not silenced by someone else's recent nudge.
+        c = self.channel.join("Gamma", "Cursor")["session"]
+        self.assertTrue(self.channel.nudge(c, self.b)["sent"])
+
+    def test_silence_needs_both_an_aged_message_and_a_stale_report(self):
+        self.assertFalse(self.record()["silent"])
+        # A message that arrived a moment ago is not silence; the peer may not
+        # have taken a turn since.
+        self.unread(5)
+        self.channel.report(self.b, "working", "Editing the parser")
+        self.assertFalse(self.record()["silent"])
+        self.unread(600)
+        self.assertFalse(self.record()["silent"])
+        self.stale_report(600)
+        self.assertTrue(self.record()["silent"])
+
+    def test_acknowledging_ends_the_silence_without_a_reply(self):
+        self.unread(600)
+        self.stale_report(600)
+        record = self.record()
+        self.assertTrue(record["silent"])
+        self.assertEqual(record["unacknowledged"], 1)
+        for row in self.channel.inbox(self.b):
+            self.channel.acknowledge(self.b, row["id"])
+        after = self.record()
+        self.assertEqual(after["unacknowledged"], 0)
+        self.assertIsNone(after["oldest_unacknowledged_seconds"])
+        self.assertFalse(after["silent"])
+        # Reading the mail is not a capability report, so the stale report stands.
+        self.assertEqual(after["availability"], "unknown")
+
+    def test_the_nudge_body_asks_for_a_report_and_disclaims_authority(self):
+        self.unread(600)
+        self.stale_report(600)
+        self.channel.nudge(self.a, self.b, "Waiting on the viewer file.")
+        message = [row for row in self.channel.inbox(self.b) if row["kind"] == "nudge"][0]
+        body = json.loads(message["body"])
+        self.assertEqual(body["from_owner"], "Alpha")
+        self.assertEqual(body["note"], "Waiting on the viewer file.")
+        self.assertIn("report", body["asks"])
+        self.assertIn("yield", body["asks"])
+        self.assertIn("Nothing about your capability", body["establishes"])
+        self.assertEqual(body["observed"]["unacknowledged"], 1)
+        # Whole seconds; a recipient cannot act on sub-second precision.
+        self.assertIsInstance(body["observed"]["report_age_seconds"], int)
+
+    def test_a_nudge_does_not_touch_the_ledger_or_ownership(self):
+        text = ("# Handoff\n\n"
+                + guard.make_template("2026-09-10", "Parser", "Beta", ["Write it.", "Verify."])
+                .replace("- [ ] In progress", "- [x] In progress"))
+        self.ledger.write_text(text, encoding="utf-8")
+        version = guard.ledger_version(text)
+        self.unread(600)
+        self.stale_report(600)
+        self.channel.nudge(self.a, self.b)
+        self.assertEqual(self.ledger.read_text(encoding="utf-8"), text)
+        self.assertEqual(guard.ledger_version(self.ledger.read_text(encoding="utf-8")), version)
+        self.assertEqual([task.owner for task in guard.parse_tasks(text)], ["Beta"])
+
+    def test_nudging_a_peer_that_is_not_silent_says_so_rather_than_refusing(self):
+        self.channel.report(self.b, "working", "Editing the parser")
+        result = self.channel.nudge(self.a, self.b)
+        self.assertTrue(result["sent"])
+        self.assertFalse(result["silence"]["silent"])
+        self.assertIn("not silent by the record", result["note"])
+
+    def test_silence_reports_every_peer_and_an_unknown_session_is_an_error(self):
+        owners = [row["owner"] for row in self.channel.silence()]
+        self.assertEqual(sorted(owners), ["Alpha", "Beta"])
+        with self.assertRaises(ValueError):
+            self.channel.silence("not-a-session")
+
+    def test_a_bad_interval_or_oversized_note_is_refused(self):
+        for interval in (0, 59, 86401):
+            with self.assertRaises(ValueError):
+                self.channel.nudge(self.a, self.b, interval=interval)
+        with self.assertRaises(ValueError):
+            self.channel.nudge(self.a, self.b, "x" * 2001)
+        with self.assertRaises(ValueError):
+            self.channel.nudge(self.a, self.b, "   ")
+        self.assertEqual(self.channel.inbox(self.b), [])
+
+    def test_a_channel_made_before_nudges_existed_still_works(self):
+        """Nudges ride the messages table, so an existing channel needs no migration."""
+        older = self.root / "older"
+        older.mkdir()
+        (older / "HANDOFF.md").write_text("# Handoff\n", encoding="utf-8")
+        legacy = Channel(older)
+        legacy.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        with sqlite3.connect(str(legacy.path)) as connection:
+            connection.executescript(SCHEMA)
+        one = legacy.join("Delta", "Grok")["session"]
+        two = legacy.join("Epsilon", "Cursor")["session"]
+        self.assertTrue(legacy.nudge(one, two)["sent"])
+        self.assertEqual([row["kind"] for row in legacy.inbox(two)], ["nudge"])
+
+    def test_cli_nudge_and_silence_emit_json_and_refuse_broadcast(self):
+        script = SCRIPTS / "handoff_channel.py"
+
+        def cli(*args):
+            return subprocess.run([sys.executable, str(script), "--root", str(self.root), *args],
+                                  capture_output=True, text=True, encoding="utf-8", timeout=15)
+
+        self.unread(600)
+        self.stale_report(600)
+        listed = json.loads(cli("silence").stdout)
+        self.assertIn("authorizes taking work", listed["note"])
+        self.assertTrue(any(row["silent"] for row in listed["peers"]))
+        sent = json.loads(cli("nudge", "--session", self.a, "--to", self.b).stdout)
+        self.assertTrue(sent["sent"])
+        refused = cli("nudge", "--session", self.a, "--to", "*")
+        self.assertEqual(refused.returncode, 1)
+        self.assertIn("cannot be broadcast", json.loads(refused.stderr)["error"])

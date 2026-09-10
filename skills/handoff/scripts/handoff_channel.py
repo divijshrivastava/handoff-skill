@@ -31,6 +31,14 @@ MAX_BODY = 16000
 # cannot be broadcast.
 CHALLENGE_TTL = 900
 CHALLENGE_INTERVAL = 300
+# A nudge costs its recipient only what an inbox entry already costs, so it is
+# the cheap step before a challenge. The interval is still deliberate: a second
+# nudge does not add information, and a buried inbox is how a returning owner
+# misses the message that mattered.
+NUDGE_INTERVAL = 600
+# An unacknowledged message younger than this is not silence. The peer may not
+# have taken a turn since it arrived.
+NUDGE_GRACE = 120
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY,
@@ -269,6 +277,120 @@ class Channel:
             connection.execute("INSERT OR IGNORE INTO receipts VALUES (?, ?)", (message_id, session))
         return {"id": message_id, "acknowledged": True, "task_completed": False}
 
+    def silence_record(self, connection, subject: str, now: float,
+                       fresh_for: float = 120, grace: float = NUDGE_GRACE) -> dict:
+        """Describe how long one peer has left messages and its report standing.
+
+        Every field is read from the channel and the clock, so any peer computes
+        the same numbers. `silent` says messages have gone unanswered and the
+        report has aged past its freshness label, which is a description of the
+        record and not a claim about the peer's model, process, or files.
+        """
+        row = self.session(connection, subject)
+        outstanding = connection.execute("""
+            SELECT COUNT(*) AS count, MIN(m.created) AS oldest FROM messages m
+            LEFT JOIN receipts r ON r.message=m.id AND r.session=?
+            WHERE (m.recipient=? OR (m.recipient='*' AND m.sender!=?)) AND r.message IS NULL
+        """, (subject, subject, subject)).fetchone()
+        nudged = connection.execute(
+            "SELECT MAX(created) AS last FROM messages WHERE kind='nudge' AND recipient=?",
+            (subject,)).fetchone()
+        proof = self.attestations(connection, subject)
+        report_age = max(0.0, now - row["reported"])
+        oldest = None if outstanding["oldest"] is None else max(0.0, now - outstanding["oldest"])
+        return {
+            "session": subject, "owner": row["owner"], "harness": row["harness"],
+            "state": row["state"], "note": row["note"],
+            "report_age_seconds": report_age,
+            # The same freshness label peers() uses; a stale report is unknown,
+            # never unavailable.
+            "availability": ("unknown" if row["state"] in {"working", "waiting"}
+                             and report_age > fresh_for else row["state"]),
+            "unacknowledged": outstanding["count"],
+            "oldest_unacknowledged_seconds": oldest,
+            "open_challenges": proof["open"],
+            "attested_seconds": None if proof["last"] is None else max(0.0, now - proof["last"]),
+            "last_nudge_seconds": (None if nudged["last"] is None
+                                   else max(0.0, now - nudged["last"])),
+            # A message that arrived a moment ago is not silence: the peer may
+            # not have taken a turn since it was sent.
+            "silent": bool(oldest is not None and oldest > grace and report_age > fresh_for),
+        }
+
+    def silence(self, subject: str | None = None, fresh_for: float = 120) -> list:
+        """Read the silence record for one peer, or for every registered peer."""
+        if not 1 <= fresh_for <= 86400:
+            raise ValueError("fresh-for must be between 1 and 86400 seconds")
+        if not self.path.exists():
+            return []
+        now = time.time()
+        with self.connect() as connection:
+            subjects = ([subject] if subject is not None else
+                        [row["id"] for row in connection.execute(
+                            "SELECT id FROM sessions ORDER BY reported DESC")])
+            return [self.silence_record(connection, item, now, fresh_for) for item in subjects]
+
+    def nudge(self, session: str, subject: str, note: str | None = None,
+              interval: float = NUDGE_INTERVAL) -> dict:
+        """Ask one silent peer to answer. It is a message, and only a message.
+
+        A challenge asks a peer to spend a turn proving it is up; a nudge asks it
+        to read its inbox and say where it is. Neither an answer nor its absence
+        changes ownership: the ledger and the lease decide that. The interval is
+        the anti-spam rule - a second nudge inside it returns the first, because
+        burying a returning owner's inbox loses the message that mattered.
+        """
+        if subject == "*":
+            raise ValueError("A nudge cannot be broadcast; address the peer you are waiting on")
+        if subject == session:
+            raise ValueError("A session cannot nudge itself")
+        if note is not None:
+            bounded(note, "note", 2000)
+        if not 60 <= interval <= 86400:
+            raise ValueError("interval must be between 60 and 86400 seconds")
+        now = time.time()
+        with self.connect() as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            owner = self.session(connection, session)["owner"]
+            record = self.silence_record(connection, subject, now)
+            recent = connection.execute(
+                "SELECT id, created FROM messages WHERE kind='nudge' AND sender=? AND recipient=? "
+                "AND created>? ORDER BY seq DESC LIMIT 1", (session, subject, now - interval),
+            ).fetchone()
+            if recent is not None:
+                return {"sent": False, "message": recent["id"], "silence": record,
+                        "repeat_in_seconds": max(0.0, recent["created"] + interval - now),
+                        "note": ("This peer was already nudged from this session inside the "
+                                 "interval. Asking again buries the first request rather than "
+                                 "answering it; wait, or escalate with challenge.")}
+            message = self.publish(connection, session, subject, json.dumps({
+                "asks": ("Read your inbox, acknowledge what you have read, and report your "
+                         "current state and next action. If you cannot continue, say so, or "
+                         "release the work with yield so a peer can pick it up."),
+                "from_owner": owner,
+                # Whole seconds: the recipient is reading this, and sub-second
+                # precision says nothing it can act on.
+                "observed": {key: (round(record[key]) if isinstance(record[key], float)
+                                   else record[key])
+                             for key in ("unacknowledged", "oldest_unacknowledged_seconds",
+                                         "report_age_seconds", "state", "availability")},
+                "establishes": ("Nothing about your capability, and no authority over your "
+                                "work. Answering does not surrender it and silence does not "
+                                "forfeit it."),
+                "note": note,
+            }), kind="nudge")
+        note_back = ("A nudge is a request, not a verdict. An unanswered nudge leaves "
+                     "availability unknown: an idle healthy agent on any harness answers "
+                     "nothing until its next turn. Ownership still changes only through "
+                     "the ledger - an expired lease, or this peer's own yield.")
+        if not record["silent"]:
+            # Worth saying rather than refusing: the caller may be asking about
+            # something the record cannot see.
+            note_back += (" This peer is not silent by the record: it has nothing outstanding "
+                          "past the grace period, or reported recently enough to be fresh.")
+        return {"sent": True, "message": message["id"], "silence": record,
+                "repeat_in_seconds": interval, "note": note_back}
+
     def challenge(self, session: str, subject: str, ttl: float = CHALLENGE_TTL) -> dict:
         """Ask one peer to prove it can still take a turn, binding the proof to a nonce.
 
@@ -499,7 +621,11 @@ def parser() -> argparse.ArgumentParser:
     commands.add_parser("claude-hook", help="Register sessions, deliver inbox previews, and report failures without calling a model")
     peers = commands.add_parser("peers", help="Read reported capability; stale working reports become unknown")
     peers.add_argument("--fresh-for", type=float, default=120)
-    for name in ("report", "send", "inbox", "ack", "challenge", "attest", "yield"):
+    silence = commands.add_parser(
+        "silence", help="Read unanswered messages and report age; never a capability verdict")
+    silence.add_argument("--to", help="Session ID to report on; default is every peer")
+    silence.add_argument("--fresh-for", type=float, default=120)
+    for name in ("report", "send", "inbox", "ack", "nudge", "challenge", "attest", "yield"):
         command = commands.add_parser(name)
         command.add_argument("--session", required=True)
         if name == "report":
@@ -516,6 +642,11 @@ def parser() -> argparse.ArgumentParser:
             command.add_argument("--wait", type=float, default=0, help="Wait up to 30 seconds for unread messages")
         elif name == "ack":
             command.add_argument("--id", required=True)
+        elif name == "nudge":
+            command.add_argument("--to", required=True, help="Session ID to ask; broadcast is refused")
+            command.add_argument("--note", help="What you are waiting on, in your own words")
+            command.add_argument("--interval", type=float, default=NUDGE_INTERVAL,
+                                 help="Seconds before this session may nudge that peer again")
         elif name == "challenge":
             command.add_argument("--to", required=True, help="Session ID to probe; broadcast is refused")
             command.add_argument("--ttl", type=float, default=CHALLENGE_TTL,
@@ -554,6 +685,11 @@ def main(argv: list[str] | None = None) -> int:
             if not 1 <= args.fresh_for <= 86400:
                 raise ValueError("fresh-for must be between 1 and 86400 seconds")
             result = {"peers": channel.peers(args.fresh_for), "note": "Reported capability, not process liveness or permission to take work."}
+        elif args.command == "silence":
+            result = {"peers": channel.silence(args.to, args.fresh_for),
+                      "note": ("Unanswered messages and report age. Silence does not distinguish "
+                               "an exhausted agent from an idle healthy one, and nothing here "
+                               "authorizes taking work.")}
         elif args.command == "report":
             result = channel.report(args.session, args.state, args.note)
         elif args.command == "send":
@@ -570,6 +706,8 @@ def main(argv: list[str] | None = None) -> int:
             result = {"messages": messages}
         elif args.command == "ack":
             result = channel.acknowledge(args.session, args.id)
+        elif args.command == "nudge":
+            result = channel.nudge(args.session, args.to, args.note, args.interval)
         elif args.command == "challenge":
             result = channel.challenge(args.session, args.to, args.ttl)
         elif args.command == "attest":

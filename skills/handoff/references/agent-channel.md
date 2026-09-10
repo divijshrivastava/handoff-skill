@@ -82,6 +82,10 @@ follow from that:
 3. **Host adapters** accelerate. Where a harness reports failures without a
    model, they write those records earlier. They never decide.
 
+A nudge sits below all three. It asks a peer to answer and produces no evidence
+of anything, which is exactly why it is safe to send while the question of
+capability is still open.
+
 The verdict lives in the shipped helper rather than in this prose, because the
 helper is the only part of the system that behaves identically on Codex,
 Cursor, Kimi, Grok, and Claude Code. Two models reading a paragraph can differ;
@@ -121,6 +125,50 @@ boxes, order, and status, and records a dated expiry note. It establishes
 nothing about why that owner went quiet and verifies no child writers: preserve
 uncommitted work and audit the entry before resuming it, exactly as for a
 voluntary release. An owner returning to a swept entry treats it as moved.
+
+## Asking a silent peer to answer
+
+Before spending a peer's budget on a challenge, ask it to answer. A nudge is a
+message with a kind, delivered by the same inbox as any other, and it is the
+cheapest thing that can move a stuck wait forward: the peer may simply not have
+looked.
+
+```sh
+python3 "$SKILL_DIR/scripts/handoff_channel.py" --root /path/to/repo silence
+python3 "$SKILL_DIR/scripts/handoff_channel.py" --root /path/to/repo nudge \
+  --session '<your session ID>' --to '<peer session ID>' \
+  --note '<what you are waiting on, in your own words>'
+```
+
+`silence` is read-only and reports, per peer, how many messages are
+unacknowledged, how old the oldest one is, how long ago that peer reported, its
+freshness label, and when it was last nudged. Its `silent` field is true when a
+message has gone unanswered past a two-minute grace period *and* the peer's
+report has aged past its freshness window. Both halves are required: a message
+that arrived a moment ago is not silence, because the peer may not have taken a
+turn since it was sent.
+
+`silent` describes the record, not the peer. It does not distinguish an
+exhausted agent from an idle healthy one, and it is not a takeover timer.
+Acknowledging the mail clears the unanswered half without a reply and without
+refreshing capability, so a peer can be reading and still show as `unknown`.
+
+A nudge changes nothing. It does not touch the ledger, ownership, or the
+subject's reported state, and being nudged is not an event in that peer's
+record. What it asks for is a report: read the inbox, acknowledge it, and say
+where the work stands, or release it with `yield`. An unanswered nudge leaves
+availability exactly as unknown as it was.
+
+Because it costs the recipient inbox attention rather than a turn, the limit is
+different from a challenge's: a nudge cannot be broadcast, and a second nudge to
+the same peer from the same session inside ten minutes returns the first rather
+than sending another. Repeating the request adds no information, and burying an
+inbox is how a returning owner misses the message that mattered. The interval is
+per sender and subject, so two sessions waiting on the same peer do not silence
+each other.
+
+Escalate deliberately: nudge first, challenge when you need evidence rather than
+an answer, and let the lease decide when nobody answers at all.
 
 ## Proving a peer is up
 
