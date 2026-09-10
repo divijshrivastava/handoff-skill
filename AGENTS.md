@@ -43,8 +43,11 @@ formatter or linter is configured.
 Use `unittest`, with `test_*.py` files and `test_*` methods. Add regression tests
 for helper behavior changes, starting from a concrete failure case. CI runs both
 suites on Python 3.9 and 3.12; no numeric coverage threshold is configured.
-Behavioral prompts live in `skills/handoff/evals/evals.json`; claim model results
-only for scenarios actually run and graded.
+Behavioral prompts live in `skills/handoff/evals/evals.json` and are executed by
+`scripts/run_evals.py`, which is invoked by hand because model calls cost money
+and are not reproducible; CI runs only its graders, schema validation, and suite-size
+assertion. See `skills/handoff/evals/README.md`, and claim model results only for
+scenarios actually run and graded.
 
 ## Commit & Pull Request Guidelines
 

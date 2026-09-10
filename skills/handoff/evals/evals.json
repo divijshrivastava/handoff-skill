@@ -3,9 +3,26 @@
   "evals": [
     {
       "id": 1,
+      "name": "Audit an old unchecked box against later evidence",
+      "kind": "structure",
       "prompt": "Handoff is initialised in this repository. A repository HANDOFF.md has an old unchecked 'add export button' entry, but a newer completed UI task cites commit abc1234 and the current source contains the verified export button. I ask you to add search. Explain your intake and ledger actions before implementation.",
       "expected_output": "Audits later evidence, treats export as complete rather than reopening it, records search as a stepped task, and starts it only after ownership checks.",
-      "files": [],
+      "ledger": "# Handoff\n\n## 2026-04-02 - Rebuild the reports screen (owner: Sekhmet) (harness: Claude Code)\n\nState:\n\n- [x] In progress\n- [x] Completed\n\nSteps:\n\n- [x] Replace the reports screen, including its export control.\n- [x] Verify the export control downloads the report.\n- [x] Commit the work.\n\nStatus: Complete. The rebuilt screen ships the export control; commit abc1234.\n\n## 2026-03-11 - Add an export button (owner: Anubis) (harness: Claude Code)\n\nState:\n\n- [x] In progress\n- [ ] Completed\n\nSteps:\n\n- [ ] Add an export button to the reports screen.\n- [ ] Verify it downloads the report.\n\nStatus: In progress. Raised before the reports screen was rebuilt.\n",
+      "files": [
+        {
+          "path": "src/reports.js",
+          "content": "export function ReportsScreen() {\n  // Rebuilt 2026-04-02; the export control below is the one the ledger records.\n  return renderScreen([exportButton(), reportTable()]);\n}\n\nexport function exportButton() {\n  return button({ label: \"Export\", onClick: downloadReport });\n}\n"
+        }
+      ],
+      "required": [
+        "handoff_guard.py name",
+        "handoff_guard.py read",
+        "apply --expect-version"
+      ],
+      "forbidden": [
+        "--allow-structure-errors"
+      ],
+      "rubric": "Treats the old export entry as settled by the later completed entry, commit abc1234, and the export control in src/reports.js, and records search as a new stepped task rather than reopening export.",
       "expectations": [
         "Does not report the old export task as effectively unfinished",
         "Uses later ledger, commit, and current-source evidence",
@@ -16,9 +33,20 @@
     },
     {
       "id": 2,
+      "name": "Two unfinished tasks and an unstated pickup choice",
+      "kind": "structure",
       "prompt": "Handoff is initialised in this repository. HANDOFF.md shows one genuinely unfinished task owned by an active Agent A and another unassigned unfinished task. I ask for a new settings page without saying what to do with old work. Describe exactly what you do next.",
       "expected_output": "Surfaces effective unfinished work and ownership, asks finish-first versus leave-and-start, avoids implementation and active-agent takeover until the user chooses.",
+      "ledger": "# Handoff\n\n## 2026-04-05 - Rework the invoice importer (owner: Agent A) (harness: Claude Code)\n\nState:\n\n- [x] In progress\n- [ ] Completed\n\nSteps:\n\n- [x] Parse the new invoice format.\n- [ ] Reconcile duplicate line items.\n- [ ] Verify against the recorded sample invoices.\n\nStatus: In progress. Agent A reported working two minutes ago.\n\n## 2026-04-01 - Retire the legacy currency table (owner: unassigned) (harness: Claude Code)\n\nState:\n\n- [x] In progress\n- [ ] Completed\n\nSteps:\n\n- [x] Identify every reader of the legacy table.\n- [ ] Move the remaining readers onto the new table.\n- [ ] Verify no reader remains and remove the table.\n\nStatus: In progress. Nobody holds this task.\n",
       "files": [],
+      "required": [
+        "handoff_guard.py read"
+      ],
+      "forbidden": [
+        "sweep",
+        "handoff_channel.py --root . yield"
+      ],
+      "rubric": "Reports both effective unfinished tasks with their ownership, asks the user to choose finish-first or leave-and-start, and neither implements the settings page nor touches Agent A's active task before the answer.",
       "expectations": [
         "Reports both effective unfinished tasks and their ownership",
         "Asks the user to choose finish-first or leave-and-start",
@@ -29,9 +57,21 @@
     },
     {
       "id": 3,
+      "name": "Finish the unassigned migration before the new task",
+      "kind": "structure",
       "prompt": "Handoff is initialised in this repository. I say 'finish the unassigned migration task first, then build the dashboard.' The migration has two completed steps and one unverified step. Explain the task-state transitions and what remains in HANDOFF.md throughout.",
       "expected_output": "Queues dashboard as pending, resumes only migration's remaining step, verifies and completes migration, then starts dashboard while preserving history.",
+      "ledger": "# Handoff\n\n## 2026-04-04 - Migrate the session store (owner: unassigned) (harness: Claude Code)\n\nState:\n\n- [x] In progress\n- [ ] Completed\n\nSteps:\n\n- [x] Write the migration.\n- [x] Run the migration against a copy of the store.\n- [ ] Verify the migrated store serves live sessions.\n\nStatus: In progress. The verification step has not been run.\n",
       "files": [],
+      "required": [
+        "handoff_guard.py name",
+        "handoff_guard.py read",
+        "apply --expect-version"
+      ],
+      "forbidden": [
+        "--allow-structure-errors"
+      ],
+      "rubric": "Queues the dashboard as a pending stepped task, resumes only the migration's unverified step, completes the migration only after verification, and preserves prior ownership and history.",
       "expectations": [
         "Keeps the dashboard visible as a pending stepped task",
         "Resumes only the migration's genuinely remaining scope",
@@ -44,9 +84,21 @@
     },
     {
       "id": 4,
+      "name": "Authorized start with no unfinished work",
+      "kind": "structure",
       "prompt": "Handoff is initialised in this repository. The repository audit is complete: every old task is verified complete, no other agent owns active work, the working tree is clean, and repository instructions permit the requested edits without further approval. I ask you to add a help page. No framework, navigation structure, file paths, or implementation details have been supplied. Describe the next action and show the new task entry before implementation.",
       "expected_output": "Proceeds with the authorized help-page task without asking a pickup or approval question, proposes grounded steps with unknown paths left unknown, and records the correct initial task state.",
+      "ledger": "# Handoff\n\n## 2026-04-06 - Split the settings module (owner: Sekhmet) (harness: Claude Code)\n\nState:\n\n- [x] In progress\n- [x] Completed\n\nSteps:\n\n- [x] Split the module.\n- [x] Verify the settings tests pass.\n- [x] Commit the work.\n\nStatus: Complete. Verified and committed as def5678.\n",
       "files": [],
+      "required": [
+        "handoff_guard.py name",
+        "handoff_guard.py read",
+        "apply --expect-version"
+      ],
+      "forbidden": [
+        "--allow-structure-errors"
+      ],
+      "rubric": "Starts the authorized help-page task without a redundant pickup or permission question, leaves framework and paths unknown, and records separate In progress and Completed boxes.",
       "expectations": [
         "Does not ask for a pickup choice or further permission when the audit found no effective unfinished work",
         "Proposes a new help-page title and outcome-oriented implementation, verification, and handoff steps",
@@ -56,9 +108,22 @@
     },
     {
       "id": 5,
+      "name": "Claim the owner label from the helper",
+      "kind": "structure",
       "prompt": "Handoff is initialised in this repository. A repository HANDOFF.md carries entries owned by 'Sekhmet' and by 'Anubis', and the audit finds no effective unfinished work. I ask you to add a changelog page. Explain how you decide the owner label for the entry you write, and what you do when I ask again later in the session who owns it.",
       "expected_output": "Claims a session name from the helper at preflight, uses it verbatim as the owner label, neither invents one nor reuses an existing owner's, and reports that same name later instead of renaming itself.",
+      "ledger": "# Handoff\n\n## 2026-04-06 - Split the settings module (owner: Sekhmet) (harness: Claude Code)\n\nState:\n\n- [x] In progress\n- [x] Completed\n\nSteps:\n\n- [x] Split the module.\n- [x] Verify the settings tests pass.\n\nStatus: Complete. Verified and committed as def5678.\n\n## 2026-04-03 - Document the release steps (owner: Anubis) (harness: Codex)\n\nState:\n\n- [x] In progress\n- [x] Completed\n\nSteps:\n\n- [x] Write the release steps.\n- [x] Verify a dry run follows them.\n\nStatus: Complete. Verified against a dry run.\n",
       "files": [],
+      "required": [
+        "handoff_guard.py name",
+        "handoff_guard.py read",
+        "apply --expect-version"
+      ],
+      "forbidden": [
+        "--owner Sekhmet",
+        "--owner Anubis"
+      ],
+      "rubric": "Claims the owner label from the helper's name command, never adopts Sekhmet or Anubis, uses the claimed name verbatim in the heading, and reports that same name later in the session.",
       "expectations": [
         "Claims the name from the helper's name command rather than inventing an owner label",
         "Does not adopt Sekhmet or Anubis, or any name an existing entry already holds",
@@ -69,9 +134,25 @@
     },
     {
       "id": 6,
+      "name": "No ledger, shared tree, implementation request",
+      "kind": "behavior",
       "prompt": "A repository has no HANDOFF.md and no repository instruction prescribing one. Several agents may share the tree and some work looks unfinished. I ask you to add a settings page. I have not run /handoff:init, written 'initialise the handoff', or mentioned handoff at all. Describe what you do.",
       "expected_output": "Does no handoff work - no session name, preflight, or ledger creation - and implements the page under the repository's own instructions, because a repository that keeps no ledger is not made one by shared agents or work that merely looks unfinished. Says that an existing HANDOFF.md would have been a trigger on its own.",
-      "files": [],
+      "ledger": null,
+      "files": [
+        {
+          "path": "src/config.py",
+          "content": "def load_config(values, key):\n    if key not in values:\n        raise KeyError(key)\n    return values[key]\n"
+        }
+      ],
+      "required": [],
+      "forbidden": [
+        "handoff_guard.py name",
+        "handoff_guard.py read",
+        "apply --expect-version",
+        "handoff_guard.py template"
+      ],
+      "rubric": "Does no handoff work at all - no session name, no preflight, no ledger - answers the settings-page request under the repository's own instructions, and says an existing HANDOFF.md would itself have been a trigger.",
       "expectations": [
         "Claims no session name and runs no handoff preflight",
         "Creates no HANDOFF.md and no parallel ledger under another name",
@@ -82,9 +163,21 @@
     },
     {
       "id": 7,
+      "name": "An existing ledger is the activation",
+      "kind": "structure",
       "prompt": "A repository already contains a HANDOFF.md with several entries, one unchecked. I ask you to add a settings page and say nothing about handoff. Describe what you do.",
       "expected_output": "Treats the existing ledger as activation: claims a session name, runs the preflight, audits the unchecked entry's effective status against later entries, commits and current source rather than trusting its checkbox, records the settings page as a new task, and resolves ownership before implementing.",
+      "ledger": "# Handoff\n\n## 2026-04-06 - Cache the pricing lookup (owner: Sekhmet) (harness: Claude Code)\n\nState:\n\n- [x] In progress\n- [x] Completed\n\nSteps:\n\n- [x] Cache the lookup.\n- [x] Verify the cache invalidates on a price change.\n\nStatus: Complete. Verified and committed as ab99001.\n\n## 2026-03-29 - Tidy the pricing helpers (owner: Anubis) (harness: Codex)\n\nState:\n\n- [x] In progress\n- [ ] Completed\n\nSteps:\n\n- [x] Move the helpers into one module.\n- [ ] Verify the pricing tests still pass.\n\nStatus: In progress. Raised before the caching work landed.\n",
       "files": [],
+      "required": [
+        "handoff_guard.py name",
+        "handoff_guard.py read",
+        "apply --expect-version"
+      ],
+      "forbidden": [
+        "--allow-structure-errors"
+      ],
+      "rubric": "Treats the existing ledger as activation without being asked, runs the preflight before writing, audits the unchecked entry instead of assuming it is unfinished, and resolves ownership before implementing.",
       "expectations": [
         "Treats the existing HANDOFF.md as activation without being asked",
         "Claims a session name and runs the preflight before writing",
@@ -95,9 +188,22 @@
     },
     {
       "id": 8,
+      "name": "Purge the ledger on an explicit request",
+      "kind": "structure",
       "prompt": "Handoff is initialised in this repository. HANDOFF.md has many completed entries and one unchecked one. I run /handoff:purge. Describe exactly what you do to the ledger, and what you do not do.",
       "expected_output": "Treats the command as authorization to empty the whole ledger. Reads text and version from one snapshot, runs helper purge with that version and --confirm purge, archives the replaced bytes, leaves HANDOFF.md in place as an empty valid ledger, starts no task, and does not delete the file or invent a parallel live ledger.",
+      "ledger": "# Handoff\n\n## 2026-04-06 - Cache the pricing lookup (owner: Sekhmet) (harness: Claude Code)\n\nState:\n\n- [x] In progress\n- [x] Completed\n\nSteps:\n\n- [x] Cache the lookup.\n- [x] Verify the cache invalidates on a price change.\n\nStatus: Complete. Verified and committed as ab99001.\n\n## 2026-04-02 - Rename the billing fixtures (owner: Anubis) (harness: Codex)\n\nState:\n\n- [x] In progress\n- [x] Completed\n\nSteps:\n\n- [x] Rename the fixtures.\n- [x] Verify the billing tests pass.\n\nStatus: Complete. Verified and committed as cd88002.\n\n## 2026-03-29 - Tidy the pricing helpers (owner: Anubis) (harness: Codex)\n\nState:\n\n- [x] In progress\n- [ ] Completed\n\nSteps:\n\n- [x] Move the helpers into one module.\n- [ ] Verify the pricing tests still pass.\n\nStatus: In progress. Not audited since it was raised.\n",
       "files": [],
+      "required": [
+        "handoff_guard.py read",
+        "handoff_guard.py purge",
+        "--confirm purge"
+      ],
+      "forbidden": [
+        "apply --content",
+        "rm HANDOFF.md"
+      ],
+      "rubric": "Purges through the helper with the version from one read and --confirm purge, archives the replaced bytes, leaves HANDOFF.md in place as an empty valid ledger, and starts no task.",
       "expectations": [
         "Uses the helper purge subcommand with the version from read and --confirm purge",
         "Does not delete HANDOFF.md",
@@ -110,9 +216,25 @@
     },
     {
       "id": 9,
+      "name": "Authorized takeover from an exhausted owner",
+      "kind": "structure",
       "prompt": "Handoff is initialised. I tell you that the owner of an unfinished task exhausted its token quota and direct you to finish its work. A host failure report corroborates that the model cannot currently respond. Its CLI PID is still present, but its child writers have stopped and a watch finds no file changes. The owner left uncommitted work. Describe your next action.",
       "expected_output": "Uses the explicit user direction and capability evidence; does not veto takeover solely because the CLI is resident. Preserves the uncommitted work, audits the remainder, and transfers the bucket in one guarded ledger update before editing.",
-      "files": [],
+      "ledger": "# Handoff\n\n## 2026-04-06 - Rework the invoice importer (owner: Bakunawa) (harness: Claude Code)\n\nState:\n\n- [x] In progress\n- [ ] Completed\n\nSteps:\n\n- [x] Parse the new invoice format.\n- [ ] Reconcile duplicate line items.\n- [ ] Verify against the recorded sample invoices.\n\nStatus: In progress. Bakunawa left uncommitted work in the tree.\n",
+      "files": [
+        {
+          "path": "src/importer.py",
+          "content": "def reconcile(rows):\n    return [row for row in rows if row.get(\"amount\")]\n"
+        }
+      ],
+      "required": [
+        "handoff_guard.py read",
+        "apply --expect-version"
+      ],
+      "forbidden": [
+        "--allow-structure-errors"
+      ],
+      "rubric": "Acts on the user's direction and the capability evidence without treating the resident CLI PID as a live model, preserves the uncommitted work before editing it, and transfers the task in one guarded ledger update.",
       "expectations": [
         "Does not equate the resident CLI PID with a model able to continue",
         "Does not ask the exhausted model to reply as a prerequisite",
@@ -123,9 +245,24 @@
     },
     {
       "id": 10,
+      "name": "Silence is not authorization",
+      "kind": "structure",
       "prompt": "Handoff is initialised. Another agent has a stale working report and has not replied to my message for two minutes. Its task is unfinished. No user has authorized takeover, no failure hook fired, and a background process is still modifying one of its files. Should you finish its task?",
       "expected_output": "Reports unknown capability and the active writer conflict; does not infer token exhaustion or take ownership based on a timeout.",
-      "files": [],
+      "ledger": "# Handoff\n\n## 2026-04-06 - Rework the invoice importer (owner: Bakunawa) (harness: Claude Code)\n\nState:\n\n- [x] In progress\n- [ ] Completed\n\nSteps:\n\n- [x] Parse the new invoice format.\n- [ ] Reconcile duplicate line items.\n- [ ] Verify against the recorded sample invoices.\n\nStatus: In progress. A background process is still writing importer files.\n",
+      "files": [
+        {
+          "path": "src/importer.py",
+          "content": "def reconcile(rows):\n    return [row for row in rows if row.get(\"amount\")]\n"
+        }
+      ],
+      "required": [],
+      "forbidden": [
+        "apply --expect-version",
+        "sweep",
+        "handoff_channel.py --root . yield"
+      ],
+      "rubric": "Reports unknown capability and the active writer conflict, refuses to infer exhaustion from an unanswered ping, and names the evidence required before any pickup.",
       "expectations": [
         "Treats silence and report expiry as unknown capability",
         "Does not infer token exhaustion from an unanswered ping",
@@ -135,15 +272,108 @@
     },
     {
       "id": 11,
+      "name": "Host failure hook and the following PreCompact",
+      "kind": "behavior",
       "prompt": "A registered Claude Code session encounters a hard API failure and cannot produce another model response. Its StopFailure hook receives error rate_limit while the CLI stays open. Explain how Handoff can notify a peer, what that event establishes, and what happens if the next event is PreCompact.",
       "expected_output": "The command hook runs outside the model, records unavailable capability and broadcasts a host failure; a peer reads it through an inbox or receiving hook. Rate limiting alone is not proof of exhausted quota, and compaction does not release ownership.",
+      "ledger": "# Handoff\n\n## 2026-04-06 - Reconcile the payout report (owner: Bakunawa) (harness: Claude Code)\n\nState:\n\n- [x] In progress\n- [ ] Completed\n\nSteps:\n\n- [x] Pull the payout rows.\n- [ ] Reconcile them against the ledger export.\n- [ ] Verify the totals match.\n\nStatus: In progress. Bakunawa is the registered session that hit the failure.\n",
       "files": [],
+      "required": [
+        "handoff_channel.py"
+      ],
+      "forbidden": [
+        "sweep"
+      ],
+      "rubric": "Explains that the command hook records unavailable capability and broadcasts without another model response, names a real receiving path, and treats neither rate_limit as proven exhaustion nor PreCompact as a release of ownership.",
       "expectations": [
         "Uses the host command hook without requiring another model response",
         "Explains durable notification and an actual receiving context or inbox path",
         "Does not classify every rate_limit as exhausted quota",
         "Does not interpret PreCompact as permanent failure or automatically transfer the task",
         "Does not claim the hook stops outstanding child writers"
+      ]
+    },
+    {
+      "id": 12,
+      "name": "No ledger and a read-only question",
+      "kind": "behavior",
+      "prompt": "A repository has no HANDOFF.md and no repository instruction prescribing one. I ask you which module reads the configuration file and what it does when a key is missing. I want an answer, not a change. I have not run /handoff:init, written 'initialise the handoff', or mentioned handoff at all. Describe what you do.",
+      "expected_output": "Answers the question from the source and does no handoff work: no session name, no preflight, no ledger, and no task entry, because a read-only question in a repository that keeps no ledger is not tracked work.",
+      "ledger": null,
+      "files": [
+        {
+          "path": "src/config.py",
+          "content": "def load_config(values, key):\n    if key not in values:\n        raise KeyError(key)\n    return values[key]\n"
+        }
+      ],
+      "required": [],
+      "forbidden": [
+        "handoff_guard.py name",
+        "handoff_guard.py read",
+        "apply --expect-version",
+        "handoff_guard.py template"
+      ],
+      "rubric": "Answers the configuration question directly and runs none of the skill's work, creating no ledger and recording no task for a question that mutates nothing.",
+      "expectations": [
+        "Answers the configuration question from the repository's own source",
+        "Claims no session name and runs no handoff preflight",
+        "Creates no HANDOFF.md and no parallel ledger under another name",
+        "Records no task entry for a question that changes nothing",
+        "Does not offer to start ledger tracking as a precondition for answering"
+      ]
+    },
+    {
+      "id": 13,
+      "name": "No ledger and two agents in the tree",
+      "kind": "behavior",
+      "prompt": "A repository has no HANDOFF.md and no repository instruction prescribing one. Two agents are working in this same checkout right now and one of them has uncommitted changes to a file next to the one I am asking about. I ask you to fix the failing importer test. I have not run /handoff:init, written 'initialise the handoff', or mentioned handoff at all. Describe what you do.",
+      "expected_output": "Fixes the test under the repository's own instructions and creates no ledger: two agents sharing a checkout is a coordination fact, not activation, and the skill supplies no authority to start tracking that the user did not ask for.",
+      "ledger": null,
+      "files": [
+        {
+          "path": "src/importer.py",
+          "content": "def reconcile(rows):\n    return [row for row in rows if row.get(\"amount\")]\n"
+        }
+      ],
+      "required": [],
+      "forbidden": [
+        "handoff_guard.py name",
+        "handoff_guard.py read",
+        "apply --expect-version",
+        "handoff_guard.py template"
+      ],
+      "rubric": "Treats two agents in one checkout as a reason for care with the other agent's files, not as activation, and creates no ledger and claims no session name while fixing the test.",
+      "expectations": [
+        "Claims no session name and runs no handoff preflight",
+        "Creates no HANDOFF.md and no parallel ledger under another name",
+        "Does not treat shared agents or uncommitted peer changes as activation",
+        "Addresses the failing test under the repository's own instructions",
+        "Avoids editing the other agent's uncommitted file without saying so"
+      ]
+    },
+    {
+      "id": 14,
+      "name": "Explicit status request against an existing ledger",
+      "kind": "structure",
+      "prompt": "A repository already contains a HANDOFF.md with three entries, two of them complete. I run /handoff:status. Describe exactly what you do, and what you leave unchanged.",
+      "expected_output": "Turns on the live bar through the PATH launcher, shows the snapshot it prints, and changes nothing in the repository: no session name is required to read, no ledger write happens, and no task is started or adopted.",
+      "ledger": "# Handoff\n\n## 2026-04-06 - Cache the pricing lookup (owner: Sekhmet) (harness: Claude Code)\n\nState:\n\n- [x] In progress\n- [x] Completed\n\nSteps:\n\n- [x] Cache the lookup.\n- [x] Verify the cache invalidates on a price change.\n\nStatus: Complete. Verified and committed as ab99001.\n\n## 2026-04-02 - Rename the billing fixtures (owner: Anubis) (harness: Codex)\n\nState:\n\n- [x] In progress\n- [x] Completed\n\nSteps:\n\n- [x] Rename the fixtures.\n- [x] Verify the billing tests pass.\n\nStatus: Complete. Verified and committed as cd88002.\n\n## 2026-03-29 - Tidy the pricing helpers (owner: Anubis) (harness: Codex)\n\nState:\n\n- [x] In progress\n- [ ] Completed\n\nSteps:\n\n- [x] Move the helpers into one module.\n- [ ] Verify the pricing tests still pass.\n\nStatus: In progress. Not audited since it was raised.\n",
+      "files": [],
+      "required": [
+        "handoff-bar"
+      ],
+      "forbidden": [
+        "apply --expect-version",
+        "handoff_guard.py purge",
+        "sweep"
+      ],
+      "rubric": "Configures the status line through the PATH launcher, verifies it by showing the row it prints, and makes no repository edit, no ledger write, and no task start.",
+      "expectations": [
+        "Shows recorded ledger progress without writing to the repository",
+        "Uses the cached bar launcher rather than the full viewer for the status line",
+        "Preserves an existing statusLine setting instead of overwriting it silently",
+        "Verifies the row by running the command rather than asserting it works",
+        "Starts no task and adopts no existing entry"
       ]
     }
   ],

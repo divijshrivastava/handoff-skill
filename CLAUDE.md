@@ -56,7 +56,11 @@ Exit codes: `0` applied, `3` version conflict (the audit behind the edit is stal
 
 ### Evals
 
-`skills/handoff/evals/evals.json` holds behavioral scenarios (prompts and graded expectations), not results. `scripts/summarize_evals.py` summarizes a workspace of saved, graded runs (`eval-*/<config>/run-*`) and deliberately raises on incomplete grading and reports missing token counts as `unknown` rather than estimating. Never report these scenarios as passing model evaluations unless they were actually run and graded.
+`skills/handoff/evals/evals.json` holds behavioral scenarios (prompts, fixtures, and graded expectations), not results. `scripts/run_evals.py` executes them against a harness CLI and writes the `eval-*/<config>/run-*` layout that `scripts/summarize_evals.py` consumes; the summarizer is unchanged by it, still raises on incomplete grading, and still reports missing token counts as `unknown` rather than estimating. Never report these scenarios as passing model evaluations unless they were actually run and graded.
+
+The runner grades in two lanes. The deterministic lane needs no model: it matches command fragments in the response and checks the fixture repository, which is what makes a non-trigger testable — a scenario seeded with no ledger fails if a `HANDOFF.md` appeared. The judge lane is optional, blinded, and must return a verdict with evidence for every expectation; a run it cannot grade stays ungraded and the summarizer refuses the workspace. `eval_metadata.json` lists only what an invocation actually graded, so a judge-less run claims nothing about the prose expectations.
+
+Each run gets a temporary `HOME` and a fixture repository outside this checkout. That is context isolation, not a security boundary, and it is a property of the harness's lookup rules rather than of the script: verify it with `--canary` before trusting a result. `without_skill` is a first-class configuration and a baseline, not a product failure. Model calls cost money and are not reproducible, so the runner is invoked by hand; CI runs only the graders, the schema validation, and the `SUITE_SIZE` assertion in `tests/test_evals.py`. Nothing under C ships: the runner is not in `RUNTIME_FILES`. `skills/handoff/evals/README.md` is the maintainer document.
 
 ## Working style for changes here
 

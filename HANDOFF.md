@@ -1,5 +1,22 @@
 # Handoff
 
+## 2026-09-10 - Build an evaluation runner (Task C) (owner: Garuda) (harness: Claude Code)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Extend the evals.json schema with kind, ledger, required, forbidden, and rubric, and add the three negative scenarios.
+- [x] Add scripts/run_evals.py with isolated fixtures, --list, --dry-run, config matrix, deterministic grader, optional blinded judge, and --canary.
+- [x] Add tests/test_evals.py grader and schema regression tests starting from the direct-edit and false-trigger failures.
+- [x] Write the maintainer document covering isolation limits, grading honesty, and the ablation baseline.
+- [x] Run the full CI set and record verification and the handoff.
+
+Status: Complete. `scripts/run_evals.py` runs each scenario in a fixture repository created outside this checkout under a temporary HOME, and writes the `eval-*/<config>/run-*` layout `summarize_evals.py` already consumes; the summarizer is untouched. Two lanes grade: a deterministic one that matches command fragments as ordered tokens within one command line (so `apply --root . --expect-version V` satisfies `apply --expect-version`) and checks the fixture repository, and an optional blinded judge that must return evidence for every expectation or the run stays ungraded. `eval_metadata.json` lists only what an invocation graded, so a judge-less run claims nothing about the prose expectations. The suite is 14 scenarios: the 11 existing ones gained fixtures and fragments, and 12, 13, and 14 cover the non-triggers the description spends its words on - a read-only question with no ledger, two agents in a tree with no ledger, and an explicit /handoff:status against one. A seeded-no-ledger scenario fails deterministically if a HANDOFF.md appeared, which is what made a non-trigger testable at all. `skills/handoff/evals/README.md` is the maintainer document and records that isolation is context isolation and not a security boundary, that judge scores are evidence and not ground truth, that a small score movement without repetitions is not a regression, and that missing token counts stay unknown. Verified on Python 3.9.10 and 3.12.7: check_versions.py, sync_manifests.py --check, both unittest suites (291 helper, 54 root), guard validate --root ., package_skill.py, and git diff --check all pass; --list, --dry-run, a full 14-scenario two-configuration matrix, and --canary in both directions were exercised against stand-in CLIs, which are not model results and are not reported as evaluations. No model has been run against this suite. Nothing is committed: CLAUDE.md, AGENTS.md and CONTRIBUTING.md carry other owners' pending lines beside mine, and scripts/run_evals.py, skills/handoff/evals/, tests/test_evals.py are this task's files.
+
 ## 2026-09-09 - Release 1.21.0 (owner: Lamassu) (harness: Cursor)
 
 State:
