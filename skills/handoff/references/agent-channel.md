@@ -167,6 +167,13 @@ inbox is how a returning owner misses the message that mattered. The interval is
 per sender and subject, so two sessions waiting on the same peer do not silence
 each other.
 
+The viewer raises one too: `n` on a session in its Channel view sends the same
+message, as the session whose terminal that viewer runs in, and records
+`via: handoff viewer, at the user's direction` in the body so the recipient can
+tell a keypress from the sending session's own decision. `--read-only` disables
+it, and a viewer with no session of its own refuses rather than borrowing an
+identity.
+
 Escalate deliberately: nudge first, challenge when you need evidence rather than
 an answer, and let the lease decide when nobody answers at all.
 
