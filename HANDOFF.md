@@ -5,19 +5,106 @@
 State:
 
 - [x] In progress
-- [ ] Completed
+- [x] Completed
 
 Steps:
 
 - [x] Update the runtime protocol and repository guidance so viewer assignments must run after the current task without another prompt.
 - [x] Put the execution directive in viewer reassignment notes and add regression and behavioral coverage.
-- [ ] Verify and publish the protocol changes to origin/main.
-- [ ] Continue directly with the channel-view task already assigned to Fenrir.
+- [x] Verify and publish the protocol changes to origin/main.
+- [x] Continue directly with the channel-view task already assigned to Fenrir.
 
 Status: In progress. Concrete failure: the user assigned the channel-view task to Fenrir through the viewer, but Fenrir merely reported it pending and waited for another prompt after finishing Task B. The user now explicitly requires every agent to finish its current task, then audit and execute viewer-assigned work through verification. Implement and publish that protocol now, then continue the existing channel-view assignment. Garuda owns the nudge implementation and Epona owns cloud publishing; their work is preserved.
 
 
 Verified 2026-09-10: the move-note regression failed before implementation and passes after it. The exact staged publication tree passes 270 helper tests and 54 repository tests on Python 3.9.10, version and manifest checks, packaging, and whitespace checks. Two behavioral scenarios were added (16 total); model evaluations were not run. The shared tree separately passes 311 helper tests with peers' work present. Publication is next, then immediate continuation of the existing channel-view assignment.
+
+
+Complete 2026-09-10: protocol commit e0fd1d0 was pushed to origin/main successfully. Fenrir is continuing the assigned channel-view task immediately under the new rule.
+
+## 2026-09-10 - Publish handoff state to a VPS for twin agents (owner: Epona) (harness: Claude Code)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Settle whether a VPS twin observes its slice or continues the work, because the second needs ownership transfer across machines.
+- [x] Define the per-owner slice: the entries that owner holds, its sent and received messages, and its reported state.
+- [x] Add the capture with the ledger-version re-check, composing Fenrir's Channel.history and Garuda's Channel.silence rather than a third query.
+- [x] Add the SSH publish to a configured VPS path, writing the whole snapshot, the ledger text, and one file per owner.
+- [x] Add the user-written agent map (local owner and harness to VPS agent) and refuse to publish an owner it does not name.
+- [x] Redact home directory paths from message bodies before they leave the machine.
+- [x] Reconcile the README no-external-service claim with what ships.
+- [x] Add tests and run the full CI set; record verification and the handoff.
+
+Status: Complete, uncommitted. The user chose a simple hosted VPS with agents configured beforehand, and observe-only twins. `skills/handoff/scripts/handoff_publish.py` captures the ledger and channel, slices by owner, and sends the tree over `ssh` to a path named in gitignored `.handoff/vps.json`. Each configured agent gets `agents/<twin>.json` holding the entries that owner holds, the messages it sent or received, its broadcast traffic, and its last reported state; `ledger.md` and `snapshot.json` carry the whole picture so an unmapped owner's work still arrives. Twins observe: nothing flows back, because `swap_ledger`'s compare-and-swap does not hold across a network and two machines would both pass the version check against one revision.
+
+Four properties the tests start from, each a concrete failure. Capture re-reads the ledger version after reading the channel and retries, because reading two independently written stores in sequence otherwise publishes a state that never existed; under steady concurrent writes it fails rather than publishing a blend. Home directories are rewritten to `/Users/<user>` before anything is written out, including a local `snapshot`, since the user chose to include message bodies and those carry absolute paths. A harness mismatch is reported, so a Codex twin is not handed work the ledger records as Claude Code. The remote unpacks into a staging directory and swaps it in one move, so a twin reading mid-publish sees one state or the other rather than half of each. A twin name containing a path separator is refused.
+
+Deliberately not built: any write path back from the VPS, and any liveness claim. A slice carries `reported_at` and `report_age_seconds` and never "online". `references/vps-publish.md` documents the setup, the commands, and what the feature is not, and `README.md`'s requirements line now says the local claim plainly and points at the one opt-in feature that leaves the machine.
+
+Verification: 20 new tests in `skills/handoff/tests/test_handoff_publish.py` pass on Python 3.9.10 and 3.12.7, as do 54 root tests, `check_versions.py` (1.22.0 across 6 manifests), `sync_manifests.py --check`, `validate --root .`, `package_skill.py`, and `git diff --check`. The new script and reference are in `RUNTIME_FILES` and asserted in `tests/test_package.py`, so they reach users. Exercised live in this checkout: `check`, and `snapshot --out`, which produced the three agent files with 15 messages, zero home-path leaks, and six redaction markers.
+
+Two helper tests fail in this tree and are not from this task: `test_handoff_bar.ViewerResolutionTests.test_old_copy_without_bar_is_skipped` and `test_a_stale_remembered_viewer_is_replaced`, caused by the module-level `from handoff_channel import Channel` that Fenrir's in-flight `handoff_tui.py` adds, which stops a planted or cached viewer copy starting without that module beside it. Reported to Fenrir with a reproduction; their file, their fix.
+
+Next action for whoever picks this up: nothing is committed, and `Channel.history` and the viewer work it depends on are also uncommitted, so a commit of this task should follow theirs.
+
+## 2026-09-10 - Show the agent channel in the handoff viewer (owner: Epona) (harness: Claude Code)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Add a read-only channel query to handoff_channel.py returning sender, recipient, time, acknowledgement, and body for the repository's messages.
+- [x] Add a channel view to handoff_tui.py showing who messaged whom and what, with the existing refresh and key conventions.
+- [x] Document the view and its counting rules in references/progress-viewer.md.
+- [x] Add tests covering rendering, an empty channel, and a broadcast recipient.
+- [x] Run the full CI set and record verification and the handoff.
+
+Status: Complete, uncommitted. This entry reached Epona through the viewer, unassigned to Fenrir to Epona, and was audited before being resumed rather than treated as explained by its arrival. Most of it was already built by Fenrir before the move and that work stands: `Channel.history` returns sessions, messages newest first with sender and recipient owners and acknowledging sessions, and a truncation flag, reading through a read-only transaction that neither migrates the schema nor mutates acknowledgements; the viewer gained `c` to open the channel, `s` to toggle sessions and messages, Enter to filter a session's conversation and open one message, and a selection that survives refresh.
+
+What Epona added was the defect that work introduced. `handoff_tui.py` imported `handoff_channel` at module scope, so a viewer copy installed without that module beside it raised at startup: two `test_handoff_bar.ViewerResolutionTests` cases failed, and Garuda confirmed the cause independently by swapping only that file for the HEAD version. It mattered past the fixture, because `handoff-bar` resolves a viewer out of plugin caches and runs on every status-line tick, so a viewer that cannot start prints nothing at all and the bar silently loses its progress line. The import is now guarded and the channel is constructed only when the module is present; the one view reports itself unavailable while task progress, agents, and moves keep working, which matches how `history` already treats an absent channel.
+
+Verification: 343 helper tests and 54 root tests pass on Python 3.9.10 and 3.12.7, including three new `ChannelAbsentTests` that start from the failure - the dashboard builds with no channel, the channel view refreshes empty instead of raising, and task progress still reports. The two bar tests pass again. Also run: check_versions (1.22.0 across 6 manifests), sync_manifests --check, validate --root ., package_skill, and git diff --check. Reproduced by hand both ways: a viewer planted beside only handoff_guard.py exited 1 on import before the fix and now prints its progress line and exits 0.
+
+Garuda's nudge key is the coordinated follow-up and remains Garuda's; nothing here claims it.
+
+## 2026-09-10 - Nudge an unresponsive agent from the channel view (owner: Garuda) (harness: Claude Code)
+
+State:
+
+- [x] In progress
+- [ ] Completed
+
+Steps:
+
+- [x] Define non-response from evidence the channel already holds: unacknowledged messages plus report age. Record what it cannot establish.
+- [x] Add a nudge write to handoff_channel.py that is a message, not a capability verdict, with a repeat interval so nudging cannot be spammed.
+- [ ] Add the key to the channel view in handoff_tui.py, disabled under --read-only.
+- [x] Document that a nudge and its silence prove nothing about availability or takeover authority.
+- [ ] Add tests for the interval, the read-only refusal, and an unanswered nudge leaving state unknown.
+- [ ] Run the full CI set and record verification and the handoff.
+
+Status: In progress. The channel half is built, tested and documented; one step is blocked on another owner's task and one test in step 5 belongs to it.
+
+Done. `silence_record` in handoff_channel.py defines non-response from what the channel and the clock already hold: unacknowledged messages addressed to a peer, the age of the oldest, its report age, its freshness label, its open challenges and last attestation, and when it was last nudged. `silent` requires both an unanswered message past a two-minute grace period and a report past its freshness window, because a message that arrived a moment ago is not silence - the peer may not have taken a turn since. `silent` describes the record and not the peer: it cannot distinguish an exhausted agent from an idle healthy one, and it is not a takeover timer. `nudge` publishes a message of kind `nudge` asking for an inbox read, an acknowledgement and a report, or a `yield`; it refuses broadcast and self, and a second nudge from the same session to the same peer inside ten minutes returns the first rather than burying the inbox, per sender and subject so two waiters never silence each other. It touches no ledger, no ownership and not even the subject's reported state, and its return says so. No schema change was needed: nudges ride the existing messages table, so a channel created before this version works unmigrated, which a test asserts. `silence` is the read-only companion, exposing the row fields Fenrir's channel view asked for. 14 tests in `NudgeTests` in skills/handoff/tests/test_handoff_channel.py cover the interval and its expiry, the refusals, an unanswered nudge leaving availability unknown, acknowledgement ending silence without refreshing capability, the untouched ledger, and the CLI. Documented in references/agent-channel.md as a section that decides nothing, and in SKILL.md and CLAUDE.md.
+
+Blocked, deliberately. Step 3 wants the key on the channel view in handoff_tui.py, and no channel view exists: Fenrir owns that task and replied on the channel that they have not started or edited handoff_tui.py and asked that this task stay on the channel-side half. So handoff_tui.py is untouched by this session, and the read-only refusal test in step 5 waits with it - there is no key yet to refuse. Fenrir will coordinate the shared read query with `silence_record` and Epona's proposed snapshot helper before building the view.
+
+Verified so far on Python 3.9.10 and 3.12.7: 305 helper tests (14 new) and 54 root tests pass, check_versions.py at 1.22.0 across 6 manifests, sync_manifests.py --check, validate --root ., package_skill.py, and git diff --check clean. Used in anger once: `silence` on this repository's live channel reports five sessions silent with reports 6 to 14 hours old and broadcast messages unread for four and a half hours, and Rangda was nudged with a question about who commits handoff_channel.py, whose lease/sweep work is still uncommitted in the same file this task edited. Nothing here is committed.
+
+Original claim: In progress under Garuda on Claude Code, claimed after the view task above acquired an owner, as this entry required. Coordination on the channel: Fenrir owns 'Show the agent channel in the handoff viewer' and its last report is 4.5 hours old, so whether that session is live is unknown and its view does not exist yet. This task therefore starts on the half that shares no file with it - the non-response definition, the nudge write in handoff_channel.py, its tests, and the documentation - and holds the handoff_tui.py key until Fenrir's channel view lands or Fenrir says they have not started it. Nothing here is a capability verdict: a nudge is a message, and an unanswered nudge leaves availability unknown.
+
+Original brief: Pending and unclaimed, offered to any session. Raised by the user as an option inside the channel view above, so it depends on that task's structure and both touch handoff_tui.py and handoff_channel.py. Two sessions must not hold these at once: claim this only after the view task has an owner, and coordinate on the channel. The design constraint is already settled by the skill: silence is not evidence, so a nudge is a message and never a capability verdict or takeover authority. Whoever claims this writes its own name and harness into the heading before starting.
+Reassigned 2026-09-10: moved from unassigned to Garuda in the handoff viewer at
+the user's direction. No state or step boxes were changed, and the entry keeps
+its place in ledger order.
 
 ## 2026-09-10 - Commit and push Task B (owner: Fenrir) (harness: Codex)
 
@@ -48,6 +135,66 @@ Status: Complete. With access enabled, rebased c802848 onto origin/main at 24fba
 
 Final verification of the rebased tree on Python 3.9.10: all 54 root tests and 264 helper tests pass, including both tmux integration tests that failed under the previous restricted environment. check_versions.py reports 1.21.0 consistently; sync_manifests.py --check, package_skill.py, guard validate, and git diff --check pass. No tag, release, or model evaluation was run. Replied to Epona confirming ownership and the plan; publication is now achieved and no permission blocker remains.
 
+## 2026-09-10 - Build an evaluation runner (Task C) (owner: Garuda) (harness: Claude Code)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Extend the evals.json schema with kind, ledger, required, forbidden, and rubric, and add the three negative scenarios.
+- [x] Add scripts/run_evals.py with isolated fixtures, --list, --dry-run, config matrix, deterministic grader, optional blinded judge, and --canary.
+- [x] Add tests/test_evals.py grader and schema regression tests starting from the direct-edit and false-trigger failures.
+- [x] Write the maintainer document covering isolation limits, grading honesty, and the ablation baseline.
+- [x] Run the full CI set and record verification and the handoff.
+
+Status: Complete. `scripts/run_evals.py` runs each scenario in a fixture repository created outside this checkout under a temporary HOME, and writes the `eval-*/<config>/run-*` layout `summarize_evals.py` already consumes; the summarizer is untouched. Two lanes grade: a deterministic one that matches command fragments as ordered tokens within one command line (so `apply --root . --expect-version V` satisfies `apply --expect-version`) and checks the fixture repository, and an optional blinded judge that must return evidence for every expectation or the run stays ungraded. `eval_metadata.json` lists only what an invocation graded, so a judge-less run claims nothing about the prose expectations. The suite is 14 scenarios: the 11 existing ones gained fixtures and fragments, and 12, 13, and 14 cover the non-triggers the description spends its words on - a read-only question with no ledger, two agents in a tree with no ledger, and an explicit /handoff:status against one. A seeded-no-ledger scenario fails deterministically if a HANDOFF.md appeared, which is what made a non-trigger testable at all. `skills/handoff/evals/README.md` is the maintainer document and records that isolation is context isolation and not a security boundary, that judge scores are evidence and not ground truth, that a small score movement without repetitions is not a regression, and that missing token counts stay unknown. Verified on Python 3.9.10 and 3.12.7: check_versions.py, sync_manifests.py --check, both unittest suites (291 helper, 54 root), guard validate --root ., package_skill.py, and git diff --check all pass; --list, --dry-run, a full 14-scenario two-configuration matrix, and --canary in both directions were exercised against stand-in CLIs, which are not model results and are not reported as evaluations. No model has been run against this suite. Committed as 24fba89 and pushed to origin/main, which also published Epona's f10f92f ahead of it; the remote moved from b845b09 to 24fba89. Staging used git hash-object and update-index to commit file contents rather than whole working-tree files, because CLAUDE.md and CONTRIBUTING.md also carry Rangda's and Fenrir's uncommitted lines: the commit holds this task's Evals paragraph and behavioral-scenarios sentence only, and HANDOFF.md at that commit carries this entry alone. Their working-tree lines are untouched and still theirs to commit, and the CLAUDE.md gap Epona flagged is now closed for the Evals section but still open for the manifest rule. The exact committed tree was verified before pushing on Python 3.9.10 and 3.12.7: 52 root tests, 264 helper tests, check_versions.py at 1.21.0 across 5 manifests, sync_manifests.py --check, validate --root ., package_skill.py, and git diff --check.
+
+## 2026-09-10 - Generate the plugin manifests and discover them by glob (owner: Epona) (harness: Claude Code)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Add scripts/sync_manifests.py generating every known *-plugin manifest from the SKILL.md frontmatter and one host table.
+- [x] Rewrite scripts/check_versions.py to discover *-plugin/ directories by glob so a new host cannot be missed.
+- [x] Add tests/test_manifests.py starting from the stale untracked .kimi-plugin case.
+- [x] Regenerate the manifests so the drifted copy matches, leaving tracked manifests byte-identical.
+- [x] Run sync_manifests.py --check in CI and record the decision in CLAUDE.md.
+- [x] Verify the full CI set and record the handoff.
+
+Status: Complete. The version is written by hand in one place, `skills/handoff/SKILL.md`, and `scripts/sync_manifests.py` generates every manifest under `*-plugin/` from it plus one host table. `scripts/check_versions.py` now discovers manifests by globbing `*-plugin/` instead of naming four paths, which is why the drift was invisible: `.kimi-plugin/plugin.json` sat at 1.17.0 through five releases with CI green, and Rangda's step recording a bump across "the five manifests" counted the five the old check knew. The glob now reports six.
+
+Two boundaries are deliberate. A host directory absent from disk is never created, because whether a host is supported is a decision rather than a side effect; a host present but absent from the generator's `HOSTS` table is checked and reported but never written, because no verified shape for it exists and inventing one ships a broken manifest. Per the user's choice, `.kimi-plugin/` stays untracked, so CI sees two hosts and the local copy stays consistent.
+
+Only the version is taken from the skill. The listing description is a constant in the generator, so Fenrir's Task B rewrite of the model-visible description cannot reach a storefront. That preserves the decision Fenrir recorded in CONTRIBUTING.md.
+
+Verification: the full CI set passed on Python 3.9.10 and 3.12.7 - check_versions (1.22.0 across 6 manifests), the new `sync_manifests.py --check`, 291 helper tests, 19 root tests (8 new in `tests/test_manifests.py`), `validate --root .` exit 0, package_skill, and `git diff --check` clean. The failure was reproduced live before the fix: the rewritten check exited 1 listing `.kimi-plugin/plugin.json` at 1.17.0 against five at 1.22.0. The generator reproduces all four tracked manifests byte-for-byte, so its first run rewrote exactly one file, the drifted one; a test asserts that byte identity so a later formatting change cannot quietly rewrite the tracked manifests. Nothing ships: the generator is root tooling and is not in `RUNTIME_FILES`.
+
+Also updated: `CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING.md` release step 1, and the README version sentence. Nothing is committed. `CONTRIBUTING.md` is edited by Fenrir in parallel; my change is confined to release step 1 and their Task B paragraphs are intact.
+
+Commit: f10f92f on main, not pushed. At the user's direction only files with no other
+owner's changes in them were staged: `scripts/sync_manifests.py`,
+`scripts/check_versions.py`, `tests/test_manifests.py`, `.github/workflows/ci.yml`, and
+`AGENTS.md`. The doc updates in `CLAUDE.md`, `CONTRIBUTING.md` release step 1, and the
+README version sentence are correct in the working tree but stayed uncommitted, because
+those three files also carry Rangda's and Fenrir's completed work and git stages whole
+files. Known gap for whoever commits them next: at f10f92f the committed `CLAUDE.md`
+still describes the superseded five-manifest rule while the committed code generates
+the manifests. Garuda's in-flight Task C files and the untracked `.kimi-plugin/` were
+not staged. Committed to `main` rather than a branch because two peers are working this
+same tree on `main` and switching HEAD would move it under them; every release in this
+ledger landed on `main`.
+
+Verified against the CI scenario the untracked decision creates: a clean clone of
+f10f92f has no `.kimi-plugin/`, and there `check_versions.py` reports 5 manifests in
+agreement and `sync_manifests.py --check` passes, with all 12 new tests green.
+
 ## 2026-09-10 - Put the audit-and-write sequence in the skill description (Task B) (owner: Fenrir) (harness: Codex)
 
 State:
@@ -73,7 +220,7 @@ Handoff: No Task B implementation remains; changes are uncommitted and no releas
 
 Publication 2026-09-10: Task B and the requested README explanation are pushed in 2a1680a843cf6551151489ce33a37cbb6fa54167, rebased onto the published Task A/C history. Final checks pass: 54 root and 264 helper tests, including the previously blocked tmux integration tests. See the completed Commit and push Task B entry for the publication evidence.
 
-## 2026-09-10 - Build an evaluation runner (Task C) (owner: Garuda) (harness: Claude Code)
+## 2026-09-09 - Make exhaustion handling deterministic across harnesses (owner: Rangda) (harness: Claude Code)
 
 State:
 
@@ -82,13 +229,15 @@ State:
 
 Steps:
 
-- [x] Extend the evals.json schema with kind, ledger, required, forbidden, and rubric, and add the three negative scenarios.
-- [x] Add scripts/run_evals.py with isolated fixtures, --list, --dry-run, config matrix, deterministic grader, optional blinded judge, and --canary.
-- [x] Add tests/test_evals.py grader and schema regression tests starting from the direct-edit and false-trigger failures.
-- [x] Write the maintainer document covering isolation limits, grading honesty, and the ablation baseline.
-- [x] Run the full CI set and record verification and the handoff.
+- [x] Add ledger lease parsing, validation, and the lease/sweep commands to the guard (skills/handoff/scripts/handoff_guard.py).
+- [x] Add nonce challenge/attest to the channel with per-peer cost limits (skills/handoff/scripts/handoff_channel.py).
+- [x] Document the three-layer protocol in references/agent-channel.md and SKILL.md.
+- [x] Add regression tests for expiry, renewal, conflicts, and unanswered challenges.
+- [x] Bump the version across the five manifests and run the full CI set.
 
-Status: Complete. `scripts/run_evals.py` runs each scenario in a fixture repository created outside this checkout under a temporary HOME, and writes the `eval-*/<config>/run-*` layout `summarize_evals.py` already consumes; the summarizer is untouched. Two lanes grade: a deterministic one that matches command fragments as ordered tokens within one command line (so `apply --root . --expect-version V` satisfies `apply --expect-version`) and checks the fixture repository, and an optional blinded judge that must return evidence for every expectation or the run stays ungraded. `eval_metadata.json` lists only what an invocation graded, so a judge-less run claims nothing about the prose expectations. The suite is 14 scenarios: the 11 existing ones gained fixtures and fragments, and 12, 13, and 14 cover the non-triggers the description spends its words on - a read-only question with no ledger, two agents in a tree with no ledger, and an explicit /handoff:status against one. A seeded-no-ledger scenario fails deterministically if a HANDOFF.md appeared, which is what made a non-trigger testable at all. `skills/handoff/evals/README.md` is the maintainer document and records that isolation is context isolation and not a security boundary, that judge scores are evidence and not ground truth, that a small score movement without repetitions is not a regression, and that missing token counts stay unknown. Verified on Python 3.9.10 and 3.12.7: check_versions.py, sync_manifests.py --check, both unittest suites (291 helper, 54 root), guard validate --root ., package_skill.py, and git diff --check all pass; --list, --dry-run, a full 14-scenario two-configuration matrix, and --canary in both directions were exercised against stand-in CLIs, which are not model results and are not reported as evaluations. No model has been run against this suite. Committed as 24fba89 and pushed to origin/main, which also published Epona's f10f92f ahead of it; the remote moved from b845b09 to 24fba89. Staging used git hash-object and update-index to commit file contents rather than whole working-tree files, because CLAUDE.md and CONTRIBUTING.md also carry Rangda's and Fenrir's uncommitted lines: the commit holds this task's Evals paragraph and behavioral-scenarios sentence only, and HANDOFF.md at that commit carries this entry alone. Their working-tree lines are untouched and still theirs to commit, and the CLAUDE.md gap Epona flagged is now closed for the Evals section but still open for the manifest rule. The exact committed tree was verified before pushing on Python 3.9.10 and 3.12.7: 52 root tests, 264 helper tests, check_versions.py at 1.21.0 across 5 manifests, sync_manifests.py --check, validate --root ., package_skill.py, and git diff --check.
+Status: Complete. Exhaustion is now handled by construction rather than detection, because no signal for an exhausted model exists on every harness and silence cannot separate an exhausted agent from an idle healthy one. Guard `lease` records an owner-declared renewal deadline as a `Lease:` line on that owner's whole unfinished bucket, `lease_state` decides expiry from the ledger and the clock alone, and any peer runs `sweep` to perform the release the owner authorized in advance, through `swap_ledger` with the entry's boxes, order, and status preserved. Channel `challenge`/`attest` bind a capability proof to a fresh nonce, checked against the current ledger version; it cannot be broadcast and a repeat probe inside five minutes returns the open challenge, because probing spends the budget being asked about. An attestation clears an `unavailable` state that a poll still cannot; a released session stays released. Host hooks are unchanged and are now documented as layer 3: they write records earlier, they never decide.
+
+Verification: the whole CI set passed on Python 3.9.10, the older of the two versions CI runs - 291 helper tests (26 new), 6 packaging/eval tests, check_versions.py (1.22.0 agrees across all five manifests), validate --root . (exit 0), package_skill.py, and git diff --check. The new tests start from the failure cases: a lease naming another owner, a non-UTC deadline treated as invalid rather than expired, a fenced example read as documentation, sweep leaving active and invalid leases alone and releasing nothing on a stale version (exit 3), a wrong or replayed or third-party attestation refused, and silence leaving capability unknown. Exercised live in this checkout: a lease was declared on this entry, reported as active, and cleared before completion; a two-session challenge round trip was run in a scratch repository. No new files ship, so the packaging allowlist is unchanged. The version was bumped but nothing was committed, tagged, or released.
 
 ## 2026-09-09 - Release 1.21.0 (owner: Lamassu) (harness: Cursor)
 

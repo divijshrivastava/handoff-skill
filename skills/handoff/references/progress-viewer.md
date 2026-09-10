@@ -74,10 +74,12 @@ tasks, then Enter on a task to read its steps and full status text.
 | Key | Action |
 | --- | --- |
 | Tab, a, t | Switch views, or open Agents / Tasks directly |
+| c | Open the local agent channel |
+| s (Channel) | Toggle messages and registered sessions |
 | Up/Down, k/j | Select a row or scroll task details |
 | Page Up/Page Down, Home/End | Move through long lists or details |
 | gg, G | Jump to the first or last line, in a list or in details |
-| Enter | Open the selected owner's tasks or task details |
+| Enter | Open tasks or details; in Channel, filter by session or read a message |
 | b, Escape, Backspace | Close details, then clear the owner filter |
 | r | Refresh immediately |
 | x | Cut the selected task, or put a held one back |
@@ -86,6 +88,30 @@ tasks, then Enter on a task to read its steps and full status text.
 | q, Ctrl-C | Quit and restore the terminal |
 
 Resize the terminal as needed; live mode needs at least 64 columns and 14 rows.
+
+### Agent channel
+
+Press `c` to read who sent what to whom from the repository's local
+`.handoff/channel.sqlite3`. The list shows the newest 200 messages, local send
+time, sender, recipient, acknowledgement, and a body preview. A notice appears
+when older messages are omitted. Enter opens the full body, message kind and
+ID, reply reference, and the names of agents that acknowledged it. Broadcasts
+show `all agents` and the count of recorded receipts; this count is not a
+delivery or completion total.
+
+Press `s` for registered sessions, with each agent's harness and reported state
+and report age. Enter on a session filters the recent messages to those it sent
+or received, including broadcasts. `b` returns to the session list after closing
+message details; `s` returns to all messages. Reports are claims with an age,
+not a live-process check. Receipts establish acknowledgement, not task progress.
+
+The channel refreshes at the existing interval and with `r`, independently of
+ledger changes, while preserving selection by message or session ID. It reads
+sessions, messages and receipts in one read-only transaction, creates no channel
+when one is absent, and never acknowledges on an agent's behalf. A failed read
+keeps the last snapshot with a visible stale warning until the next good read.
+Channel reading works under `--read-only`; the snapshot and bar modes retain
+their existing ledger summaries.
 Long headings are clipped in lists and available in task details. The screen
 shows read errors and retains the last readable snapshot, labelled stale, until
 the file becomes readable again. A missing file at startup is retried without

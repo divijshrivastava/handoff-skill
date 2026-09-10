@@ -10,11 +10,19 @@ import json
 import math
 import os
 from pathlib import Path
+import sqlite3
 import sys
 import textwrap
 import time
 import unicodedata
 
+try:
+    from handoff_channel import Channel
+except ImportError:  # an installed copy without the channel module beside it
+    # The bar resolves a viewer out of plugin caches and runs on every
+    # status-line tick. A viewer that cannot start prints nothing at all, so
+    # a missing channel degrades this one view instead of the whole program.
+    Channel = None  # type: ignore[assignment]
 from handoff_guard import (
     OWNER_RE,
     Task,
@@ -393,14 +401,38 @@ class Dashboard:
         self.moved: tuple[str, str] | None = None
         # Half of a typed "gg", waiting one keypress for its pair.
         self.pending_g = False
+        self.channel = Channel(watcher.path.resolve().parent) if Channel else None
+        self.channel_data: dict = {"sessions": [], "messages": [], "truncated": False}
+        self.channel_error: str | None = (
+            None if Channel else "channel module is not installed beside this viewer")
+        self.channel_mode = "messages"
+        self.channel_session: str | None = None
+        self.channel_detail: dict | None = None
+
+    def selected_session(self) -> dict | None:
+        """Expose a stable session identity for session actions such as nudging."""
+        if self.view != "channel":
+            return None
+        if self.channel_mode == "sessions":
+            rows = self.rows()
+            return rows[self.selected][1] if rows else None
+        return next((row for row in self.channel_data["sessions"]
+                     if row["id"] == self.channel_session), None)
 
     def tasks(self) -> list[Task]:
         snapshot = self.watcher.snapshot
         return [task for task in snapshot.tasks
                 if self.owner is None or owner_name(task) == self.owner] if snapshot else []
 
-    def rows(self) -> list[tuple[str, Counts | Task]]:
+    def rows(self) -> list[tuple[str, Counts | Task | dict]]:
         snapshot = self.watcher.snapshot
+        if self.view == "channel":
+            rows = self.channel_data[self.channel_mode]
+            if self.channel_mode == "messages" and self.channel_session:
+                session = self.channel_session
+                rows = [row for row in rows if row["sender"] == session
+                        or row["recipient"] in (session, "*")]
+            return [(row["id"], row) for row in rows]
         if self.view == "agents":
             return [(owner, counts) for owner, counts in owner_counts(snapshot.tasks)] if snapshot else []
         return [(task.heading, task) for task in self.tasks()]
@@ -409,6 +441,18 @@ class Dashboard:
         rows = self.rows()
         key = rows[min(self.selected, len(rows) - 1)][0] if rows else None
         self.watcher.poll()
+        if self.view == "channel":
+            if self.channel is None:
+                self.channel_data = {"sessions": [], "messages": [], "truncated": False}
+            else:
+                try:
+                    self.channel_data = self.channel.history()
+                    self.channel_error = None
+                except (OSError, ValueError, sqlite3.Error) as error:
+                    self.channel_error = clean_text(str(error))
+            if self.channel_detail:
+                self.channel_detail = next((row for row in self.channel_data["messages"]
+                                            if row["id"] == self.channel_detail["id"]), None)
         rows = self.rows()
         self.selected = next((i for i, row in enumerate(rows) if row[0] == key),
                              min(self.selected, max(0, len(rows) - 1)))
@@ -501,7 +545,7 @@ class Dashboard:
 
     def jump_to_end(self, bottom: bool) -> None:
         """Go to the first or last line of whatever is being read."""
-        if self.detail:
+        if self.detail or self.channel_detail:
             self.detail_offset = sys.maxsize if bottom else 0
         elif bottom:
             self.selected = max(0, len(self.rows()) - 1)
@@ -578,22 +622,44 @@ class Dashboard:
         if key in (ord("q"), ord("Q"), 3):
             return False
         if key in (27, ord("b"), curses.KEY_BACKSPACE, 127):
-            if self.detail:
+            if self.channel_detail:
+                self.channel_detail = None
+            elif self.view == "channel" and self.channel_session:
+                self.channel_session = None
+                self.channel_mode = "sessions"
+                self.selected = self.offset = 0
+            elif self.detail:
                 self.detail = None
             elif self.owner is not None:
                 self.owner = None
                 self.selected = self.offset = 0
             return True
-        if key in (9, ord("a"), ord("t")):
+        if self.view == "channel" and key == ord("s"):
+            self.channel_mode = "messages" if self.channel_mode == "sessions" else "sessions"
+            self.channel_session = None
+            self.channel_detail = None
+            self.selected = self.offset = 0
+        elif key in (9, ord("a"), ord("t"), ord("c")):
             self.view = ("tasks" if self.view == "agents" else "agents") if key == 9 else (
-                "agents" if key == ord("a") else "tasks")
+                {ord("a"): "agents", ord("t"): "tasks", ord("c"): "channel"}[key])
             self.owner = None
             self.detail = None
+            self.channel_detail = None
             self.selected = self.offset = 0
-        elif key in (10, 13, curses.KEY_ENTER) and not self.detail:
+            if self.view == "channel":
+                self.refresh()
+        elif key in (10, 13, curses.KEY_ENTER) and not (self.detail or self.channel_detail):
             rows = self.rows()
             if rows:
-                if self.view == "agents":
+                if self.view == "channel":
+                    if self.channel_mode == "sessions":
+                        self.channel_session = rows[self.selected][0]
+                        self.channel_mode = "messages"
+                        self.selected = self.offset = 0
+                    else:
+                        self.channel_detail = rows[self.selected][1]
+                        self.detail_offset = 0
+                elif self.view == "agents":
                     self.owner = rows[self.selected][0]
                     self.view = "tasks"
                     self.selected = self.offset = 0
@@ -604,7 +670,7 @@ class Dashboard:
             movement = {curses.KEY_DOWN: 1, ord("j"): 1, curses.KEY_UP: -1,
                         ord("k"): -1, curses.KEY_NPAGE: page, curses.KEY_PPAGE: -page}
             if key in movement:
-                if self.detail:
+                if self.detail or self.channel_detail:
                     self.detail_offset = max(0, self.detail_offset + movement[key])
                 else:
                     self.selected = min(max(0, len(self.rows()) - 1),
@@ -612,6 +678,21 @@ class Dashboard:
             elif key in (curses.KEY_HOME, curses.KEY_END):
                 self.jump_to_end(bottom=key == curses.KEY_END)
         return True
+
+    def channel_detail_lines(self, width: int) -> list[str]:
+        row = self.channel_detail
+        if row is None:
+            return []
+        owners = {session["id"]: session["owner"] for session in self.channel_data["sessions"]}
+        acknowledged = ", ".join(owners.get(session, session) for session in row["acknowledged_by"])
+        blocks = [f"{row['sender_owner']} -> {row['recipient_owner']}",
+                  f"Sent: {datetime.fromtimestamp(row['created']):%Y-%m-%d %H:%M:%S} (local time)",
+                  f"Kind: {row['kind']} | ID: {row['id']}",
+                  f"Acknowledged by: {acknowledged or 'none'}",
+                  f"Reply to: {row['reply_to'] or 'none'}", ""] + row["body"].splitlines()
+        wrap_width = max(1, width // 2 if any(cell_width(c) == 2 for b in blocks for c in b) else width)
+        return [line for block in blocks for line in
+                (textwrap.wrap(clean_text(block), width=wrap_width) or [""])]
 
     def detail_lines(self, width: int) -> list[str]:
         task = self.detail
@@ -651,15 +732,17 @@ class Dashboard:
         write(1, f" {self.watcher.path}", curses.A_DIM)
         for i, line in enumerate(summary_lines(self.watcher.snapshot), 2):
             write(i, " " + line)
-        write(5, " [Agents]   Tasks    Enter: owner's tasks" if self.view == "agents" else
+        write(5, f" Agents   Tasks   [Channel]  {self.channel_mode} | s: sessions/messages" if self.view == "channel" else
+              " [Agents]   Tasks   c: Channel   Enter: owner's tasks" if self.view == "agents" else
               f" Agents   [Tasks]    Owner: {self.owner or 'all'}", curses.A_BOLD)
         content_start = 7
         available = max(1, height - content_start - 4)
         rows = self.rows()
-        if self.detail:
-            lines = self.detail_lines(width - 3)
+        if self.detail or self.channel_detail:
+            lines = self.channel_detail_lines(width - 3) if self.channel_detail else self.detail_lines(width - 3)
             self.detail_offset = min(self.detail_offset, max(0, len(lines) - available))
-            write(6, f" TASK DETAILS | lines {self.detail_offset + 1}-{min(len(lines), self.detail_offset + available)}"
+            label = "MESSAGE" if self.channel_detail else "TASK"
+            write(6, f" {label} DETAILS | lines {self.detail_offset + 1}-{min(len(lines), self.detail_offset + available)}"
                   f"/{len(lines)} | b: back", curses.A_DIM)
             for i, line in enumerate(lines[self.detail_offset:self.detail_offset + available]):
                 write(content_start + i, " " + line)
@@ -671,6 +754,10 @@ class Dashboard:
                 heading = "RECORDED OWNER (newest first)" + ("  HARNESS" if shown else "")
                 write(6, f" {fit(heading, max(12, width - 55), pad=True)}"
                       "  DONE/TASK  WIP WAIT  CHECKED STEPS  !bad ?old", curses.A_DIM)
+            elif self.view == "channel":
+                session = self.selected_session()
+                write(6, " SESSION / HARNESS | REPORTED STATE / AGE" if self.channel_mode == "sessions" else
+                      f" TIME   SENDER -> RECIPIENT | ACK | BODY (newest; {session['owner'] if session else 'all'})", curses.A_DIM)
             else:
                 write(6, " STATE          STEPS    TASK / OWNER (ledger order)", curses.A_DIM)
             self.offset = max(0, min(self.offset, self.selected))
@@ -682,6 +769,16 @@ class Dashboard:
                 if self.view == "agents":
                     line = owner_row(label, value, width - 3,
                                      harness_label(label, harnesses, recent))
+                elif self.view == "channel":
+                    if self.channel_mode == "sessions":
+                        age = max(0, int(time.time() - value["reported"]))
+                        line = f"{value['owner']} / {value['harness']} | {value['state']} / {age}s ago"
+                    else:
+                        stamp = datetime.fromtimestamp(value["created"]).strftime("%H:%M")
+                        ack = (f"{len(value['acknowledged_by'])} ack" if value["recipient"] == "*" else
+                               "acked" if value["acknowledged_by"] else "unacked")
+                        line = (f"{stamp} {value['sender_owner']} -> {value['recipient_owner']} | {ack} | "
+                                + " ".join(value["body"].split()))
                 else:
                     held = self.cut is not None and self.cut.heading == value.heading
                     landed = self.moved is not None and self.moved[0] == value.heading
@@ -691,18 +788,24 @@ class Dashboard:
                 mark = "*" if held else "+" if landed else ">" if selected else " "
                 write(content_start + i, mark + line, curses.A_REVERSE if selected else 0)
             if not rows:
-                write(content_start, " No entries to display. Waiting for ledger changes.")
+                write(content_start, " No channel messages or sessions to display. Waiting for channel changes."
+                      if self.view == "channel" else " No entries to display. Waiting for ledger changes.")
 
         write(height - 4, self.banner(), curses.A_BOLD)
         snapshot = self.watcher.snapshot
-        if self.watcher.error:
+        if self.view == "channel" and self.channel_error:
+            write(height - 3, f" STALE CHANNEL | READ ERROR: {self.channel_error}", curses.A_BOLD)
+        elif self.watcher.error:
             stamp = f"STALE (last read {snapshot.read_at:%H:%M:%S})" if snapshot else "WAITING"
             write(height - 3, f" {stamp} | READ ERROR: {self.watcher.error}", curses.A_BOLD)
         elif snapshot:
             write(height - 3, f" Read {snapshot.read_at:%H:%M:%S} | revision {snapshot.version[:12]}"
                   f" | {len(rows)} {self.view} | automatic refresh", curses.A_DIM)
-        write(height - 2, " Checkbox counts only; owner labels do not prove authorship or live activity.", curses.A_DIM)
-        write(height - 1, " q quit | Tab a/t views | j/k arrows | gg/G top/end | Enter open"
+        write(height - 2, (" Showing newest 200 messages only. " if self.channel_data["truncated"] else " ")
+              + "Reading does not acknowledge. Reports and receipts do not prove live activity."
+              if self.view == "channel" else
+              " Checkbox counts only; owner labels do not prove authorship or live activity.", curses.A_DIM)
+        write(height - 1, " q quit | a/t/c views | j/k move | gg/G ends | Enter open"
               " | b back | r reload"
               + ("" if self.read_only else " | x cut | p give"))
         screen.refresh()

@@ -187,6 +187,132 @@ class WatcherTests(unittest.TestCase):
             self.assertIn("Recovered", watcher.snapshot.tasks[0].heading)
 
 
+class ChannelViewTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name).resolve()
+        self.path = self.root / "HANDOFF.md"
+        self.path.write_text(entry(), encoding="utf-8")
+        self.channel = tui.Channel(self.root)
+        watcher = tui.Watcher(self.path)
+        watcher.poll()
+        self.dashboard = tui.Dashboard(watcher, read_only=True)
+
+    def press(self, *keys):
+        for key in keys:
+            self.dashboard.handle_key(key, FakeCurses, 5)
+
+    def actors(self):
+        a = self.channel.join("Alpha", "Codex")["session"]
+        b = self.channel.join("Beta", "Claude Code")["session"]
+        return a, b
+
+    def test_empty_channel_is_visible_without_creating_local_state(self):
+        self.press(ord("c"))
+        screen = Screen()
+        self.dashboard.draw(screen, FakeCurses)
+        self.assertIn("[Channel]", screen.frames[-1])
+        self.assertIn("No channel messages", screen.frames[-1])
+        self.assertFalse((self.root / ".handoff").exists())
+
+    def test_broadcast_rendering_details_and_reads_preserve_receipts_and_ledger(self):
+        a, b = self.actors()
+        self.channel.send(a, "*", "First line\nSecond line with 中文 and \x1b controls", "broadcast")
+        before = self.channel.path.read_bytes(), self.path.read_bytes()
+        self.press(ord("c"))
+        screen = Screen()
+        self.dashboard.draw(screen, FakeCurses)
+        self.assertIn("Alpha -> all agents", screen.frames[-1])
+        self.assertIn("0 ack", screen.frames[-1])
+        self.press(10)
+        self.assertIn("Second line", " ".join(self.dashboard.channel_detail_lines(80)))
+        self.assertNotIn("\x1b", " ".join(self.dashboard.channel_detail_lines(80)))
+        self.press(ord("G"))
+        for height, width in ((14, 64), (24, 80), (40, 150)):
+            self.dashboard.draw(Screen(height, width), FakeCurses)
+        self.assertEqual((self.channel.path.read_bytes(), self.path.read_bytes()), before)
+        self.assertEqual(len(self.channel.inbox(b)), 1)
+
+    def test_refresh_keeps_message_selection_and_updates_acknowledgements(self):
+        a, b = self.actors()
+        self.channel.send(a, b, "First", "first")
+        self.press(ord("c"), 10)
+        self.channel.send(b, a, "Second", "second")
+        self.channel.acknowledge(b, "first")
+        self.dashboard.refresh()
+        self.assertEqual(self.dashboard.rows()[self.dashboard.selected][0], "first")
+        self.assertEqual(self.dashboard.channel_detail["acknowledged_by"], [b])
+        self.assertIn("Acknowledged by: Beta", self.dashboard.channel_detail_lines(80))
+
+    def test_session_selection_filters_messages_and_back_restores_sessions(self):
+        a, b = self.actors()
+        c = self.channel.join("Gamma", "Other")["session"]
+        self.channel.send(a, b, "Direct", "direct")
+        self.channel.send(a, "*", "Broadcast", "broadcast")
+        self.press(ord("c"), ord("s"))
+        self.dashboard.selected = next(i for i, row in enumerate(self.dashboard.rows()) if row[0] == c)
+        self.assertEqual(self.dashboard.selected_session()["id"], c)
+        self.press(10)
+        self.assertEqual([row[0] for row in self.dashboard.rows()], ["broadcast"])
+        self.assertEqual(self.dashboard.selected_session()["id"], c)
+        self.press(ord("b"))
+        self.assertEqual(self.dashboard.channel_mode, "sessions")
+        self.assertIsNone(self.dashboard.channel_session)
+        self.press(ord("s"), ord("t"))
+        self.assertEqual(self.dashboard.view, "tasks")
+
+    def test_failed_read_keeps_last_snapshot_and_recovers(self):
+        a, b = self.actors()
+        self.channel.send(a, b, "Saved", "saved")
+        self.press(ord("c"))
+        with patch.object(self.dashboard.channel, "history", side_effect=OSError("temporarily unreadable")):
+            self.dashboard.refresh()
+        screen = Screen()
+        self.dashboard.draw(screen, FakeCurses)
+        self.assertIn("STALE CHANNEL", screen.frames[-1])
+        self.assertIn("Saved", screen.frames[-1])
+        self.dashboard.refresh()
+        self.assertIsNone(self.dashboard.channel_error)
+
+
+class ChannelAbsentTests(unittest.TestCase):
+    """The viewer must start where handoff_channel.py is not installed beside it.
+
+    The bar resolves a viewer out of plugin caches and runs on every status-line
+    tick, so a module-level channel import turned a missing module into a viewer
+    that printed nothing at all. Degrade the one view instead.
+    """
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        root = Path(self.temp.name).resolve()
+        self.path = root / "HANDOFF.md"
+        self.path.write_text(entry(), encoding="utf-8")
+        self.original = tui.Channel
+        tui.Channel = None
+        self.addCleanup(setattr, tui, "Channel", self.original)
+        watcher = tui.Watcher(self.path)
+        watcher.poll()
+        self.dashboard = tui.Dashboard(watcher, read_only=True)
+
+    def test_the_dashboard_builds_without_a_channel(self):
+        self.assertIsNone(self.dashboard.channel)
+        self.assertIn("not installed", self.dashboard.channel_error)
+
+    def test_the_channel_view_refreshes_empty_rather_than_raising(self):
+        self.dashboard.view = "channel"
+        self.dashboard.refresh()
+        self.assertEqual(self.dashboard.channel_data,
+                         {"sessions": [], "messages": [], "truncated": False})
+        self.assertIn("not installed", self.dashboard.channel_error)
+
+    def test_task_progress_still_reports(self):
+        self.dashboard.refresh()
+        self.assertTrue(self.dashboard.rows())
+
+
 class DashboardTests(unittest.TestCase):
     def dashboard(self):
         watcher = tui.Watcher(Path("unused"))
