@@ -63,7 +63,9 @@ npx skills add divijshrivastava/handoff-skill --skill handoff
 
 Add `-g` to install globally.
 
-**Requirements:** Git, an agent with repository read/edit access, and Python 3.9+ for the optional helper. The live dashboard needs a POSIX terminal; the optional agent bar wrapper also needs tmux 3.2+. Handoff needs no API key, external service, or third-party Python package.
+**Requirements:** Git, an agent with repository read/edit access, and Python 3.9+ for the optional helper. The live dashboard needs a POSIX terminal; the optional agent bar wrapper also needs tmux 3.2+. Handoff needs no API key, hosted service, or third-party Python package: everything above runs locally.
+
+The one feature that leaves the machine is opt-in and is off until you configure it. `handoff_publish.py` copies the ledger and each agent's slice to a host you own, over `ssh`, using keys you already have. It is one way, it stores no credential, and it does nothing until `.handoff/vps.json` exists. See [publishing to a VPS](skills/handoff/references/vps-publish.md).
 
 ## Use it
 

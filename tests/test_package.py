@@ -99,6 +99,8 @@ class PackageTests(unittest.TestCase):
             with ZipFile(first[0]) as archive:
                 self.assertIn("handoff/scripts/handoff_tui.py", archive.namelist())
                 self.assertIn("handoff/scripts/handoff_codex.py", archive.namelist())
+                self.assertIn("handoff/scripts/handoff_publish.py", archive.namelist())
+                self.assertIn("handoff/references/vps-publish.md", archive.namelist())
                 self.assertIn("handoff/scripts/handoff-tui", archive.namelist())
                 self.assertIn("handoff/scripts/handoff-bar", archive.namelist())
                 self.assertIn("handoff/references/harness-setup.md", archive.namelist())

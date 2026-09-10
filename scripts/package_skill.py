@@ -18,11 +18,13 @@ RUNTIME_FILES = (
     "references/ledger-contract.md",
     "references/harness-setup.md",
     "references/progress-viewer.md",
+    "references/vps-publish.md",
     "scripts/handoff-bar",
     "scripts/handoff-tui",
     "scripts/handoff_codex.py",
     "scripts/handoff_guard.py",
     "scripts/handoff_channel.py",
+    "scripts/handoff_publish.py",
     "scripts/handoff_keys.py",
     "scripts/handoff_tui.py",
 )
