@@ -171,20 +171,20 @@ Steps:
 - [x] Run the CI command set and record the handoff.
 
 Status: Completed. Cause: released 1.23.0 claim_name writes "name\nharness\n" with no ledger path (ledger recording exists only as uncommitted work in this checkout, not at HEAD), and claim_matches_ledger counted a path-less claim as belonging to every ledger. Reproduced with handoff_tui.py --once: Barong 2 (recent) listed in this repository. Fix: removed claim_matches_ledger; recent_claims_for_ledger (and so held_sessions_for_ledger and agent_rows) now uses claim_is_for_ledger, so a claim without a ledger path belongs to no repository and appears only in machine scope with repository "?". After the fix --once lists no Barong 2 in repo scope and machine scope still lists it. Tests: test_repo_scope_excludes_a_claim_that_names_no_ledger (tui) and a legacy record in test_recent_claims_for_ledger_ignore_other_repositories (guard). skills/handoff/tests: 518 OK on Python 3.9 and 3.12; check_versions, validate, package_skill, git diff --check pass. Root tests/ has 3 errors, all from untracked stray root copies (tests/test_handoff_keys.py, tests/test_handoff_tui.py importing scripts/handoff_tui.py and scripts/handoff_keys.py), independent of this change and absent from a clean checkout; left untouched. Consequence: sessions still running a released helper show no waiting row in repo scope until they run a helper that records the ledger path. Nothing committed.
-## 2026-09-11 - Open agents in iTerm tabs and require ledger before code (owner: Viracocha) (harness: Cursor)
+## 2026-09-11 - Open agents in iTerm tabs and require ledger before code (owner: Nanook) (harness: opencode)
 
 State:
 
 - [x] In progress
-- [ ] Completed
+- [x] Completed
 
 Steps:
 
-- [ ] Fix iTerm tab spawn so the agent command runs in the new tab, not the previous one.
-- [ ] Print a ledger-before-code banner when --with wraps an agent; document the rule in SKILL.md.
-- [ ] Verify skills/handoff/tests pass for the changed helpers.
+- [x] Fix iTerm tab spawn so the agent command runs in the new tab, not the previous one. Resolved by c88d7bf (1.24.0): `_open_iterm2` in `skills/handoff/scripts/handoff_keys.py` creates a tab and writes the command to the new tab's session; covered by `test_open_iterm2_uses_an_interactive_shell`.
+- [x] Print a ledger-before-code banner when --with wraps an agent; document the rule in SKILL.md. Shipped in 1.24.0: the `agent_startup_notice` banner is printed by the `--with` shim before the agent starts (`skills/handoff/scripts/handoff_codex.py`), and the rule is documented under `## Ledger before task work` in `skills/handoff/SKILL.md`; covered by the startup-notice and wrapped-launch tests.
+- [x] Verify skills/handoff/tests pass for the changed helpers. 547 tests pass on Python 3.9 and 3.12 with no helper changes needed.
 
-Status: In progress. iTerm tab spawn and ledger-before-code startup banner.
+Status: Complete. Taken over by Nanook from Viracocha on 2026-09-11 at the user's direction. Progressive audit found both outcomes already shipped in 1.24.0 (c88d7bf) after this entry was written, so no code changes were made; Nanook verified current source and ran 547 helper tests OK on Python 3.9 and 3.12. Originally owned by Viracocha.
 
 ## 2026-09-11 - Stop tmux integration tests leaking servers (owner: Ilmarinen)
 
