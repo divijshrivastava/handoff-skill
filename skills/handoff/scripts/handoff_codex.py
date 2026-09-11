@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import atexit
 import base64
 import json
 import os
@@ -30,6 +31,18 @@ from handoff_keys import (
 # overlay the user is looking through rather than a screen they switched to.
 POPUP_SIZE = ("90%", "85%")
 DEFAULT_AGENT = "codex"
+_open_sessions: list[AgentSession] = []
+
+
+def _cleanup_open_sessions() -> None:
+    for session in list(_open_sessions):
+        try:
+            session.close()
+        except (OSError, subprocess.SubprocessError):
+            pass
+
+
+atexit.register(_cleanup_open_sessions)
 
 
 def viewer_command(ledger: Path, interval: float, read_only: bool) -> str:
@@ -74,6 +87,8 @@ class AgentSession:
         # own status is recorded here rather than trusted to the format.
         self.status_file = socket.parent / "status"
         self.client: subprocess.Popen | None = None
+        self._closed = False
+        _open_sessions.append(self)
 
     def run(self, *arguments: str) -> subprocess.CompletedProcess:
         return subprocess.run(self.command + list(arguments), env=self.environment,
@@ -102,6 +117,11 @@ class AgentSession:
 
     def start(self, agent: str, arguments: list[str], cwd: Path, row: str,
               session_seed: str | None = None) -> None:
+        # start() may follow an explicit close() that only tore down a probe
+        # server; reopen the lifecycle so a later close() reaches kill-server.
+        self._closed = False
+        if self not in _open_sessions:
+            _open_sessions.append(self)
         size = shutil.get_terminal_size((100, 30))
         # Keep a placeholder alive until remain-on-exit and the footer are set,
         # even if the agent will fail immediately. Multiple argv items bypass sh.
@@ -153,8 +173,18 @@ class AgentSession:
             return 1
 
     def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
         try:
-            self.call("kill-server", check=False)
+            _open_sessions.remove(self)
+        except ValueError:
+            pass
+        try:
+            try:
+                self.call("kill-server", check=False)
+            except (OSError, subprocess.SubprocessError):
+                pass
         finally:
             if self.client is not None:
                 try:

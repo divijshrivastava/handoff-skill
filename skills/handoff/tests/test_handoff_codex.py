@@ -5,8 +5,10 @@ import base64
 import json
 import os
 from pathlib import Path
+import re
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -27,6 +29,50 @@ def entry(owner="Codex", done=False):
     mark = "x" if done else " "
     return (f"## Task (owner: {owner})\n\nState:\n- [x] In progress\n"
             f"- [{mark}] Completed\n\nSteps:\n- [{mark}] Verify.\n\nStatus: Recorded.\n")
+
+
+HC_TEST_SOCKET_PREFIX = "hc-test-"
+_ORPHAN_SOCKET = re.compile(
+    rf"-S ({re.escape(tempfile.gettempdir())}/{HC_TEST_SOCKET_PREFIX}[^ ]+/s)\b")
+
+
+def cleanup_stale_hc_test_servers() -> int:
+    """Kill orphaned integration-test tmux servers from interrupted runs."""
+    tmux = shutil.which("tmux")
+    if not tmux or os.name == "nt":
+        return 0
+    env = {key: value for key, value in os.environ.items()
+           if key not in ("TMUX", "TMUX_PANE")}
+    command = [tmux, "-f", os.devnull]
+    killed = 0
+    sockets: set[str] = set()
+    for socket in Path(tempfile.gettempdir()).glob(f"{HC_TEST_SOCKET_PREFIX}*/s"):
+        if socket.exists():
+            sockets.add(str(socket))
+    listing = subprocess.run(["ps", "-axo", "pid=,command="],
+                             capture_output=True, text=True, encoding="utf-8",
+                             errors="replace").stdout
+    orphan_pids: list[int] = []
+    for line in listing.splitlines():
+        match = _ORPHAN_SOCKET.search(line)
+        if match:
+            sockets.add(match.group(1))
+            orphan_pids.append(int(line.split(None, 1)[0]))
+    for socket in sockets:
+        if subprocess.run([*command, "-S", socket, "kill-server"],
+                          capture_output=True, env=env).returncode == 0:
+            killed += 1
+    for pid in orphan_pids:
+        try:
+            os.kill(pid, signal.SIGTERM)
+            killed += 1
+        except ProcessLookupError:
+            pass
+    return killed
+
+
+def setUpModule():
+    cleanup_stale_hc_test_servers()
 
 
 class FooterTests(unittest.TestCase):
@@ -174,6 +220,14 @@ class SessionTests(unittest.TestCase):
             session.close()
         call.assert_called_once_with("kill-server", check=False)
         session.client.wait.assert_called_once_with(timeout=3)
+
+    def test_close_is_idempotent_and_drops_the_session_from_atexit_cleanup(self):
+        session = codex.AgentSession("tmux", Path("private"))
+        with patch.object(session, "call") as call:
+            session.close()
+            session.close()
+        call.assert_called_once_with("kill-server", check=False)
+        self.assertNotIn(session, codex._open_sessions)
 
 
 class RunTests(unittest.TestCase):
@@ -357,6 +411,21 @@ class TmuxProbeTests(unittest.TestCase):
 
 @unittest.skipIf(os.name == "nt" or not shutil.which("tmux"), "needs POSIX tmux")
 class TmuxIntegrationTests(unittest.TestCase):
+    def test_stale_server_sweep_kills_a_leftover_probe(self):
+        with tempfile.TemporaryDirectory(prefix=HC_TEST_SOCKET_PREFIX) as directory:
+            base = Path(directory)
+            session = codex.AgentSession(shutil.which("tmux"), base / "s")
+            session.run("new-session", "-d", "-s", "probe",
+                        sys.executable, "-c", "import time; time.sleep(60)")
+            self.assertTrue(session.run("has-session", "-t", "probe").returncode == 0)
+            self.assertGreaterEqual(cleanup_stale_hc_test_servers(), 1)
+            self.assertNotEqual(session.run("has-session", "-t", "probe").returncode, 0)
+            session._closed = True
+            try:
+                codex._open_sessions.remove(session)
+            except ValueError:
+                pass
+
     def server(self, base: Path) -> codex.AgentSession:
         """A private server on this machine's tmux, or a skip when sockets are denied."""
         session = codex.AgentSession(shutil.which("tmux"), base / "s")

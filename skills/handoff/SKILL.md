@@ -3,7 +3,7 @@ name: handoff
 description: "Coordinate progressive repository work across agents with a shared HANDOFF.md ledger. Use in repositories with a ledger, or on explicit handoff requests: /handoff:init, 'initialise the handoff', /handoff:continue, /handoff:status, /handoff:view, /handoff:purge, or 'use handoff'. After activation: handoff_guard.py name --root <repo> claims the session name; handoff_guard.py read --root <repo> returns ledger text and version in one snapshot. Audit later entries and code before treating unchecked boxes as unfinished. For ledger writes: handoff_guard.py apply --root <repo> --expect-version V with --entry FILE or --content FILE. On exit 3, re-read and re-audit; never retry the stale write. A user viewer assignment is required queued work: finish your current task, then audit and complete it without another prompt. Skip read-only questions needing no tracking or mutation."
 license: MIT
 metadata:
-  version: "1.22.0"
+  version: "1.23.0"
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
 ---
 

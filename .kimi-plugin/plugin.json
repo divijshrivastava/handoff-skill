@@ -1,6 +1,6 @@
 {
   "name": "handoff",
-  "version": "1.22.0",
+  "version": "1.23.0",
   "description": "Coordinate progressive repository work across agents with a shared HANDOFF.md ledger.",
   "keywords": ["handoff", "ledger", "multi-agent", "task-tracking"],
   "author": { "name": "Divij Shrivastava" },

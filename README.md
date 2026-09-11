@@ -12,7 +12,7 @@ Handoff is an agent skill for repositories where work continues across multiple 
 
 A real session: `/handoff:continue` claims a name and runs preflight on the left while the dashboard on the right tracks five agents against the same ledger.
 
-**Version:** 1.21.0
+**Version:** 1.23.0
 
 ## Why Handoff?
 
@@ -266,11 +266,12 @@ Run this from a checkout of this repository, or use the script's path inside you
 | Page Up/Page Down, Home/End | Move through long lists or details |
 | gg, G | Jump to the first or last line |
 | Enter | Open the selected owner's tasks or task details |
-| b, Escape, Backspace | Close details, then clear the owner filter |
+| b, Escape, Backspace | Close details, then return to Agents with the owner still selected |
 | r | Refresh immediately |
-| x | Cut the selected task, or put a held one back |
-| p | Give the held task to the selected agent or task's owner |
-| P | Give the held task to an owner name you type |
+| x | Cut the selected task or step, or put a held item back |
+| X | Cut the whole task from task details |
+| p | Give the held task or step to the selected agent or task's owner |
+| P | Give the held task or step to an owner name you type |
 | q, Ctrl-C | Quit and restore the terminal |
 
 Live mode needs at least 64 columns and 14 rows. Pass `--read-only` for a terminal that must never write.
@@ -284,6 +285,8 @@ message for an agent, and reported state does not prove live activity.
 ### Handing a task to another agent
 
 When an agent is about to run out of context, select the task, press `x` to cut it, then press `p` on the receiving agent (or `P` to type a name). That rewrites the task's owner label, drops its harness field, appends a dated note to its status, and uses the same locked compare-and-swap as the writer helper. State, steps, and ledger order stay untouched — order records when work was raised; the label records who holds it.
+
+You can also move **one step** from a multi-step task. Open the task with Enter, select a checkbox with `j`/`k`, press `x` to hold that step, then `p` on the receiving agent. The new entry keeps the step's checkbox and continuation text; the source keeps its owner, remaining steps, and history, with a dated transfer note and a quoted record of what moved. If the selected step is the only one left, the whole task moves instead. Press `X` in details to cut the entire task. See [progress-viewer.md](skills/handoff/references/progress-viewer.md) for lease behavior on step splits.
 
 **An assignment is an instruction to finish the task.** Every receiving agent
 must finish its current task, then audit and complete viewer-assigned work,
@@ -320,6 +323,10 @@ handoff-tui --root /path/to/your/repo
 It takes the same flags, plus `--which` to print the copy it resolved. Copy it rather than symlinking, so it does not point back into a version-pinned path. Resolution order: `$HANDOFF_TUI`, a sibling `handoff_tui.py`, project and global `.agents`/`.codex` skill installs, the registered plugin install, the plugin cache and marketplace directories, then `$HANDOFF_SKILL_REPO`.
 
 Percentages reflect recorded checkboxes and heading owners. They do not measure effort or verify who performed a step; stale entries still need an audit. See [controls and counting rules](skills/handoff/references/progress-viewer.md).
+
+### Optional leadership
+
+When several agents share one repository, a user may designate one session as a **leader** that divides work among the others. Leadership is opt-in: a repository with no `Lead:` line behaves exactly as before. The leader assigns by writing the ledger — never by messaging — through `scripts/handoff_lead.py`, using the same locked compare-and-swap as every other writer. Assignments carry acceptance deadlines, path reservations, and stable task IDs for dependencies. See [leader.md](skills/handoff/references/leader.md) for the mandate, acceptance lifecycle, and command surface.
 
 ## Slash commands
 
@@ -599,6 +606,7 @@ Handoff is a coordination convention, not a permissions system or general-purpos
 | [SKILL.md](skills/handoff/SKILL.md) | Runtime contract for agents |
 | [ledger-contract.md](skills/handoff/references/ledger-contract.md) | Ledger format spec |
 | [progress-viewer.md](skills/handoff/references/progress-viewer.md) | Dashboard controls, counting rules, bar mode |
+| [leader.md](skills/handoff/references/leader.md) | Optional leader coordinator: mandate, assignments, acceptance |
 | [harness-setup.md](skills/handoff/references/harness-setup.md) | Per-harness status-line setup, platform matrix, key installer |
 | [design-notes.md](skills/handoff/references/design-notes.md) | Lineage and design influences |
 
