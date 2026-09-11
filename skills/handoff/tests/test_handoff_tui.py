@@ -341,6 +341,16 @@ class DashboardTests(unittest.TestCase):
         watcher.snapshot = tui.parse_snapshot(entry("First") + entry("Second", owner="Agent B"))
         return tui.Dashboard(watcher)
 
+    def test_back_from_owner_task_list_returns_to_agents_view(self):
+        dashboard = self.dashboard()
+        dashboard.handle_key(FakeCurses.KEY_DOWN, FakeCurses, 5)
+        dashboard.handle_key(10, FakeCurses, 5)
+        self.assertEqual((dashboard.view, dashboard.owner), ("tasks", "Agent B"))
+        dashboard.handle_key(ord("b"), FakeCurses, 5)
+        self.assertEqual(dashboard.view, "agents")
+        self.assertIsNone(dashboard.owner)
+        self.assertEqual(dashboard.rows()[dashboard.selected][0], "Agent B")
+
     def test_owner_drilldown_task_details_back_and_view_switch(self):
         dashboard = self.dashboard()
         dashboard.handle_key(FakeCurses.KEY_DOWN, FakeCurses, 5)
@@ -354,8 +364,8 @@ class DashboardTests(unittest.TestCase):
         self.assertIsNone(dashboard.detail)
         dashboard.handle_key(ord("b"), FakeCurses, 5)
         self.assertIsNone(dashboard.owner)
-        dashboard.handle_key(9, FakeCurses, 5)
         self.assertEqual(dashboard.view, "agents")
+        self.assertEqual(dashboard.rows()[dashboard.selected][0], "Agent B")
         self.assertFalse(dashboard.handle_key(ord("q"), FakeCurses, 5))
 
     def test_vim_gg_and_g_shift_jump_to_the_ends(self):
@@ -837,6 +847,190 @@ class MoveTests(unittest.TestCase):
         self.assertIn("HOLDING 'First' from Agent A", screen.frames[-1])
         self.assertIn("x cut", frame)
         self.assertNotIn("x cut", self.dashboard(read_only=True).banner())
+
+
+class StepMoveTests(unittest.TestCase):
+    """Details showed two checkboxes, but x silently selected their whole task."""
+
+    setUp = MoveTests.setUp
+    write = MoveTests.write
+    read = MoveTests.read
+    dashboard = MoveTests.dashboard
+    press = MoveTests.press
+
+    def test_select_second_step_and_paste_inside_another_owners_list(self):
+        before = tui.count_tasks(tui.parse_tasks(self.read()))
+        dashboard = self.press(self.dashboard(), 10, ord("j"), ord("x"), ord("a"))
+        dashboard.selected = [row[0] for row in dashboard.rows()].index("Agent B")
+        self.press(dashboard, 10, ord("p"))
+        tasks = tui.parse_tasks(self.read())
+        moved, source, other = tasks
+        self.assertEqual((moved.owner, moved.steps, moved.state),
+                         ("Agent B", [(False, "Outcome 1.")], "in_progress"))
+        self.assertEqual((source.owner, source.steps, source.state),
+                         ("Agent A", [(True, "Outcome 0.")], "in_progress"))
+        self.assertEqual(other.steps, [(True, "Outcome 0."), (False, "Outcome 1.")])
+        self.assertIn("Recorded status.", source.status)
+        self.assertIn("Source task: First (owner: Agent A)", moved.status)
+        self.assertIn("Agent B must finish its current task", moved.status)
+        self.assertIn("> - [ ] Outcome 1.", self.read())
+        self.assertEqual(guard.structure_findings(self.read()), [])
+        after = tui.count_tasks(tasks)
+        self.assertEqual((before.checked, before.steps), (after.checked, after.steps))
+        self.assertEqual((dashboard.view, dashboard.owner), ("tasks", "Agent B"))
+        self.assertEqual(dashboard.selected_task().heading, moved.heading)
+        self.assertIsNone(dashboard.cut)
+
+    def test_checked_step_keeps_its_recorded_completion(self):
+        dashboard = self.press(self.dashboard(), 10, ord("x"), ord("P"))
+        self.press(dashboard, *map(ord, "Agent C"), 10)
+        moved, source, _ = tui.parse_tasks(self.read())
+        self.assertEqual((moved.steps, moved.state), ([(True, "Outcome 0.")], "completed"))
+        self.assertEqual(source.steps, [(False, "Outcome 1.")])
+        self.assertNotIn("Execution request", moved.status)
+
+    def test_x_marks_only_selected_step_and_uppercase_x_holds_whole_task(self):
+        dashboard = self.press(self.dashboard(), 10, ord("j"), ord("x"))
+        frame = "\n".join(dashboard.detail_lines(100))
+        self.assertIn("* [ ] Outcome 1.", frame)
+        self.assertNotIn("* [x] Outcome 0.", frame)
+        self.assertIn("Outcome 1.", dashboard.banner())
+        self.press(dashboard, ord("x"))
+        self.assertIsNone(dashboard.cut)
+        self.press(dashboard, ord("X"))
+        self.assertIsNone(dashboard.cut_step)
+        dashboard.view, dashboard.owner, dashboard.detail = "tasks", "Agent B", None
+        self.press(dashboard, ord("p"))
+        self.assertEqual(len(tui.parse_tasks(self.read())), 2)
+        self.assertEqual(tui.parse_tasks(self.read())[0].owner, "Agent B")
+
+    def test_read_only_details_allow_selection_but_never_cut_or_paste(self):
+        before = self.read()
+        dashboard = self.press(self.dashboard(read_only=True), 10, ord("j"), ord("x"), ord("P"))
+        self.assertEqual(dashboard.detail_step, 1)
+        self.assertIsNone(dashboard.cut)
+        self.assertIsNone(dashboard.prompt)
+        self.assertEqual(self.read(), before)
+
+    def test_refresh_after_peer_reorders_steps_invalidates_the_cut(self):
+        dashboard = self.press(self.dashboard(), 10, ord("j"), ord("x"))
+        peer = self.read().replace("Outcome 1.", "Peer changed this step.", 1)
+        self.write(peer)
+        dashboard.refresh()
+        self.assertIsNone(dashboard.cut)
+        self.assertIn("ledger changed", dashboard.banner())
+        dashboard.view, dashboard.owner, dashboard.detail = "tasks", "Agent B", None
+        self.press(dashboard, ord("p"))
+        self.assertEqual(self.read(), peer)
+
+    def test_peer_write_without_refresh_is_rejected_by_cas(self):
+        dashboard = self.press(self.dashboard(), 10, ord("j"), ord("x"))
+        peer = self.read() + entry("New peer task", owner="Agent C")
+        self.write(peer)
+        dashboard.view, dashboard.owner, dashboard.detail = "tasks", "Agent B", None
+        self.press(dashboard, ord("p"))
+        self.assertEqual(self.read(), peer)
+        self.assertIsNone(dashboard.cut)
+        self.assertIn("ledger changed", dashboard.banner())
+
+    def test_wrapped_steps_remain_selectable_in_a_small_terminal(self):
+        self.write(entry(steps=(False, False, False)).replace("Outcome 0.", "A long step " * 30))
+        dashboard = self.press(self.dashboard(), 10, ord("j"))
+        screen = Screen(14, 64)
+        dashboard.draw(screen, FakeCurses)
+        self.assertIn("> [ ] Outcome 1.", screen.frames[-1])
+        self.assertIn("x cut step | p give", screen.frames[-1])
+        self.press(dashboard, ord("k"))
+        dashboard.draw(screen, FakeCurses)
+        self.assertIn("> [ ] A long step", screen.frames[-1])
+        self.press(dashboard, FakeCurses.KEY_NPAGE)
+        self.assertIsNone(dashboard.detail_step)
+        self.press(dashboard, ord("x"))
+        self.assertIsNone(dashboard.cut)
+        self.assertIn("Select a step", dashboard.banner())
+
+    def test_only_remaining_step_moves_original_task_and_clears_old_lease(self):
+        text = entry("Only", steps=(False,)) + "\nLease: owner=Agent A; expires=2099-01-01T00:00:00Z; policy=release\n"
+        self.write(text + entry("Other", owner="Agent B"))
+        dashboard = self.press(self.dashboard(), 10, ord("x"), ord("a"))
+        dashboard.selected = [row[0] for row in dashboard.rows()].index("Agent B")
+        self.press(dashboard, ord("p"))
+        tasks = tui.parse_tasks(self.read())
+        self.assertEqual(len(tasks), 2)
+        self.assertEqual((tasks[0].heading, tasks[0].steps),
+                         ("Only (owner: Agent B)", [(False, "Outcome 0.")]))
+        self.assertIsNone(tasks[0].lease)
+        self.assertEqual(guard.structure_findings(self.read()), [])
+
+    def test_release_to_unassigned_keeps_step_unchecked_and_pending(self):
+        dashboard = self.press(self.dashboard(), 10, ord("j"), ord("x"), ord("P"))
+        self.press(dashboard, *map(ord, "unassigned"), 10)
+        moved = tui.parse_tasks(self.read())[0]
+        self.assertIsNone(moved.owner)
+        self.assertEqual((moved.steps, moved.state), ([(False, "Outcome 1.")], "pending"))
+        self.assertNotIn("Execution request", moved.status)
+
+    def test_helper_preserves_continuation_fences_and_source_context(self):
+        text = self.read().replace("- [ ] Outcome 1.",
+                                  "- [ ] Outcome 1.\n  A continuation.\n\n  ```md\n  - [ ] Example only.\n  ```", 1)
+        task = tui.parse_tasks(text)[0]
+        updated, heading = guard.transfer_step(text, task.line, task.heading, 1,
+                                               task.steps[1], "Agent B")
+        tasks = tui.parse_tasks(updated)
+        self.assertEqual(tasks[0].heading, heading)
+        self.assertEqual(tasks[0].steps, [(False, "Outcome 1.")])
+        self.assertIn("  A continuation.\n\n  ```md", updated)
+        self.assertIn(">   A continuation.", updated)
+        self.assertIn("> Status: Recorded status.\n> Continuation and next action.", updated)
+        self.assertEqual(guard.structure_findings(updated), [])
+
+    def test_duplicate_step_text_moves_only_the_selected_occurrence(self):
+        text = entry("Duplicates", steps=(False, False)).replace("Outcome 1.", "Outcome 0.")
+        text = text.replace("- [ ] Outcome 0.\n", "- [ ] Outcome 0.\n  First context.\n", 1)
+        task = tui.parse_tasks(text)[0]
+        updated, _ = guard.transfer_step(text, task.line, task.heading, 1, task.steps[1], "Agent B")
+        split = updated.index("## Duplicates")
+        self.assertNotIn("First context", updated[:split])
+        self.assertIn("  First context.", updated[split:])
+
+    def test_helper_refuses_stale_step_and_malformed_source(self):
+        text = self.read()
+        task = tui.parse_tasks(text)[0]
+        with self.assertRaisesRegex(ValueError, "selected step changed"):
+            guard.transfer_step(text, task.line, task.heading, 1, (True, "Wrong"), "Agent B")
+        malformed = text.replace("- [x] In progress", "- [ ] In progress", 1)
+        with self.assertRaisesRegex(ValueError, "structure"):
+            guard.transfer_step(malformed, task.line, task.heading, 1, task.steps[1], "Agent B")
+
+    def test_split_keeps_source_lease_and_gives_recipient_no_borrowed_deadline(self):
+        text = self.read().replace("\n## Second", "\nLease: owner=Agent A; expires=2099-01-01T00:00:00Z; policy=release\n\n## Second", 1)
+        source = tui.parse_tasks(text)[0]
+        updated, _ = guard.transfer_step(text, source.line, source.heading, 1, source.steps[1], "Agent B")
+        moved, remaining, _ = tui.parse_tasks(updated)
+        self.assertIsNone(moved.lease)
+        self.assertEqual(remaining.lease.owner, "Agent A")
+        self.assertEqual(guard.structure_findings(updated), [])
+
+    def test_duplicate_destination_titles_remain_distinguishable(self):
+        text = self.read()
+        source = tui.parse_tasks(text)[0]
+        first, heading = guard.transfer_step(text, source.line, source.heading, 1,
+                                             source.steps[1], "Agent C", "2026-09-11")
+        other = tui.parse_tasks(first)[-1]
+        second, other_heading = guard.transfer_step(first, other.line, other.heading, 1,
+                                                    other.steps[1], "Agent C", "2026-09-11")
+        self.assertNotEqual(heading, other_heading)
+        self.assertIn(heading, second)
+        self.assertIn(other_heading, second)
+        self.assertEqual(guard.structure_findings(second), [])
+
+    def test_resize_keeps_selected_step_visible_without_another_keypress(self):
+        self.write(entry().replace("Outcome 0.", "A long step " * 30))
+        dashboard = self.press(self.dashboard(), 10, ord("j"))
+        dashboard.draw(Screen(40, 150), FakeCurses)
+        screen = Screen(14, 64)
+        dashboard.draw(screen, FakeCurses)
+        self.assertIn("> [ ] Outcome 1.", screen.frames[-1])
 
 
 class MoveFeedbackTests(MoveTests):

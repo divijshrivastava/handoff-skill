@@ -39,6 +39,7 @@ from handoff_guard import (
     recall_name,
     replace_owner,
     swap_ledger,
+    transfer_step,
 )
 
 UNASSIGNED = "unassigned"
@@ -446,8 +447,13 @@ class Dashboard:
         self.offset = 0
         self.detail: Task | None = None
         self.detail_offset = 0
+        self.detail_step: int | None = None
+        self.focus_step = False
+        self.detail_width = 0
         self.read_only = read_only
         self.cut: Task | None = None
+        self.cut_step: int | None = None
+        self.cut_version: str | None = None
         self.prompt: str | None = None
         self.message: str | None = None
         # The last completed move, kept until the next one: a transient message
@@ -561,16 +567,22 @@ class Dashboard:
         self.selected = next((i for i, row in enumerate(rows) if row[0] == key),
                              min(self.selected, max(0, len(rows) - 1)))
         if self.detail:
+            old_steps = self.detail.steps
             self.detail = next((task for task in self.tasks()
                                 if task.heading == self.detail.heading), None)
+            if self.detail is None or self.detail.steps != old_steps:
+                self.detail_step = None
         if self.cut:
-            # Track the held task across peer writes so its recorded line stays
-            # current; a task that left the ledger cannot be moved from here.
             tasks = self.watcher.snapshot.tasks if self.watcher.snapshot else []
-            self.cut = next((task for task in tasks if task.heading == self.cut.heading), None)
-            if self.cut is None:
+            current = next((task for task in tasks if task.heading == self.cut.heading), None)
+            if current is None:
+                self.clear_cut()
                 self.message = ("The held task is no longer in the ledger. "
                                 "Nothing was moved.")
+            elif self.cut_version and self.cut_version != self.watcher.snapshot.version:
+                self.clear_cut()
+                self.message = ("The ledger changed while this view held the task, so nothing "
+                                "was moved. Check the new entries and cut again.")
         if self.moved is not None:
             tasks = self.watcher.snapshot.tasks if self.watcher.snapshot else []
             if not any(task.heading == self.moved[0] for task in tasks):
@@ -616,31 +628,40 @@ class Dashboard:
             return
         title = fit(task_title(task), 46)
         if label == owner_name(task):
-            self.cut = None
+            self.clear_cut()
             self.message = f"'{title}' is already recorded to {label}. Nothing was moved."
             return
         if not self.watcher.path.is_file():
             self.message = f"Nothing was moved: no ledger at {self.watcher.path}."
             return
         owner = None if label == UNASSIGNED else label
+        landing = replace_owner(task.heading, owner)
+
+        def build(text: str) -> str:
+            nonlocal landing
+            if self.cut_step is not None:
+                text, landing = transfer_step(
+                    text, task.line, task.heading, self.cut_step,
+                    task.steps[self.cut_step], owner,
+                )
+                return text
+            return reassign_task(text, task.line, task.heading, owner, move_note(task, label),
+                                 mark_in_progress=owner is not None and task.state != "completed")
+
         try:
             result = swap_ledger(
-                self.watcher.path, snapshot.version,
-                lambda text: reassign_task(
-                    text, task.line, task.heading, owner, move_note(task, label),
-                    mark_in_progress=owner is not None and task.state != "completed",
-                ),
+                self.watcher.path, self.cut_version or snapshot.version, build,
             )
         except (OSError, UnicodeError, ValueError, RuntimeError) as error:
             self.message = f"Nothing was moved: {error}"
             return
         if result["status"] == "applied":
-            self.cut = None
+            self.clear_cut()
             self.message = None
-            self.show_landing(replace_owner(task.heading, owner), label)
+            self.show_landing(landing, label)
             return
         if result["status"] == "conflict":
-            self.cut = None
+            self.clear_cut()
             self.message = ("The ledger changed while this view held the task, so nothing "
                             "was moved. Reloaded; check the new entries and cut again.")
         else:
@@ -649,10 +670,25 @@ class Dashboard:
             return
         self.refresh()
 
+    def clear_cut(self) -> None:
+        self.cut = None
+        self.cut_step = None
+        self.cut_version = None
+
+    def held_title(self) -> str:
+        if self.cut is None:
+            return ""
+        if self.cut_step is not None:
+            return self.cut.steps[self.cut_step][1]
+        return task_title(self.cut)
+
     def jump_to_end(self, bottom: bool) -> None:
         """Go to the first or last line of whatever is being read."""
         if self.detail or self.channel_detail:
             self.detail_offset = sys.maxsize if bottom else 0
+            if self.detail:
+                self.detail_step = None if bottom or not self.detail.steps else 0
+                self.focus_step = not bottom
         elif bottom:
             self.selected = max(0, len(self.rows()) - 1)
         else:
@@ -685,15 +721,21 @@ class Dashboard:
             return True
         task = self.selected_task()
         if key in (ord("x"), ord("X")):
+            step = self.detail_step if self.detail and key == ord("x") else None
             if task is None:
                 self.message = "Open the Tasks view and select a task to cut it."
-            elif self.cut is not None and self.cut.heading == task.heading:
-                self.cut = None
+            elif self.detail and key == ord("x") and step is None:
+                self.message = "Select a step with j/k to cut it, or X to cut the whole task."
+            elif (self.cut is not None and self.cut.heading == task.heading
+                  and self.cut_step == step):
+                self.clear_cut()
                 self.message = "Released. Nothing is held."
             else:
                 self.cut = task
+                self.cut_step = step
+                self.cut_version = self.watcher.snapshot.version
                 self.moved = None
-                self.message = (f"Cut '{fit(task_title(task), 46)}'. Press p on the receiving "
+                self.message = (f"Cut '{fit(self.held_title(), 46)}'. Press p on the receiving "
                                 "agent or task, P to type a name, x to put it back.")
             return True
         if self.cut is None:
@@ -737,8 +779,12 @@ class Dashboard:
             elif self.detail:
                 self.detail = None
             elif self.owner is not None:
+                previous = self.owner
                 self.owner = None
-                self.selected = self.offset = 0
+                self.view = "agents"
+                rows = self.rows()
+                self.selected = next((i for i, row in enumerate(rows) if row[0] == previous), 0)
+                self.offset = 0
             return True
         if self.view == "channel" and key in (ord("n"), ord("N")):
             self.nudge_selected()
@@ -775,12 +821,22 @@ class Dashboard:
                 else:
                     self.detail = rows[self.selected][1]
                     self.detail_offset = 0
+                    self.detail_step = 0 if self.detail.steps else None
+                    self.focus_step = True
         else:
             movement = {curses.KEY_DOWN: 1, ord("j"): 1, curses.KEY_UP: -1,
                         ord("k"): -1, curses.KEY_NPAGE: page, curses.KEY_PPAGE: -page}
             if key in movement:
-                if self.detail or self.channel_detail:
+                if self.detail and key in (curses.KEY_DOWN, ord("j"), curses.KEY_UP, ord("k")):
+                    count = len(self.detail.steps)
+                    if count:
+                        self.detail_step = (0 if movement[key] > 0 else count - 1) if self.detail_step is None else (
+                            min(count - 1, max(0, self.detail_step + movement[key])))
+                        self.focus_step = True
+                elif self.detail or self.channel_detail:
                     self.detail_offset = max(0, self.detail_offset + movement[key])
+                    self.detail_step = None
+                    self.focus_step = False
                 else:
                     self.selected = min(max(0, len(self.rows()) - 1),
                                         max(0, self.selected + movement[key]))
@@ -804,19 +860,26 @@ class Dashboard:
                 (textwrap.wrap(clean_text(block), width=wrap_width) or [""])]
 
     def detail_lines(self, width: int) -> list[str]:
+        return [line for line, _ in self.detail_rows(width)]
+
+    def detail_rows(self, width: int) -> list[tuple[str, int | None]]:
         task = self.detail
         snapshot = self.watcher.snapshot
         if task is None or snapshot is None:
             return []
         index = snapshot.tasks.index(task)
-        blocks = [task.heading, f"Owner: {owner_name(task)} | State: {task_state(task)}",
-                  f"Steps: {progress(sum(done for done, _ in task.steps), len(task.steps))}", ""]
-        blocks.extend(f"[{'x' if done else ' '}] {step}" for done, step in task.steps)
-        blocks.extend(["", snapshot.statuses[index]])
-        blocks.extend(f"Invalid: {error}" for error in task.errors)
+        blocks = [(block, None) for block in [task.heading,
+                  f"Owner: {owner_name(task)} | State: {task_state(task)}",
+                  f"Steps: {progress(sum(done for done, _ in task.steps), len(task.steps))}", ""]]
+        for step_index, (done, step) in enumerate(task.steps):
+            held = self.cut is not None and self.cut.heading == task.heading and self.cut_step == step_index
+            mark = "*" if held else ">" if self.detail_step == step_index else " "
+            blocks.append((f"{mark} [{'x' if done else ' '}] {step}", step_index))
+        blocks.extend([(block, None) for block in ["", snapshot.statuses[index]]])
+        blocks.extend((f"Invalid: {error}", None) for error in task.errors)
         # Conservative wrapping prevents wide Unicode from falling off the right edge.
-        wrap_width = max(1, width // 2 if any(cell_width(c) == 2 for b in blocks for c in b) else width)
-        return [line for block in blocks for line in
+        wrap_width = max(1, width // 2 if any(cell_width(c) == 2 for b, _ in blocks for c in b) else width)
+        return [(line, step) for block, step in blocks for line in
                 (textwrap.wrap(clean_text(block), width=wrap_width) or [""])]
 
     def draw(self, screen, curses) -> int:
@@ -848,13 +911,26 @@ class Dashboard:
         available = max(1, height - content_start - 4)
         rows = self.rows()
         if self.detail or self.channel_detail:
-            lines = self.channel_detail_lines(width - 3) if self.channel_detail else self.detail_lines(width - 3)
+            if self.detail and width != self.detail_width:
+                self.focus_step = self.detail_step is not None
+            self.detail_width = width
+            detail_rows = ([(line, None) for line in self.channel_detail_lines(width - 3)]
+                           if self.channel_detail else self.detail_rows(width - 3))
+            lines = [line for line, _ in detail_rows]
+            if self.detail and self.focus_step and self.detail_step is not None:
+                start = next((i for i, (_, step) in enumerate(detail_rows) if step == self.detail_step), 0)
+                if start < self.detail_offset:
+                    self.detail_offset = start
+                elif start >= self.detail_offset + available:
+                    self.detail_offset = start - available + 1
+                self.focus_step = False
             self.detail_offset = min(self.detail_offset, max(0, len(lines) - available))
             label = "MESSAGE" if self.channel_detail else "TASK"
             write(6, f" {label} DETAILS | lines {self.detail_offset + 1}-{min(len(lines), self.detail_offset + available)}"
                   f"/{len(lines)} | b: back", curses.A_DIM)
-            for i, line in enumerate(lines[self.detail_offset:self.detail_offset + available]):
-                write(content_start + i, " " + line)
+            for i, (line, step) in enumerate(detail_rows[self.detail_offset:self.detail_offset + available]):
+                selected = self.detail is not None and step is not None and step == self.detail_step
+                write(content_start + i, " " + line, curses.A_REVERSE if selected else 0)
         else:
             if self.view == "agents":
                 harnesses = owner_harnesses(self.tasks())
@@ -921,6 +997,9 @@ class Dashboard:
                 " | b back | r reload")
         if not self.read_only:
             keys += " | n nudge" if self.view == "channel" else " | x cut | p give"
+        if self.detail:
+            keys = (" j/k select step | PgUp/PgDn scroll | b back | a agents | q quit" if self.read_only else
+                    " x cut step | p give | j/k select | a agents | X whole task | b back | q quit")
         write(height - 1, keys)
         screen.refresh()
         return available
@@ -932,7 +1011,7 @@ class Dashboard:
         if self.message:
             return " " + self.message
         if self.cut is not None:
-            return (f" HOLDING '{fit(task_title(self.cut), 46)}' from {owner_name(self.cut)}"
+            return (f" HOLDING '{fit(self.held_title(), 46)}' from {owner_name(self.cut)}"
                     " | p: give to selected | P: type a name | x: release")
         if self.moved is not None:
             # The receiving agent comes first: it is the fact the user is checking,

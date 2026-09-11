@@ -80,14 +80,15 @@ owner.
 | Tab, a, t | Switch views, or open Agents / Tasks directly |
 | c | Open the local agent channel |
 | s (Channel) | Toggle messages and registered sessions |
-| Up/Down, k/j | Select a row or scroll task details |
+| Up/Down, k/j | Select a row; in task details, select an individual step |
 | Page Up/Page Down, Home/End | Move through long lists or details |
 | gg, G | Jump to the first or last line, in a list or in details |
 | Enter | Open tasks or details; in Channel, filter by session or read a message |
-| b, Escape, Backspace | Close details, then clear the owner filter |
+| b, Escape, Backspace | Close details, then return to Agents with the owner still selected |
 | r | Refresh immediately |
-| x | Cut the selected task, or put a held one back |
-| p | Give the held task to the selected agent or task's owner |
+| x | Cut the selected task or detail step; repeat on it to put it back |
+| X | Cut the whole task, including from task details |
+| p | Give the held task or step to the selected agent or task's owner |
 | P | Give the held task to an owner name you type |
 | q, Ctrl-C | Quit and restore the terminal |
 
@@ -130,7 +131,34 @@ then press `p` on the receiving agent in the Agents view, on any task that agent
 already owns, or inside that agent's filtered task list. Press `P` instead to
 type an owner name, which is how a task reaches an agent that has no ledger
 entry yet. The held task is marked `*` and named in the line above the footer;
-`x` again puts it back, and cutting is available from task details too.
+`x` again on the held item puts it back. In task details, `x` cuts the selected
+step and `X` cuts the whole task.
+
+### Moving one step
+
+Open a task with Enter. Use Up/Down or `j`/`k` to select a checkbox, then press
+`x`. Press `a` to open Agents, select the receiving agent, and press `p`; you can
+also open that agent's task list with Enter and paste there. `P` lets you type a
+new owner name. The selected step is highlighted, and the held step is marked
+`*` and named above the footer. Page Up/Page Down and `gg`/`G` scroll the details
+so long status text remains readable; use `j`/`k` to select a step again.
+
+Pasting one step creates an entry in the receiving agent's task list, with the
+step's checkbox and continuation text preserved. The original task keeps its
+owner, remaining steps, state, and status; a dated transfer note and a quoted
+copy of the moved step preserve its history without counting it twice. The new
+entry names the source task and includes its prior status for the receiving
+agent's audit. An unchecked step becomes assigned work with the same execution
+request as a whole-task move; a checked step retains its recorded completion.
+The remaining source task is never automatically marked complete.
+
+If the selected step is the only one left, its original task moves intact.
+The prior owner's lease is cleared on that move; a new assignee must declare
+its own deadline. When splitting a task, its lease stays with the source and
+is not copied to the new entry. Pasting to `unassigned` releases the selected
+scope. Read-only mode disables both step and whole-task moves.
+
+### Seeing and preserving the result
 
 After a successful paste the view opens the receiving agent's task list with the
 moved task selected and marked `+`, so the task is visible under its new owner
@@ -151,7 +179,8 @@ does not check `In progress`.
 The write is the same compare-and-swap `handoff_guard.py apply` uses: the same
 lock, the same version check against the revision on screen, and the same
 refusal to introduce structural errors. If a peer changed the ledger after the
-cut, nothing is written and the view reloads so the move can be reconsidered
+cut, nothing is written and the held item is cleared, including when an automatic
+refresh sees the change before paste. The view reloads so the move can be reconsidered
 against the new entries - that refusal is the point, so do not repeat the move
 without reading what changed.
 

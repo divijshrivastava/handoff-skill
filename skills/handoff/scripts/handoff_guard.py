@@ -991,6 +991,99 @@ def reassign_task(text: str, line: int, heading: str, owner: str | None,
     return result
 
 
+def transfer_step(text: str, line: int, heading: str, step_index: int,
+                  expected_step: tuple[bool, str], owner: str | None,
+                  when: str | None = None) -> tuple[str, str]:
+    """Move one step into an owned task, retaining its source and recorded state.
+
+    This builds ledger text only; callers must run it inside swap_ledger. The
+    source's remaining checkboxes and state are untouched. Its removed step is
+    retained as a quoted historical record, so it is not counted twice. A sole
+    remaining step moves with its original task instead of leaving an empty one.
+    """
+    lines = text.splitlines()
+    locate_task(lines, line, heading)
+    tasks = parse_tasks(text)
+    task = next(task for task in tasks if task.line == line)
+    if not task.modern or task.errors:
+        raise ValueError("Repair this task's structure before moving a step")
+    if not 0 <= step_index < len(task.steps) or task.steps[step_index] != expected_step:
+        raise ValueError("The selected step changed; read the ledger and select it again")
+    if owner is not None:
+        problem = owner_label_error(owner)
+        if problem:
+            raise ValueError(problem)
+        owner = owner.strip()
+    if owner == task.owner:
+        return text, heading
+
+    stamp = when or date.today().isoformat()
+    target = owner or "unassigned"
+    prior_owner = task.owner or "unassigned"
+    done, label = expected_step
+    request = (f" Execution request: {target} must finish its current task, then audit "
+               "and complete this task, including verification, without waiting for "
+               "another user prompt. Preserve prior work; record any concrete blocker "
+               "and next action.") if owner and not done else ""
+    if len(task.steps) == 1:
+        note = (f"Transferred {stamp}: the only remaining step moved with this task "
+                f"from {prior_owner} to {target} in the handoff viewer at the user's "
+                "direction. Step and completion boxes were preserved." + request)
+        # The prior owner's lease is not a deadline the recipient declared.
+        text = set_lease(text, line, heading, None)
+        return (reassign_task(text, line, heading, owner, note,
+                              mark_in_progress=owner is not None and not task.completed),
+                replace_owner(heading, owner))
+
+    masked = outside_fence_lines(lines)
+    end = task_block_end(lines, line)
+    steps_start = next(index for index in range(line, end)
+                       if masked[index].strip() == "Steps:")
+    status_start = next((index for index in range(steps_start + 1, end)
+                         if masked[index].strip().startswith("Status:")), None)
+    if status_start is None:
+        raise ValueError("Step moves require a Status paragraph after Steps")
+    step_lines = [index for index in range(steps_start + 1, status_start)
+                  if (match := BOX_RE.match(masked[index]))
+                  and match.group(2).strip().casefold() not in {"in progress", "completed"}]
+    start = step_lines[step_index]
+    stop = step_lines[step_index + 1] if step_index + 1 < len(step_lines) else status_start
+    block = "\n".join(lines[start:stop]).rstrip()
+    prior_end = status_paragraph_end(masked, line, end)
+    prior_status = "\n".join(lines[status_start:prior_end + 1])
+
+    # A step may itself mention an owner/harness field. Those words belong in
+    # the step, not in the new heading's ownership metadata.
+    title = OWNER_RE.sub("", HARNESS_RE.sub("", label)).strip() or "Transferred step"
+    base = f"{stamp} - {title}"
+    new_heading = replace_owner(base, owner)
+    suffix = 2
+    while any(other.heading == new_heading for other in tasks):
+        new_heading = replace_owner(f"{base} - transfer {suffix}", owner)
+        suffix += 1
+    source_note = (f"Step transferred {stamp} to {target} in the handoff viewer at "
+                   f"the user's direction: {json.dumps(label, ensure_ascii=False)}. "
+                   f"Destination task: {new_heading}. The remaining steps stay here; "
+                   "this transfer does not mark them complete.")
+    lines.insert(prior_end + 1, source_note)
+    # Quote the exact step block, including continuation lines, as history.
+    lines[prior_end + 2:prior_end + 2] = ["", "Transferred step (historical record):"] + [
+        "> " + raw for raw in block.splitlines()]
+    del lines[start:stop]
+    source = "\n".join(lines) + "\n"
+    status = (f"{'Recorded complete' if done else 'Assigned' if owner else 'Unassigned'}. "
+              f"Step transferred {stamp} from {prior_owner} in the handoff viewer at "
+              f"the user's direction. Source task: {heading}. Only the selected step "
+              "moved; its checkbox was preserved. Audit the source context before "
+              "working; moving does not verify work." + request)
+    entry = (f"## {new_heading}\n\nState:\n\n"
+             f"- [{'x' if done or owner else ' '}] In progress\n"
+             f"- [{'x' if done else ' '}] Completed\n\nSteps:\n\n{block}\n\n"
+             f"Status: {status}\n\nSource status at transfer:\n"
+             + "\n".join("> " + raw for raw in prior_status.splitlines()) + "\n")
+    return insert_entry(source, entry), new_heading
+
+
 def atomic_write(path: Path, text: str) -> None:
     """Replace the ledger through a sibling temp file so no reader sees a partial write.
 

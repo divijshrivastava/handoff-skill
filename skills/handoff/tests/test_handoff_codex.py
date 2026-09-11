@@ -308,20 +308,77 @@ class RunTests(unittest.TestCase):
                 self.assertEqual(codex.run_agent(watcher, Path(directory), [], 1, agent="nope"), 1)
 
 
+class TmuxProbeTests(unittest.TestCase):
+    """A tmux startup can report socket denial on stderr with exit status zero."""
+
+    def probe(self, results):
+        case = TmuxIntegrationTests("test_the_viewer_key_binds_in_the_root_table_and_a_bad_key_is_reported")
+        self.addCleanup(case.doCleanups)
+        with patch.object(codex.AgentSession, "close"), patch.object(
+                subprocess, "run", side_effect=results) as run:
+            case.server(Path("private"))
+            return run
+
+    def result(self, code=0, stderr=""):
+        return subprocess.CompletedProcess(["tmux"], code, "", stderr)
+
+    def test_socket_denial_skips_even_when_startup_returns_zero(self):
+        for code in (0, 1):
+            with self.subTest(code=code), self.assertRaisesRegex(unittest.SkipTest, "disallows tmux sockets"):
+                self.probe([self.result(code, "error creating private/s (Operation not permitted)")])
+
+    def test_success_requires_a_connection_to_the_started_session(self):
+        run = self.probe([self.result(), self.result()])
+        self.assertEqual(run.call_count, 2)
+        self.assertEqual(run.call_args.args[0][-3:], ["has-session", "-t", "probe"])
+
+    def test_an_unreachable_server_is_a_failure_not_a_skip(self):
+        with self.assertRaisesRegex(AssertionError, "No such file or directory"):
+            self.probe([self.result(), self.result(1, "error connecting to private/s (No such file or directory)")])
+
+    def test_socket_denial_on_connect_also_skips(self):
+        with self.assertRaisesRegex(unittest.SkipTest, "disallows tmux sockets"):
+            self.probe([self.result(), self.result(1, "error connecting to private/s (Permission denied)")])
+
+    def test_other_startup_errors_still_fail(self):
+        with self.assertRaisesRegex(AssertionError, "unknown option"):
+            self.probe([self.result(1, "unknown option: unsupported")])
+
+    def test_unrelated_permission_errors_are_not_socket_skips(self):
+        try:
+            self.probe([self.result(1, "executable: Permission denied")])
+        except unittest.SkipTest:
+            self.fail("Only socket permission failures may skip integration tests")
+        except AssertionError as error:
+            self.assertIn("executable: Permission denied", str(error))
+        else:
+            self.fail("An unrelated startup error must fail")
+
+
 @unittest.skipIf(os.name == "nt" or not shutil.which("tmux"), "needs POSIX tmux")
 class TmuxIntegrationTests(unittest.TestCase):
     def server(self, base: Path) -> codex.AgentSession:
         """A private server on this machine's tmux, or a skip when sockets are denied."""
         session = codex.AgentSession(shutil.which("tmux"), base / "s")
-        probe = subprocess.run(session.command + ["new-session", "-d", "-s", "probe"],
-                               env=session.environment, capture_output=True, text=True,
-                               encoding="utf-8")
-        if probe.returncode:
-            if "Operation not permitted" in probe.stderr or "Permission denied" in probe.stderr:
-                self.skipTest("environment disallows tmux sockets: " + probe.stderr.strip())
-            self.fail(probe.stderr)
         self.addCleanup(session.close)
+        # A default login shell may exit for reasons unrelated to tmux. Keep
+        # the probe alive until its private server is explicitly cleaned up.
+        probe = session.run("new-session", "-d", "-s", "probe",
+                            sys.executable, "-c", "import time; time.sleep(60)")
+        self.check_socket_result(probe)
+        # tmux 3.6a can emit "error creating ... (Operation not permitted)"
+        # with exit status 0 in a sandbox. A return code alone proves neither
+        # socket creation nor a usable session; check stderr and then connect.
+        self.check_socket_result(session.run("has-session", "-t", "probe"))
         return session
+
+    def check_socket_result(self, result: subprocess.CompletedProcess) -> None:
+        detail = result.stderr.strip()
+        socket_error = "error creating " in detail or "error connecting to " in detail
+        denied = "Operation not permitted" in detail or "Permission denied" in detail
+        if socket_error and denied:
+            self.skipTest("environment disallows tmux sockets: " + detail)
+        self.assertEqual(result.returncode, 0, detail or "tmux probe failed without diagnostics")
 
     def test_the_viewer_key_binds_in_the_root_table_and_a_bad_key_is_reported(self):
         # Codex keeps every other key because this session has no prefix, so the
@@ -329,26 +386,24 @@ class TmuxIntegrationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="hc-test-") as directory:
             base = Path(directory)
             session = self.server(base)
-            command = codex.viewer_command(base / "HANDOFF.md", 1.0, read_only=False)
-            self.assertTrue(session.bind_viewer("C-g", command, base))
-            bound = session.call("list-keys", "-T", "root", "C-g")
-            self.assertIn("display-popup", bound)
-            self.assertIn("handoff_tui.py", bound)
-            self.assertIn(str(base / "HANDOFF.md"), bound)
-            # tmux resolves the key name and the command now, so an unusable
-            # binding is known before the bar advertises it.
-            self.assertFalse(session.bind_viewer("Not-A-Key", command, base))
+            try:
+                command = codex.viewer_command(base / "HANDOFF.md", 1.0, read_only=False)
+                self.assertTrue(session.bind_viewer("C-g", command, base))
+                bound = session.call("list-keys", "-T", "root", "C-g")
+                self.assertIn("display-popup", bound)
+                self.assertIn("handoff_tui.py", bound)
+                self.assertIn(str(base / "HANDOFF.md"), bound)
+                # tmux resolves the key name and the command now, so an unusable
+                # binding is known before the bar advertises it.
+                self.assertFalse(session.bind_viewer("Not-A-Key", command, base))
+            finally:
+                # Stop the server before TemporaryDirectory removes its socket.
+                session.close()
 
     def test_real_pane_input_arguments_format_escaping_and_exit(self):
         with tempfile.TemporaryDirectory(prefix="hc-test-") as directory:
             base = Path(directory)
-            session = codex.AgentSession(shutil.which("tmux"), base / "s")
-            probe = subprocess.run(session.command + ["new-session", "-d", "-s", "probe"],
-                                   env=session.environment, capture_output=True, text=True, encoding="utf-8")
-            if probe.returncode:
-                if "Operation not permitted" in probe.stderr or "Permission denied" in probe.stderr:
-                    self.skipTest("environment disallows tmux sockets: " + probe.stderr.strip())
-                self.fail(probe.stderr)
+            session = self.server(base)
             session.close()
             script = base / "fake codex.py"
             report = base / "received.json"
