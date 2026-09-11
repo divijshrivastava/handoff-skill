@@ -68,7 +68,10 @@ reserved paths, and any unmet `needs`.
 The **Agents** view lists every agent the user can hand work to. By default it
 shows **this repository** only: **waiting** agents lead the list — sessions
 that claimed a name for this ledger on this machine within the last fifteen
-minutes but hold no ledger tasks yet, newest claim first. Opening an agent
+minutes but hold no ledger tasks yet, newest claim first. The holder of an
+active leadership mandate stays listed, tagged `[LEAD]`, until the mandate
+expires or is resigned, even with no tasks and no recent claim; when it holds
+no tasks it heads the list. Opening an agent
 with **N** also asks for an optional task, writes one in-progress intake entry
 for that name (a **Session work** placeholder or a task entry with your
 direction), and passes a typed task to the agent CLI as its opening prompt, so

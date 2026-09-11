@@ -1559,6 +1559,44 @@ class LeaderViewerTests(unittest.TestCase):
         lines = tui.summary_lines(snapshot)
         self.assertTrue(any(line.startswith("LEAD  Agent A") for line in lines))
 
+    def lead(self, owner, expires="2099-01-01T00:00:00Z"):
+        self.write(self.read().replace(
+            "# Handoff\n\n", f"# Handoff\n\nLead: owner={owner}; expires={expires}; "
+            "policy=coordinate; succession=none\n\n"))
+
+    def test_an_active_leader_with_no_tasks_or_recent_claim_stays_listed(self):
+        # Observed: the header named Bastet as leader while no Bastet row was
+        # listed, because it held no tasks and its name claim had aged out.
+        self.lead("Bastet")
+        with patch.object(tui, "recent_claims_for_ledger", return_value=[]):
+            dashboard = self.dashboard()
+            rows = dashboard.rows()
+            report = tui.plain_report(dashboard.watcher)
+        self.assertEqual([owner for owner, _ in rows], ["Bastet", "Agent A", "Agent B"])
+        self.assertEqual(rows[0][1].tracked, 0)
+        self.assertIn("Bastet [LEAD]", report)
+
+    def test_the_listed_leader_can_be_resigned_and_then_leaves_the_list(self):
+        self.lead("Bastet")
+        with patch.object(tui, "recent_claims_for_ledger", return_value=[]):
+            dashboard = self.dashboard()
+            dashboard.selected = 0
+            self.press(dashboard, ord("L"))
+            self.assertNotIn("Lead:", self.read())
+            self.assertNotIn("Bastet", [owner for owner, _ in dashboard.rows()])
+
+    def test_an_expired_leader_with_no_tasks_is_not_listed(self):
+        self.lead("Bastet", expires="2000-01-01T00:00:00Z")
+        with patch.object(tui, "recent_claims_for_ledger", return_value=[]):
+            rows = self.dashboard().rows()
+        self.assertNotIn("Bastet", [owner for owner, _ in rows])
+
+    def test_a_leader_who_owns_tasks_is_listed_once_in_ledger_order(self):
+        self.lead("Agent A")
+        with patch.object(tui, "recent_claims_for_ledger", return_value=[]):
+            rows = self.dashboard().rows()
+        self.assertEqual([owner for owner, _ in rows], ["Agent A", "Agent B"])
+
     def test_assignment_provenance_appears_in_task_details(self):
         assigned = (
             "## Offered work (owner: Agent B)\n\nState:\n- [x] In progress\n- [ ] Completed\n\n"

@@ -8,7 +8,7 @@
     {
       "name": "handoff",
       "source": "./",
-      "version": "1.24.0",
+      "version": "1.24.1",
       "description": "Coordinate progressive repository work across agents with a shared HANDOFF.md ledger.",
       "homepage": "https://github.com/divijshrivastava/handoff-skill#readme",
       "repository": "https://github.com/divijshrivastava/handoff-skill",

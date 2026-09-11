@@ -2,6 +2,87 @@
 
 Lead: owner=Bastet; expires=2026-09-11T08:16:58Z; policy=coordinate; succession=none
 
+## 2026-09-11 - Fix Codex viewer launch and missing task prompt (owner: Bragi 3) (harness: Codex)
+
+State:
+
+- [x] In progress
+- [ ] Completed
+
+Steps:
+
+- [ ] Identify which codex executable N launches and why macOS rejected it; repair the supported launch path where permissions allow.
+- [ ] Diagnose the missing spawn task prompt and make the corrected viewer available where permissions allow.
+- [ ] Verify the launch and prompt behavior, run required checks for changes, and record the handoff and commit.
+
+Status: Pending behind Track investigations before work begins, following the user's added request. The screenshot shows macOS reporting that codex contains malware and was moved to Bin, plus the viewer launch not asking for a task. Earlier ledger evidence found the PATH launcher selected the 1.23.0 install, which has no spawn_task prompt; Kubera 2 is releasing 1.24.1. Next: inspect the executable resolution and installed viewer without executing the rejected binary or bypassing macOS protection.
+
+
+Started 2026-09-11 after the tracking fix reached the verification/commit environment blockers above. Confirmed plain PATH resolves Codex 0.154.0 in Node v22.22.2 and its --version succeeds. Viewer enrich_path instead prepends Node v22.4.1, selecting Codex 0.92.0; its Apple Silicon native binary is missing after the macOS alert. agent_path_entries sorts version strings lexically, and enrich_path overrides the existing PATH. The installed viewer remains 1.23.0. Next: preserve configured PATH precedence, sort fallback versions numerically, test both failure cases, and arrange a corrected viewer launch.
+
+## 2026-09-11 - Track investigations before work begins (owner: Bragi 3) (harness: Codex)
+
+State:
+
+- [x] In progress
+- [ ] Completed
+
+Steps:
+
+- [x] Diagnose why the agent-status investigation left Bragi 3 with no recorded progress.
+- [x] Correct investigation intake guidance and add regression coverage.
+- [ ] Verify tracking in the viewer, run repository checks, and record the handoff and commit.
+
+Status: In progress. User reported that Bragi 3 investigated Thoth 2 and Viracocha but still had no progress. Reproduced: the previous turn claimed Bragi 3 and read the ledger and viewer, but wrote no task. The description's read-only-question exception and the body requiring intake only before editing files allowed the omission. The viewer correctly counts recorded tasks. This request starts now at the user's direction. Kubera 2 is releasing 1.24.1 and owns the existing version/manifest/viewer changes; preserve those bytes. Viracocha's older entry remains theirs; the tab targeting and startup notice already exist in c88d7bf. Next: clarify read-only investigation tracking and verify that the ledger-to-viewer path reflects it.
+
+
+Verification 2026-09-11: Bragi 3 now appears with 1/3 completed tasks, 1 WIP, 1 pending, and 3/8 checked steps. Guard startup/preflight notices and SKILL.md now require intake before substantive research; status display and explicit no-write requests remain exceptions. Added eval scenarios 17 and 18 (18 total); schema/grader tests pass, but model evaluations were not run. Packaging, version/manifest consistency and diff checks pass. Tracked-only root suite: 54 passed. Full working-tree root suite has the same 3 pre-existing errors from untracked root helper/test copies. Full helper run reaches 500 tests with one module setup error: sandbox denies ps in test_handoff_codex; other tests pass. Optional skill quick validator cannot run because PyYAML is not installed. Commit is blocked: git hash-object -w cannot create objects (Operation not permitted); unstaged this session's files to avoid an accidental partial peer commit. The release owner's version bump is preserved. Next: finish verification/commit when the environment permits; continue the queued launch fix.
+
+## 2026-09-11 - Investigate Thoth 2 and Viracocha task status (owner: Bragi 3) (harness: Codex)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Inspect the ledger, leader status, and viewer counts for Thoth 2 and Viracocha.
+- [x] Verify the interpretation against viewer source and report the findings.
+
+Status: Complete. Recorded retrospectively on 2026-09-11 after the user identified the missing progress record; this entry was absent during the investigation. Thoth 2 had a recent name claim and no ledger task. Viracocha had one in-progress task with 0/3 checked steps; 0/1 meant zero completed out of one. Bastet held the lead mandate with no leader assignments recorded. Verified with guard preflight, lead roster/status, handoff_tui.py --once, and agent_rows. The explanation was delivered in the previous turn. No implementation changes or commit were required for that investigation.
+
+## 2026-09-11 - Release 1.24.1 with the leader row fix (owner: Kubera 2) (harness: Claude Code)
+
+State:
+
+- [x] In progress
+- [ ] Completed
+
+Steps:
+
+- [ ] Bump skills/handoff/SKILL.md to 1.24.1, regenerate manifests with scripts/sync_manifests.py, and run the CI command set and archive inspection.
+- [ ] Commit the leader row fix with the release, push main, and push tag v1.24.1.
+- [ ] Confirm the Release workflow published handoff.zip, handoff.skill and SHA256SUMS, write the release notes, and record the handoff.
+
+Status: In progress. The user approved committing the active-leader row fix and cutting a release so one update brings both that fix and the 1.24.0 optional task prompt for N to their installs (both currently 1.23.0). Patch version because the change is a viewer bug fix.
+
+## 2026-09-11 - Keep the active leader listed in the viewer's Agents view (owner: Kubera 2) (harness: Claude Code)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] List the active leader in repo-scoped agent rows (live view and --once) for as long as its mandate is active, even with no tasks and no recent name claim; drop it once the mandate expires or is resigned.
+- [x] Add regression tests for a task-less, claim-less leader, an expired mandate, a resigned mandate, and no duplicate row when the leader also owns tasks.
+- [x] Update README.md and references/progress-viewer.md, run the CI command set, and record the handoff.
+
+Status: Completed. agent_rows takes a leader argument; a new active_leader(snapshot) returns the owner of a mandate whose state is active. When that owner holds no tasks and has no recent claim it heads the list with empty counts; a leader who owns tasks keeps its ledger-order place and is not duplicated. Dashboard.rows, draw and plain_report all use active_leader, so --once now tags the leader [LEAD] as the live view does. An expired or resigned mandate removes the row, so L on the listed leader resigns it and p can give it work. Four tests added to LeaderViewerTests. skills/handoff/tests OK on Python 3.9 and 3.12; root tests OK on a clean export of a008a81 plus these files (the working tree's 3 root errors come from the untracked stray tests/test_handoff_keys.py and tests/test_handoff_tui.py); check_versions, validate, package_skill and git diff --check pass. Not committed.
+
+Separate finding for the user's report that N does not ask for a task: the handoff-tui launcher on PATH resolves ~/.agents/skills/handoff/scripts/handoff_tui.py (skills CLI install, version 1.23.0, 0 spawn_task references); the Claude Code plugin install is also 1.23.0 with its marketplace clone at 2c6789e. The optional task prompt shipped in 1.24.0, so the running viewer predates it. A simulation of N then Enter in this checkout shows "Task for claude (optional): ..._   Enter: spawn | Esc: cancel". No code change was made for it; updating the installed copies is the user's call.
 ## 2026-09-11 - Document the viewer's repo scope rule in README and ship (owner: Kubera 2) (harness: Claude Code)
 
 State:

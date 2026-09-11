@@ -254,7 +254,7 @@ Run this from a checkout of this repository, or use the script's path inside you
 
 ### Views
 
-- **Agents** — Groups totals by the exact owner label in each heading. Shows completed/total tasks, in-progress tasks, pending tasks, step progress, and (when recorded) the harness each owner used. Owners appear in ledger order (newest first), not alphabetically. A `(recent)` suffix marks sessions that claimed a name on this machine in the last 15 minutes — that is a recent claim, not proof the agent is running. This repository's scope lists only claims that name this repository's `HANDOFF.md`; a claim that records no ledger path, as helpers before 1.24.0 write, belongs to no repository and appears only in machine scope (`m`), with its repository shown as `?`.
+- **Agents** — Groups totals by the exact owner label in each heading. Shows completed/total tasks, in-progress tasks, pending tasks, step progress, and (when recorded) the harness each owner used. Owners appear in ledger order (newest first), not alphabetically. A `(recent)` suffix marks sessions that claimed a name on this machine in the last 15 minutes — that is a recent claim, not proof the agent is running. The active leader stays listed, tagged `[LEAD]`, until its mandate expires or it resigns, even with no tasks and no recent claim, so `L` can resign it and `p` can give it work. This repository's scope lists only claims that name this repository's `HANDOFF.md`; a claim that records no ledger path, as helpers before 1.24.0 write, belongs to no repository and appears only in machine scope (`m`), with its repository shown as `?`.
 - **Tasks** — Lists every entry in ledger order with state, step counts, and owner. Press Enter to inspect steps and full status text.
 
 ### Keyboard shortcuts

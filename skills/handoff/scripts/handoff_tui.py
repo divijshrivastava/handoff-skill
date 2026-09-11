@@ -138,12 +138,18 @@ def repo_display_label(ledger_path: str | None, ledger: Path) -> str:
     return other.parent.name or other.name
 
 
-def agent_rows(tasks: list[Task], ledger: Path | None = None) -> list[tuple[str, Counts]]:
+def agent_rows(tasks: list[Task], ledger: Path | None = None,
+               leader: str | None = None) -> list[tuple[str, Counts]]:
     """Ledger owners plus recent name claims for this ledger that hold no tasks yet.
 
     A session that claimed its name during preflight but has not written a
     ledger entry yet should still appear so the user can hand it work from the
     viewer. Those rows lead the list, newest claim first, with empty counts.
+
+    `leader` is the owner of an active mandate. The mandate is ledger data, like
+    an owner label, so its holder stays listed until it expires or resigns: a
+    leader with no tasks whose name claim aged out otherwise vanished while the
+    header still named it, and L could not resign it nor p give it work.
     """
     recorded = owner_counts(tasks)
     ledger_owners = {owner for owner, _ in recorded}
@@ -155,6 +161,9 @@ def agent_rows(tasks: list[Task], ledger: Path | None = None) -> list[tuple[str,
             continue
         seen.add(claim.name)
         waiting.append((claim.name, Counts()))
+    if (leader and leader != UNASSIGNED and leader not in ledger_owners
+            and leader not in seen):
+        waiting.insert(0, (leader, Counts()))
     return waiting + recorded
 
 
@@ -299,6 +308,14 @@ def lead_summary(text: str) -> str | None:
     minutes = rem // 60
     left = f"{hours}h {minutes}m left" if hours else f"{minutes}m left"
     return f"LEAD  {lead.owner} | {left} | expires {lead.expires}"
+
+
+def active_leader(snapshot: Snapshot | None) -> str | None:
+    """The owner holding an active mandate, or None when none is in force."""
+    if snapshot is None or not snapshot.text:
+        return None
+    lead = read_lead(snapshot.text)
+    return lead.owner if lead and lead.state() == "active" else None
 
 
 def assignment_lines(text: str, task: Task, completed: set[str]) -> list[str]:
@@ -523,12 +540,13 @@ def plain_report(watcher: Watcher, *, agent_scope: str = "repo") -> str:
             for name, claim in machine_agent_rows(watcher.path):
                 lines.append(machine_agent_row(name, claim, watcher.path, width))
         else:
-            for owner, counts in agent_rows(watcher.snapshot.tasks, watcher.path):
+            leader = active_leader(watcher.snapshot)
+            for owner, counts in agent_rows(watcher.snapshot.tasks, watcher.path, leader=leader):
                 harness = harness_label(owner, harnesses, live)
                 # Avoid truncating ownership in redirected reports.
                 width = max(110, sum(cell_width(c) for c in clean_text(owner))
-                            + 62 + (len(harness) + 2 if harness else 0))
-                lines.append(owner_row(owner, counts, width, harness))
+                            + 69 + (len(harness) + 2 if harness else 0))
+                lines.append(owner_row(owner, counts, width, harness, leader=leader))
         lines.extend(["", "TASKS (ledger order)"])
         for task, status in zip(watcher.snapshot.tasks, watcher.snapshot.statuses):
             checked = sum(done for done, _ in task.steps)
@@ -689,7 +707,7 @@ class Dashboard:
                 return []
             if self.agent_scope == "machine":
                 return machine_agent_rows(self.watcher.path)
-            return [(owner, counts) for owner, counts in agent_rows(snapshot.tasks, self.watcher.path)]
+            return agent_rows(snapshot.tasks, self.watcher.path, leader=active_leader(snapshot))
         return [(task.heading, task) for task in self.tasks()]
 
     def refresh(self) -> None:
@@ -1333,11 +1351,7 @@ class Dashboard:
         content_start = tab_line + 2
         available = max(1, height - content_start - 4)
         rows = self.rows()
-        leader = None
-        if self.view == "agents" and snapshot and snapshot.text:
-            lead = read_lead(snapshot.text)
-            if lead and lead.state() == "active":
-                leader = lead.owner
+        leader = active_leader(snapshot) if self.view == "agents" else None
         if self.detail or self.channel_detail:
             if self.detail and width != self.detail_width:
                 self.focus_step = self.detail_step is not None
