@@ -307,6 +307,26 @@ class HandoffKeysTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             keys.kitty_snippet("F5", "handoff-tui")
 
+    def test_tutorial_viewer_key_prompts_and_reports_success(self) -> None:
+        with patch.dict(os.environ, {"HANDOFF_VIEWER_KEY": "C-M-h"}, clear=True), \
+                patch("builtins.input", side_effect=["", "y"]):
+            code, message = keys.tutorial_viewer_key()
+        self.assertEqual(code, 0)
+        self.assertIn("Ctrl+Alt+H", message)
+
+    def test_tutorial_viewer_key_reports_failure(self) -> None:
+        with patch.dict(os.environ, {"HANDOFF_VIEWER_KEY": "C-M-h"}, clear=True), \
+                patch("builtins.input", side_effect=["", "n"]):
+            code, message = keys.tutorial_viewer_key()
+        self.assertEqual(code, 1)
+        self.assertIn("conflicting keybindings", message)
+
+    def test_tutorial_viewer_key_without_a_bound_key(self) -> None:
+        with patch.dict(os.environ, {"HANDOFF_VIEWER_KEY": "none"}, clear=True):
+            code, message = keys.tutorial_viewer_key()
+        self.assertEqual(code, 1)
+        self.assertIn("Install one", message)
+
     def test_auto_detect_prefers_the_current_emulator(self) -> None:
         with patch.dict(os.environ, {"KITTY_WINDOW_ID": "1"}, clear=True):
             with patch.object(keys, "install_terminal_binding", return_value="ok") as install:

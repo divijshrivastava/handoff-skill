@@ -623,6 +623,43 @@ def install(key: str | None = None, root: Path | None = None,
     return install_terminal_binding(emulator, chosen, root)
 
 
+def tutorial_viewer_key(key: str | None = None, *, reload_hint: bool = False) -> tuple[int, str]:
+    """Prompt the user to press the viewer shortcut once and confirm it worked."""
+    chosen = key if key is not None else viewer_key()
+    if chosen is None:
+        return (1, "No viewer key is bound. Install one with --install-viewer-key first.")
+    label = key_label(chosen)
+    mac_note = ""
+    if re.fullmatch(r"C-M-[a-z]", chosen, re.IGNORECASE):
+        mac_note = f" (Control+Option+{chosen[-1].upper()} on macOS)"
+    lines = [
+        "",
+        "Try the shortcut now:",
+    ]
+    if reload_hint:
+        lines.append("  Reload the Cursor window first if you just installed the binding.")
+    lines.extend([
+        f"  Press {label}{mac_note}",
+        "",
+        "The Handoff dashboard should open in a new window or panel.",
+        "Press q inside it to close, then return here.",
+        "",
+        "Press Enter when you have tried it...",
+        "",
+    ])
+    try:
+        sys.stdout.write("\n".join(lines))
+        sys.stdout.flush()
+        input()
+        answer = input("Did the dashboard open? [Y/n] ").strip().lower()
+    except EOFError:
+        return (0, "Tutorial skipped (no interactive terminal).")
+    if answer in ("", "y", "yes"):
+        return (0, f"Good — keep {label} handy; it is the fastest way to check progress.")
+    return (1, (f"If {label} did nothing, rerun --install-viewer-key for this repository, "
+                "reload iTerm2 or Cursor if prompted, and check for conflicting keybindings."))
+
+
 def _macos_app_installed(name: str) -> bool:
     for location in (Path("/Applications"), Path("/System/Applications/Utilities")):
         if (location / f"{name}.app").is_dir():

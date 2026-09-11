@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ctrl+Alt+H · Handoff shortcut tutorial</title>
+  <meta name="description" content="Install and practice the Handoff dashboard shortcut in a few minutes.">
+  <link rel="stylesheet" href="tutorial.css">
+</head>
+<body>
+  <main class="wrap">
+    <header class="hero">
+      <div class="hero-top">
+        <img src="assets/handoff.svg" width="72" height="54" alt="Handoff">
+        <div>
+          <p class="eyebrow">Handoff setup</p>
+          <h1>Ctrl+Alt+H is your friend</h1>
+        </div>
+      </div>
+      <p class="lede">
+        One shortcut opens the live Handoff dashboard from iTerm2, Cursor's integrated terminal,
+        or a tmux-wrapped agent bar. This page walks you through installing it and practicing the chord.
+      </p>
+    </header>
+
+    <section class="card" aria-live="polite">
+      <div id="progress" class="progress" aria-hidden="true"></div>
+
+      <article id="step-welcome" class="step active">
+        <h2>What you are setting up</h2>
+        <p>
+          Handoff tracks unfinished work in a shared <code>HANDOFF.md</code> ledger.
+          The dashboard shows tasks, agents, and progress while you work. The shortcut keeps it one keystroke away
+          without typing into the running agent.
+        </p>
+        <div class="preview">
+          <img
+            src="https://raw.githubusercontent.com/divijshrivastava/handoff-skill/main/assets/dashboard-session.gif"
+            alt="Handoff dashboard beside an agent session"
+            loading="lazy"
+            width="960"
+            height="540">
+        </div>
+        <p class="note">
+          You need Git, Python 3.9+, and <code>handoff-tui</code> on your PATH.
+          Copy the launcher from the skill once if you have not already.
+        </p>
+      </article>
+
+      <article id="step-terminal" class="step">
+        <h2>Where will you press the shortcut?</h2>
+        <p>Pick the terminal you use most. The install command changes slightly for Cursor.</p>
+        <div class="choice-grid">
+          <button type="button" class="choice selected" data-terminal="iterm2">
+            <strong>iTerm2</strong>
+            <small>Opens the dashboard in a new window. Keeps Ctrl+V for Codex image paste.</small>
+          </button>
+          <button type="button" class="choice" data-terminal="cursor">
+            <strong>Cursor</strong>
+            <small>Runs a workspace task from the integrated terminal. Reload the window after install.</small>
+          </button>
+          <button type="button" class="choice" data-terminal="other">
+            <strong>tmux bar / other</strong>
+            <small>Uses the same key inside <code>handoff-tui --codex</code> or <code>--with</code>.</small>
+          </button>
+        </div>
+        <p class="note warn">
+          On macOS, Ctrl+Alt+H is <strong>Control+Option+H</strong>.
+        </p>
+      </article>
+
+      <article id="step-install" class="step">
+        <h2>Install the binding</h2>
+        <p>Run this in a shell at your repository. It installs the shortcut and runs the CLI practice prompt.</p>
+        <div class="field">
+          <label for="repo-path">Repository path</label>
+          <input id="repo-path" type="text" placeholder="/Users/you/code/your-repo" autocomplete="off">
+        </div>
+        <div class="command-box">
+          <pre id="install-command"></pre>
+          <button type="button" class="copy" id="copy-command">Copy</button>
+        </div>
+        <p class="note">
+          For tmux-wrapped agents, use
+          <code>HANDOFF_VIEWER_KEY=C-M-h handoff-tui --root … --codex</code>
+          instead of the iTerm2/Cursor installer.
+        </p>
+      </article>
+
+      <article id="step-practice-web" class="step">
+        <h2>Practice the chord here</h2>
+        <p>Click the box below, then press the shortcut. This page listens for the same modifiers your terminal will use.</p>
+        <div id="practice-zone" class="practice" tabindex="0" aria-label="Practice Ctrl+Alt+H">
+          <div class="keycap-row" aria-hidden="true">
+            <span id="key-ctrl" class="keycap">Ctrl</span>
+            <span class="keycap">+</span>
+            <span id="key-alt" class="keycap">Alt</span>
+            <span class="keycap">+</span>
+            <span id="key-h" class="keycap">H</span>
+          </div>
+          <p id="practice-status" class="practice-status">Waiting for Ctrl+Alt+H…</p>
+        </div>
+        <p class="note warn">
+          The browser cannot open your local dashboard. This step is only for muscle memory.
+        </p>
+      </article>
+
+      <article id="step-practice-real" class="step">
+        <h2>Try it for real</h2>
+        <p>
+          Switch to your terminal or editor, press <strong>Ctrl+Alt+H</strong>, and confirm the Handoff dashboard opened.
+          Press <strong>q</strong> inside the dashboard to close it.
+        </p>
+        <div class="choice-grid">
+          <button type="button" class="choice" id="real-yes">
+            <strong>Yes, it opened</strong>
+            <small>The dashboard appeared in a new window or panel.</small>
+          </button>
+          <button type="button" class="choice" id="real-no">
+            <strong>Not yet</strong>
+            <small>Nothing happened, or I still need to reload iTerm2 / Cursor.</small>
+          </button>
+        </div>
+        <p id="real-status" class="practice-status"></p>
+      </article>
+
+      <article id="step-done" class="step">
+        <h2>You are set</h2>
+        <p>
+          Keep using Ctrl+Alt+H whenever you want the live view.
+          Initialise Handoff in a repository with <code>/handoff:init</code> or
+          <code>/handoff:continue</code> when a ledger already exists.
+        </p>
+        <div class="footer-links">
+          <a href="https://github.com/divijshrivastava/handoff-skill#install">Install the skill</a>
+          <a href="https://github.com/divijshrivastava/handoff-skill#installing-the-viewer-key">Viewer key docs</a>
+          <a href="https://github.com/divijshrivastava/handoff-skill">GitHub repository</a>
+        </div>
+      </article>
+
+      <div class="actions">
+        <button type="button" class="secondary" id="back">Back</button>
+        <button type="button" class="primary" id="next">Continue</button>
+      </div>
+    </section>
+  </main>
+  <script src="tutorial.js"></script>
+</body>
+</html>

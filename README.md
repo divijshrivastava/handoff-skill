@@ -6,6 +6,20 @@
 
 > Keep AI agents from redoing finished work, overwriting active work, or losing context between sessions.
 
+> **Ctrl+Alt+H is your friend.** Bind it once and use it every session to open the live Handoff dashboard from iTerm2, Cursor's integrated terminal, or a tmux-wrapped agent bar — without typing a command into the agent.
+
+**Interactive setup:** [divijshrivastava.github.io/handoff-skill](https://divijshrivastava.github.io/handoff-skill/) walks through install and practice in the browser.
+
+Install the shortcut and run through a thirty-second practice prompt:
+
+```bash
+HANDOFF_VIEWER_KEY=C-M-h handoff-tui --install-viewer-key --tutorial-viewer-key --emulator iterm2 --root /path/to/your/repo
+# Cursor integrated terminal:
+HANDOFF_VIEWER_KEY=C-M-h handoff-tui --install-viewer-key --tutorial-viewer-key --emulator cursor --root /path/to/your/repo
+```
+
+Already installed? `handoff-tui --tutorial-viewer-key`. See [Installing the viewer key](#installing-the-viewer-key).
+
 Handoff is an agent skill for repositories where work continues across multiple AI-agent sessions. It uses a shared `HANDOFF.md` ledger and repository evidence—Git history, current code, tests, and ownership—to determine what is **actually** unfinished.
 
 ![The dashboard during a live session](assets/dashboard-session.gif)
@@ -467,10 +481,10 @@ No harness can bind a key to an arbitrary command of its own — Claude Code's `
 To install the viewer key in a supported terminal, run:
 
 ```bash
-handoff-tui --install-viewer-key
+HANDOFF_VIEWER_KEY=C-M-h handoff-tui --install-viewer-key --tutorial-viewer-key --emulator iterm2 --root /path/to/your/repo
 ```
 
-The installer detects the terminal. In **iTerm2** it creates a dedicated Handoff profile and merges a global shortcut that opens the viewer in a new window. Set `HANDOFF_VIEWER_KEY=C-M-h` before the iTerm2 install command to use `Ctrl+Alt+H` (`Control+Option+H` on macOS). Keep `Ctrl+V` for Codex image paste. Changing the key removes previous shortcuts to the same repository's viewer.
+Add `--tutorial-viewer-key` to walk through pressing the shortcut once after installing; run it alone if the binding is already in place. The installer detects the terminal when `--emulator auto`. In **iTerm2** it creates a dedicated Handoff profile and merges a global shortcut that opens the viewer in a new window. `HANDOFF_VIEWER_KEY=C-M-h` selects `Ctrl+Alt+H` (`Control+Option+H` on macOS) and keeps `Ctrl+V` for Codex image paste. Changing the key removes previous shortcuts to the same repository's viewer.
 
 In **Cursor** the same key works inside the integrated terminal: `--emulator cursor` binds it to a `Handoff viewer` workspace task and adds that command to `terminal.integrated.commandsToSkipShell`, so Cursor answers the key instead of passing it to the shell.
 
