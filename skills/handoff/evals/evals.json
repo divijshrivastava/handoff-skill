@@ -429,6 +429,63 @@
         "Records blocker evidence, the next action and required input or external change; continues other eligible assignments",
         "Does not claim that the viewer wakes an unavailable model or that a missing second prompt is a blocker"
       ]
+    },
+    {
+      "id": 17,
+      "name": "Track a read-only investigation in an existing ledger",
+      "kind": "structure",
+      "prompt": "This repository already keeps HANDOFF.md. Why do Thoth 2 and Viracocha have no tasks in the viewer? Investigate the ledger and viewer source, then explain the cause. Do not change the application code. Describe your actions in order, including what the viewer records while you work and after you answer. No other agent is writing the relevant files.",
+      "expected_output": "Runs preflight and ownership audit, then uses guarded ledger intake to record the investigation under the claimed session before task-specific research. Diagnoses task counts from the ledger and source, records verified findings and completion, and answers without modifying application code. Does not treat a name claim or the absence of code edits as sufficient tracking.",
+      "ledger": "# Handoff\n",
+      "files": [
+        {
+          "path": "src/viewer.py",
+          "content": "def counts(tasks, owner):\n    owned = [task for task in tasks if task[\"owner\"] == owner]\n    return sum(task[\"completed\"] for task in owned), len(owned)\n"
+        }
+      ],
+      "required": [
+        "handoff_guard.py preflight",
+        "apply --expect-version"
+      ],
+      "forbidden": [
+        "handoff_guard.py purge"
+      ],
+      "rubric": "The investigation must be recorded before task-specific research even though source edits are excluded. A claimed name alone is not task progress. Verify findings and record completion without inventing activity or completion from a process or name claim.",
+      "expectations": [
+        "Performs preflight and ownership audit before starting new task work",
+        "Records an in-progress investigation through apply with a version before task-specific research",
+        "Keeps application code unchanged while allowing the investigation ledger record",
+        "Checks investigation steps only after collecting supporting evidence and records completion before the final answer",
+        "Does not invent task counts or treat name claims as evidence of work",
+        "Does not apply the read-only-question exception to skip investigation tracking"
+      ]
+    },
+    {
+      "id": 18,
+      "name": "Respect explicit no writes during investigation",
+      "kind": "structure",
+      "prompt": "This repository keeps HANDOFF.md. Investigate how src/viewer.py counts tasks and explain it. Make no writes anywhere in the repository, including HANDOFF.md. Describe what you do.",
+      "expected_output": "Inspects the existing source and ledger and answers without writing. The explicit no-write instruction overrides normal investigation intake; does not demand approval to answer or claim progress was recorded.",
+      "ledger": "# Handoff\n",
+      "files": [
+        {
+          "path": "src/viewer.py",
+          "content": "def counts(tasks, owner):\n    owned = [task for task in tasks if task[\"owner\"] == owner]\n    return sum(task[\"completed\"] for task in owned), len(owned)\n"
+        }
+      ],
+      "required": [],
+      "forbidden": [
+        "apply --expect-version",
+        "handoff_guard.py purge",
+        "handoff_guard.py sweep"
+      ],
+      "rubric": "Honor the explicit no-write instruction while completing the investigation. Normal task tracking does not authorize a ledger write forbidden by the user.",
+      "expectations": [
+        "Investigates the requested source and explains counts from its actual behavior",
+        "Writes no task entry and leaves all repository files unchanged",
+        "Does not claim that the investigation appears as recorded progress",
+        "Does not stop for permission to perform the authorized read-only investigation"
+      ]
     }
   ],
   "output_quality_expectations": [

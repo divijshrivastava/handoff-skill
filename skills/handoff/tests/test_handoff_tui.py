@@ -1619,3 +1619,179 @@ class LeaderViewerTests(unittest.TestCase):
         screen = Screen(width=120)
         dashboard.draw(screen, FakeCurses)
         self.assertIn("L leader", screen.lines[screen.height - 1])
+
+
+class SearchTests(unittest.TestCase):
+    """Vim-style / search: navigate rows without leaving the current view."""
+
+    def setUp(self):
+        self.recent_patch = patch.object(tui, "recent_claims", return_value=[])
+        self.recent_patch.start()
+        self.addCleanup(self.recent_patch.stop)
+
+    def dashboard(self):
+        watcher = tui.Watcher(Path("unused"))
+        watcher.snapshot = tui.parse_snapshot(
+            entry("Alpha task", owner="Agent A")
+            + entry("Beta task", owner="Agent B")
+            + entry("Gamma task", owner="Agent A", state="completed", steps=(True, True))
+        )
+        d = tui.Dashboard(watcher)
+        d.view = "tasks"
+        return d
+
+    def press(self, dashboard, *keys):
+        for key in keys:
+            dashboard.handle_key(key, FakeCurses, 5)
+        return dashboard
+
+    def type_query(self, dashboard, text):
+        for ch in text:
+            dashboard.handle_key(ord(ch), FakeCurses, 5)
+        return dashboard
+
+    # --- entering and exiting search mode ---
+
+    def test_slash_opens_search_mode(self):
+        d = self.dashboard()
+        self.press(d, ord("/"))
+        self.assertEqual(d.search_query, "")
+        self.assertIn("/", d.banner())
+        self.assertIn("Esc", d.banner())
+
+    def test_slash_is_blocked_in_detail_view(self):
+        d = self.dashboard()
+        self.press(d, 10)  # open detail
+        self.assertIsNotNone(d.detail)
+        self.press(d, ord("/"))
+        self.assertIsNone(d.search_query)
+
+    def test_slash_is_blocked_in_channel_view(self):
+        d = self.dashboard()
+        d.view = "channel"
+        self.press(d, ord("/"))
+        self.assertIsNone(d.search_query)
+
+    def test_escape_cancels_and_restores_original_selection(self):
+        d = self.dashboard()
+        d.selected = 2
+        self.press(d, ord("/"))
+        self.type_query(d, "Beta")
+        original_selected = d.selected
+        self.press(d, 27)  # Escape
+        self.assertIsNone(d.search_query)
+        self.assertEqual(d.selected, 2)  # restored
+
+    def test_enter_confirms_and_exits_search_mode(self):
+        d = self.dashboard()
+        self.press(d, ord("/"))
+        self.type_query(d, "Gamma")
+        self.press(d, 10)  # Enter
+        self.assertIsNone(d.search_query)
+        self.assertEqual(d.last_search, "Gamma")
+
+    # --- incremental matching ---
+
+    def test_typing_moves_selection_to_first_match(self):
+        d = self.dashboard()
+        d.selected = 0
+        self.press(d, ord("/"))
+        self.type_query(d, "Beta")
+        self.assertEqual(tui.task_title(d.rows()[d.selected][1]), "Beta task")
+
+    def test_search_is_case_insensitive(self):
+        d = self.dashboard()
+        self.press(d, ord("/"))
+        self.type_query(d, "gamma")
+        self.assertEqual(tui.task_title(d.rows()[d.selected][1]), "Gamma task")
+
+    def test_backspace_narrows_to_previous_match(self):
+        d = self.dashboard()
+        self.press(d, ord("/"))
+        self.type_query(d, "Gamma")
+        self.type_query(d, "X")   # no match; selection stays
+        self.press(d, FakeCurses.KEY_BACKSPACE)  # back to "Gamma"
+        self.assertEqual(tui.task_title(d.rows()[d.selected][1]), "Gamma task")
+
+    def test_empty_query_restores_saved_selection(self):
+        d = self.dashboard()
+        d.selected = 2
+        self.press(d, ord("/"))
+        self.type_query(d, "B")
+        self.press(d, FakeCurses.KEY_BACKSPACE)
+        self.assertEqual(d.selected, 2)
+
+    def test_search_wraps_from_cursor_position(self):
+        """Searching for 'Alpha' from row 2 should find row 0 by wrapping."""
+        d = self.dashboard()
+        d.selected = 2
+        self.press(d, ord("/"))
+        self.type_query(d, "Alpha")
+        self.assertEqual(tui.task_title(d.rows()[d.selected][1]), "Alpha task")
+
+    # --- n for next match ---
+
+    def test_n_jumps_to_next_match_after_confirmed_search(self):
+        d = self.dashboard()
+        self.press(d, ord("/"))
+        self.type_query(d, "task")  # matches all three; first match from row 0 is row 0
+        self.press(d, 10)
+        first = d.selected
+        self.press(d, ord("n"))
+        self.assertNotEqual(d.selected, first)
+
+    def test_n_wraps_around_the_list(self):
+        d = self.dashboard()
+        d.selected = 0
+        self.press(d, ord("/"))
+        self.type_query(d, "Alpha")
+        self.press(d, 10)  # confirms; should be on Alpha (row 0)
+        self.press(d, ord("n"))  # only one Alpha; wraps and finds same
+        self.assertEqual(tui.task_title(d.rows()[d.selected][1]), "Alpha task")
+
+    def test_n_without_prior_search_does_nothing(self):
+        d = self.dashboard()
+        d.selected = 1
+        self.press(d, ord("n"))
+        self.assertEqual(d.selected, 1)
+
+    def test_n_is_not_intercepted_in_channel_view(self):
+        """n in channel view still triggers nudge, not search."""
+        d = self.dashboard()
+        d.last_search = "something"
+        d.view = "channel"
+        # nudge_selected with no channel just sets a message
+        self.press(d, ord("n"))
+        self.assertIn("channel", (d.message or "").lower())
+
+    # --- agents view search ---
+
+    def test_search_works_in_agents_view(self):
+        d = self.dashboard()
+        d.view = "agents"
+        self.press(d, ord("/"))
+        self.type_query(d, "Agent B")
+        self.assertEqual(d.rows()[d.selected][0], "Agent B")
+
+    # --- display ---
+
+    def test_banner_shows_current_query(self):
+        d = self.dashboard()
+        self.press(d, ord("/"))
+        self.type_query(d, "abc")
+        self.assertIn("/abc_", d.banner())
+
+    def test_footer_shows_search_hint_during_search_mode(self):
+        d = self.dashboard()
+        self.press(d, ord("/"))
+        screen = Screen()
+        d.draw(screen, FakeCurses)
+        footer = screen.lines[screen.height - 1]
+        self.assertIn("Type to filter", footer)
+        self.assertIn("Esc", footer)
+
+    def test_footer_advertises_slash_key_when_not_searching(self):
+        d = self.dashboard()
+        screen = Screen(width=160)
+        d.draw(screen, FakeCurses)
+        self.assertIn("/ search", screen.lines[screen.height - 1])

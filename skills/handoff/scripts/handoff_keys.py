@@ -91,12 +91,13 @@ def agent_path_entries() -> list[str]:
     ]
     nvm = home / ".nvm" / "versions" / "node"
     if nvm.is_dir():
-        for version in sorted((path for path in nvm.iterdir() if path.is_dir()),
+        for version in sorted((path for path in nvm.iterdir()
+                               if path.is_dir() and re.fullmatch(r"v\d+(?:\.\d+)*", path.name)),
+                              key=lambda path: tuple(int(part) for part in path.name[1:].split(".")),
                               reverse=True):
             bindir = version / "bin"
             if bindir.is_dir():
                 entries.append(bindir)
-                break
     cursor_root = home / ".local" / "share" / "cursor-agent" / "versions"
     if cursor_root.is_dir():
         for version in sorted((path for path in cursor_root.iterdir() if path.is_dir()),
@@ -107,14 +108,15 @@ def agent_path_entries() -> list[str]:
 
 
 def enrich_path() -> None:
-    """Prepend known agent install directories once per process."""
+    """Append fallback install directories without overriding the user's PATH."""
     global _PATH_ENRICHED
     if _PATH_ENRICHED:
         return
     additions = agent_path_entries()
     if additions:
         current = os.environ.get("PATH", "")
-        os.environ["PATH"] = ":".join(additions + ([current] if current else []))
+        configured = current.split(os.pathsep) if current else []
+        os.environ["PATH"] = os.pathsep.join(dict.fromkeys(configured + additions))
     _PATH_ENRICHED = True
 
 
@@ -133,13 +135,13 @@ def available_agents() -> list[str]:
 def agent_launch_command(root: Path | None, agent: str,
                          seed: str | None = None,
                          task: str | None = None) -> str:
-    """Shell command that runs one agent CLI under the handoff bar."""
-    launcher = shutil.which("handoff-tui")
-    if launcher:
-        parts = [launcher]
-    else:
-        viewer = Path(__file__).resolve().with_name("handoff_tui.py")
-        parts = [sys.executable, str(viewer)]
+    """Run an agent with this viewer's helpers, not an older PATH install.
+
+    This command is used immediately, unlike persistent terminal key bindings
+    which need the dynamic launcher to survive future skill upgrades.
+    """
+    viewer = Path(__file__).resolve().with_name("handoff_tui.py")
+    parts = [sys.executable, str(viewer)]
     if root is not None:
         parts.extend(["--root", str(root.resolve())])
     if seed:

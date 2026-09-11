@@ -625,6 +625,9 @@ class Dashboard:
         self.channel_mode = "messages"
         self.channel_session: str | None = None
         self.channel_detail: dict | None = None
+        self.search_query: str | None = None
+        self.search_saved: int = 0
+        self.last_search: str = ""
 
     def nudge_sender(self) -> str | None:
         """The channel session this viewer may speak as, or None.
@@ -1048,6 +1051,53 @@ class Dashboard:
         self.prompt_kind = "spawn_task"
         self.prompt = ""
 
+    def _handle_search_key(self, key: int, curses) -> bool:
+        """Consume one keypress while the search bar is open."""
+        if key in (27, 3):
+            self.search_query = None
+            self.selected = self.search_saved
+        elif key in (10, 13, curses.KEY_ENTER):
+            query = self.search_query.strip()
+            self.search_query = None
+            if query:
+                self.last_search = query
+        elif key in (curses.KEY_BACKSPACE, 127, 8):
+            self.search_query = self.search_query[:-1]
+            self._apply_search()
+        elif 32 <= key < 127 and len(self.search_query) < 60:
+            self.search_query += chr(key)
+            self._apply_search()
+        return True
+
+    def _apply_search(self) -> None:
+        """Move selection to the first row whose label contains the query."""
+        query = self.search_query.lower() if self.search_query else ""
+        if not query:
+            self.selected = self.search_saved
+            return
+        rows = self.rows()
+        count = len(rows)
+        for i in range(count):
+            idx = (self.search_saved + i) % count
+            label = rows[idx][0]
+            if isinstance(label, str) and query in label.lower():
+                self.selected = idx
+                return
+
+    def _find_next(self, query: str) -> None:
+        """Move selection to the next row matching the query, wrapping around."""
+        rows = self.rows()
+        if not rows or not query:
+            return
+        count = len(rows)
+        for i in range(1, count + 1):
+            idx = (self.selected + i) % count
+            label = rows[idx][0]
+            if isinstance(label, str) and query.lower() in label.lower():
+                self.selected = idx
+                return
+        self.message = f"No more matches for '{fit(query, 30)}'."
+
     def launch_selected_agent(self, task: str | None = None,
                               agent: str | None = None) -> None:
         """Open one agent CLI in a new tab under the handoff bar."""
@@ -1152,6 +1202,8 @@ class Dashboard:
             self.message = None
             # An idle poll passes -1; only a real keypress ends a pending "gg".
             pending_g, self.pending_g = self.pending_g, False
+        if self.search_query is not None:
+            return self._handle_search_key(key, curses)
         if self.view == "spawn" and key in (27, ord("b"), curses.KEY_BACKSPACE, 127):
             self.view = "agents"
             self.selected = self.offset = 0
@@ -1187,6 +1239,10 @@ class Dashboard:
             return True
         if self.handle_move_key(key):
             return True
+        if key == ord("/") and not self.detail and not self.channel_detail and self.view != "channel":
+            self.search_query = ""
+            self.search_saved = self.selected
+            return True
         if key in (ord("q"), ord("Q"), 3):
             return False
         if key in (27, ord("b"), curses.KEY_BACKSPACE, 127):
@@ -1205,6 +1261,11 @@ class Dashboard:
                 rows = self.rows()
                 self.selected = next((i for i, row in enumerate(rows) if row[0] == previous), 0)
                 self.offset = 0
+            return True
+        if (key == ord("n") and self.last_search
+                and not self.detail and not self.channel_detail
+                and self.view != "channel"):
+            self._find_next(self.last_search)
             return True
         if self.view == "channel" and key in (ord("n"), ord("N")):
             self.nudge_selected()
@@ -1471,12 +1532,18 @@ class Dashboard:
             keys = (" j/k select step | PgUp/PgDn scroll | b back | a agents | q quit" if self.read_only else
                     " d mark step | D mark task | x cut step | p give | j/k select | "
                     "a agents | X whole task | b back | q quit")
+        elif self.view not in ("channel", "spawn"):
+            keys += " | / search"
+        if self.search_query is not None:
+            keys = " Type to filter | Enter: jump to match | Esc: cancel"
         write(height - 1, keys)
         screen.refresh()
         return available
 
     def banner(self) -> str:
         """One line for the pending move: the prompt, the last outcome, or what is held."""
+        if self.search_query is not None:
+            return f" /{self.search_query}_   Enter: confirm | Esc: cancel"
         if self.prompt is not None:
             if self.prompt_kind == "spawn_task":
                 agent = self.spawn_agent or "agent"

@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 # The suite size is asserted, not inferred: a scenario cannot be dropped
 # without someone changing this number on purpose.
-SUITE_SIZE = 16
+SUITE_SIZE = 18
 
 
 def load(name: str, relative: str):

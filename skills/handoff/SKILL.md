@@ -1,9 +1,9 @@
 ---
 name: handoff
-description: "Coordinate progressive repository work across agents with a shared HANDOFF.md ledger. Use in repositories with a ledger, or on explicit handoff requests: /handoff:init, 'initialise the handoff', /handoff:continue, /handoff:status, /handoff:view, /handoff:purge, or 'use handoff'. After activation: handoff_guard.py name --root <repo> claims the session name; handoff_guard.py read --root <repo> returns ledger text and version in one snapshot. Audit later entries and code before treating unchecked boxes as unfinished. For ledger writes: handoff_guard.py apply --root <repo> --expect-version V with --entry FILE or --content FILE. On exit 3, re-read and re-audit; never retry the stale write. A user viewer assignment is required queued work: finish your current task, then audit and complete it without another prompt. Skip read-only questions needing no tracking or mutation."
+description: "Coordinate progressive repository work across agents with a shared HANDOFF.md ledger. Use in repositories with a ledger, or on explicit handoff requests: /handoff:init, 'initialise the handoff', /handoff:continue, /handoff:status, /handoff:view, /handoff:purge, or 'use handoff'. After activation: handoff_guard.py name --root <repo> claims the session name; handoff_guard.py read --root <repo> returns ledger text and version in one snapshot. Audit later entries and code before treating unchecked boxes as unfinished. For ledger writes: handoff_guard.py apply --root <repo> --expect-version V with --entry FILE or --content FILE. On exit 3, re-read and re-audit; never retry the stale write. A user viewer assignment is required queued work: finish your current task, then audit and complete it without another prompt. Track investigations before research, even without code edits; a name claim is not a task."
 license: MIT
 metadata:
-  version: "1.24.1"
+  version: "1.25.0"
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
 ---
 
@@ -68,15 +68,24 @@ requires.
 - Show only necessary ledger snippets as Markdown. Avoid reproducing a whole
   entry for a single state transition or repeating a snippet in prose.
 
-## Ledger before code
+## Ledger before task work
 
 In a repository that already keeps `HANDOFF.md`, every agent session follows
 the same order whether it was opened from the viewer with **N**, wrapped with
 `--with`, or started in a plain terminal: **record the task in the ledger
-before editing files**. A name claim or a recent label in the viewer is not a
-task entry. Run preflight, write or update your entry with `In progress`
-checked when you begin, and only then implement. The viewer's WIP column reads
-only from those ledger entries.
+before substantive investigation or implementation**. A name claim or a recent
+label in the viewer is not a task entry. Run preflight, write or update your
+entry with `In progress` checked when you begin, and only then investigate or
+implement. The viewer's WIP column reads only from those ledger entries.
+
+A request to investigate, diagnose, audit, or review is tracked work even when
+its deliverable is an answer and no source file changes. After the preflight
+and ownership audit, record its scope and verification before task-specific
+research; check steps as evidence is gathered, and record completion before
+the final answer. An explicit instruction to make no writes takes precedence.
+Simply displaying existing status (`/handoff:status` or `/handoff:view`) and
+answering a follow-up from evidence already gathered do not create another
+task. If that follow-up requires new investigation, record the new scope.
 
 ## Step 0: Preflight before task work
 
@@ -172,8 +181,8 @@ Use task states literally:
 | Actively being worked | `[x]` | `[ ]` |
 | Finished and verified | `[x]` | `[x]` |
 
-Record every new request in the ledger as the first write at intake—before
-implementation—so the viewer always shows who holds what and under which state.
+Record every new task in the ledger at intake—before task-specific research
+or implementation—so the viewer shows who holds what and under which state.
 If local instructions require a user choice before mutation, propose the entry
 and write it only after that choice. Otherwise apply a pending entry while the
 task waits behind other work, or check `In progress` in that same write when

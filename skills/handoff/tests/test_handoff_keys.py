@@ -383,6 +383,67 @@ class HandoffKeysTests(unittest.TestCase):
                     self.assertEqual(keys.open_candidates(), ["iterm2"])
 
 
+class AgentResolutionTests(unittest.TestCase):
+    def executable(self, directory: Path) -> Path:
+        directory.mkdir(parents=True, exist_ok=True)
+        path = directory / ("codex.exe" if sys.platform == "win32" else "codex")
+        path.write_text("test fixture", encoding="utf-8")
+        path.chmod(0o755)
+        return path
+
+    def test_discovery_preserves_the_users_configured_codex(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            expected = self.executable(home / "selected" / "bin")
+            self.executable(home / ".local" / "bin")
+            with patch.object(keys.Path, "home", return_value=home), \
+                    patch.object(keys, "_PATH_ENRICHED", False), \
+                    patch.dict(os.environ, {"PATH": str(expected.parent)}):
+                self.assertIn("codex", keys.available_agents())
+                self.assertEqual(keys.resolve_agent("codex"), str(expected))
+                enriched = os.environ["PATH"]
+                keys.enrich_path()
+                self.assertEqual(os.environ["PATH"], enriched)
+
+    def test_nvm_fallback_orders_versions_numerically(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            nvm = home / ".nvm" / "versions" / "node"
+            self.executable(nvm / "v22.4.1" / "bin")
+            self.executable(nvm / "v9.11.0" / "bin")
+            expected = self.executable(nvm / "v22.22.2" / "bin")
+            with patch.object(keys.Path, "home", return_value=home), \
+                    patch.object(keys, "_PATH_ENRICHED", False), \
+                    patch.dict(os.environ, {"PATH": ""}):
+                self.assertEqual(keys.resolve_agent("codex"), str(expected))
+
+    def test_nvm_fallback_finds_an_agent_missing_from_the_newest_node(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            nvm = home / ".nvm" / "versions" / "node"
+            (nvm / "v24.0.0" / "bin").mkdir(parents=True)
+            expected = self.executable(nvm / "v22.22.2" / "bin")
+            with patch.object(keys.Path, "home", return_value=home), \
+                    patch.object(keys, "_PATH_ENRICHED", False), \
+                    patch.dict(os.environ, {"PATH": ""}):
+                self.assertEqual(keys.resolve_agent("codex"), str(expected))
+
+
+class AgentLaunchCommandTests(unittest.TestCase):
+    def test_spawn_keeps_the_current_viewer_when_path_has_an_older_install(self):
+        with tempfile.TemporaryDirectory(prefix="handoff launch ") as directory:
+            root = Path(directory)
+            with patch.object(keys.shutil, "which", return_value="/old/bin/handoff-tui"):
+                command = keys.agent_launch_command(
+                    root, "codex", seed="session-123", task="Investigate agent progress")
+            parts = keys.shlex.split(command)
+            viewer = SCRIPT_DIR / "handoff_tui.py"
+            self.assertEqual(parts[:2], [sys.executable, str(viewer)])
+            self.assertEqual(parts[2:], ["--root", str(root.resolve()),
+                                         "--session-seed", "session-123", "--with", "codex",
+                                         "Investigate agent progress"])
+
+
 class OpenerSeedTests(unittest.TestCase):
     """The window a viewer opens inherits nothing, so identity is passed to it.
 

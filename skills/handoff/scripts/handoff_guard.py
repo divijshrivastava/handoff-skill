@@ -999,11 +999,11 @@ def seed_claim(seed: str, ledger: Path, agent: str) -> str | None:
 
 def agent_startup_notice(seed: str, ledger: Path,
                          *, harness: str | None = None) -> tuple[str | None, str]:
-    """Claim a session name and return a banner: ledger before code.
+    """Claim a session name and return a banner: ledger before task work.
 
     Wrapped agents (--with, N in the viewer) and plain terminals share one rule
     in a handoff-initialised repository: record the task in HANDOFF.md before
-    editing files.
+    investigating or editing files.
     """
     if not ledger.is_file():
         return None, ("Handoff: this repository has no HANDOFF.md yet. "
@@ -1017,8 +1017,8 @@ def agent_startup_notice(seed: str, ledger: Path,
                                    harness=harness)
     queued = assigned_unstarted(parse_tasks(text), name)
     lines = [
-        f"Handoff · you are {name} · record the task in HANDOFF.md before you edit files",
-        "Preflight first (Step 0), intake write second (Step 1), implementation last.",
+        f"Handoff · you are {name} · record the task in HANDOFF.md before you investigate or edit files",
+        "Preflight first (Step 0), intake write second (Step 1), research or implementation last.",
     ]
     if queued:
         lines.append(f"{len(queued)} task(s) already assigned to you — audit those before new work.")
@@ -1994,7 +1994,11 @@ def preflight_command(args: argparse.Namespace) -> int:
             "Structural observations only, from one snapshot. Audit the open "
             "entries against later entries, commits, current source, and live "
             "ownership before reporting effective status. Pass this version to "
-            "apply, and use `read` when a write needs the exact ledger bytes."
+            "apply, and use `read` when a write needs the exact ledger bytes. "
+            "A name claim records no task progress: after preflight, record "
+            "the user's task before substantive investigation or implementation, "
+            "even when the deliverable is only an answer. Respect an explicit "
+            "no-write request; merely displaying existing status starts no task."
         ),
     })
     print(json.dumps(result, indent=2))

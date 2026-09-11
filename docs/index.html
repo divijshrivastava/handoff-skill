@@ -3,147 +3,158 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Ctrl+Alt+H · Handoff shortcut tutorial</title>
-  <meta name="description" content="Install and practice the Handoff dashboard shortcut in a few minutes.">
+  <meta name="description" content="Learn Handoff by doing: install the skill, track your first task, read the ledger, open the dashboard, and continue work in another agent session.">
+  <meta name="theme-color" content="#f6f5f0">
+  <title>Your first handoff · A hands-on guide</title>
+  <link rel="icon" href="assets/handoff.svg" type="image/svg+xml">
   <link rel="stylesheet" href="tutorial.css">
 </head>
 <body>
+  <a class="skip-link" href="#guide">Skip to the guide</a>
+  <header class="site-header wrap">
+    <a class="brand" href="#"><img src="assets/handoff.svg" width="38" height="30" alt=""><span>handoff<span class="brand-dot">.</span></span></a>
+    <span class="header-label">THE FIELD GUIDE</span>
+    <a class="source-link" href="https://github.com/divijshrivastava/handoff-skill">View on GitHub <span aria-hidden="true">↗</span></a>
+  </header>
+
   <main class="wrap">
-    <header class="hero">
-      <div class="hero-top">
-        <img src="assets/handoff.svg" width="72" height="54" alt="Handoff">
-        <div>
-          <p class="eyebrow">Handoff setup</p>
-          <h1>Ctrl+Alt+H is your friend</h1>
-        </div>
+    <section class="hero" aria-labelledby="hero-title">
+      <div>
+        <p class="eyebrow"><span class="status-dot" aria-hidden="true"></span> LESS REPEATING. MORE PICKING UP.</p>
+        <h1 id="hero-title">New session.<br>Same <span class="serif">momentum.</span></h1>
+        <p class="lede">Your agent stopped halfway through. The next one should know what’s done, what’s left, and where to start.</p>
+        <p class="hero-description">Handoff keeps that context in one file in your repository.<br class="desktop-break"> Let’s take a small task all the way to your first handoff.</p>
+        <div class="hero-actions"><a class="button primary" href="#install">Start the guide <span aria-hidden="true">↗</span></a><a class="text-link" href="#understand">Try the example <span aria-hidden="true">→</span></a></div>
+        <p class="meta-line">5 short lessons <span>·</span> Works with your coding agent <span>·</span> Stored locally</p>
       </div>
-      <p class="lede">
-        One shortcut opens the live Handoff dashboard from iTerm2, Cursor's integrated terminal,
-        or a tmux-wrapped agent bar. This page walks you through installing it and practicing the chord.
-      </p>
-    </header>
-
-    <section class="card" aria-live="polite">
-      <div id="progress" class="progress" aria-hidden="true"></div>
-
-      <article id="step-welcome" class="step active">
-        <h2>What you are setting up</h2>
-        <p>
-          Handoff tracks unfinished work in a shared <code>HANDOFF.md</code> ledger.
-          The dashboard shows tasks, agents, and progress while you work. The shortcut keeps it one keystroke away
-          without typing into the running agent.
-        </p>
-        <div class="preview">
-          <img
-            src="https://raw.githubusercontent.com/divijshrivastava/handoff-skill/main/assets/dashboard-session.gif"
-            alt="Handoff dashboard beside an agent session"
-            loading="lazy"
-            width="960"
-            height="540">
+      <div class="hero-visual" aria-label="A handoff preserves completed work and tells the next session what remains">
+        <div class="visual-label"><span class="status-dot" aria-hidden="true"></span> THE CONTEXT THAT CARRIES OVER</div>
+        <div class="file-card">
+          <div class="file-heading"><span class="file-icon" aria-hidden="true">≡</span> HANDOFF.md <span class="file-tag">in your repo</span></div>
+          <div class="file-body"><span class="tiny-label">TASK / PROJECT MAP</span><h2>One task. A clear next step.</h2><p class="example-check"><span aria-hidden="true">✓</span> Document the main folders</p><p class="example-open"><span aria-hidden="true">□</span> Verify every listed path</p><div class="next-note"><span>NEXT SESSION</span><p>Check the paths.<br>The document already exists.</p></div></div>
         </div>
-        <p class="note">
-          You need Git, Python 3.9+, and <code>handoff-tui</code> on your PATH.
-          Copy the launcher from the skill once if you have not already.
-        </p>
-      </article>
-
-      <article id="step-terminal" class="step">
-        <h2>Where will you press the shortcut?</h2>
-        <p>Pick the terminal you use most. The install command changes slightly for Cursor.</p>
-        <div class="choice-grid">
-          <button type="button" class="choice selected" data-terminal="iterm2">
-            <strong>iTerm2</strong>
-            <small>Opens the dashboard in a new window. Keeps Ctrl+V for Codex image paste.</small>
-          </button>
-          <button type="button" class="choice" data-terminal="cursor">
-            <strong>Cursor</strong>
-            <small>Runs a workspace task from the integrated terminal. Reload the window after install.</small>
-          </button>
-          <button type="button" class="choice" data-terminal="other">
-            <strong>tmux bar / other</strong>
-            <small>Uses the same key inside <code>handoff-tui --codex</code> or <code>--with</code>.</small>
-          </button>
-        </div>
-        <p class="note warn">
-          On macOS, Ctrl+Alt+H is <strong>Control+Option+H</strong>.
-        </p>
-      </article>
-
-      <article id="step-install" class="step">
-        <h2>Install the binding</h2>
-        <p>Run this in a shell at your repository. It installs the shortcut and runs the CLI practice prompt.</p>
-        <div class="field">
-          <label for="repo-path">Repository path</label>
-          <input id="repo-path" type="text" placeholder="/Users/you/code/your-repo" autocomplete="off">
-        </div>
-        <div class="command-box">
-          <pre id="install-command"></pre>
-          <button type="button" class="copy" id="copy-command">Copy</button>
-        </div>
-        <p class="note">
-          For tmux-wrapped agents, use
-          <code>HANDOFF_VIEWER_KEY=C-M-h handoff-tui --root … --codex</code>
-          instead of the iTerm2/Cursor installer.
-        </p>
-      </article>
-
-      <article id="step-practice-web" class="step">
-        <h2>Practice the chord here</h2>
-        <p>Click the box below, then press the shortcut. This page listens for the same modifiers your terminal will use.</p>
-        <div id="practice-zone" class="practice" tabindex="0" aria-label="Practice Ctrl+Alt+H">
-          <div class="keycap-row" aria-hidden="true">
-            <span id="key-ctrl" class="keycap">Ctrl</span>
-            <span class="keycap">+</span>
-            <span id="key-alt" class="keycap">Alt</span>
-            <span class="keycap">+</span>
-            <span id="key-h" class="keycap">H</span>
-          </div>
-          <p id="practice-status" class="practice-status">Waiting for Ctrl+Alt+H…</p>
-        </div>
-        <p class="note warn">
-          The browser cannot open your local dashboard. This step is only for muscle memory.
-        </p>
-      </article>
-
-      <article id="step-practice-real" class="step">
-        <h2>Try it for real</h2>
-        <p>
-          Switch to your terminal or editor, press <strong>Ctrl+Alt+H</strong>, and confirm the Handoff dashboard opened.
-          Press <strong>q</strong> inside the dashboard to close it.
-        </p>
-        <div class="choice-grid">
-          <button type="button" class="choice" id="real-yes">
-            <strong>Yes, it opened</strong>
-            <small>The dashboard appeared in a new window or panel.</small>
-          </button>
-          <button type="button" class="choice" id="real-no">
-            <strong>Not yet</strong>
-            <small>Nothing happened, or I still need to reload iTerm2 / Cursor.</small>
-          </button>
-        </div>
-        <p id="real-status" class="practice-status"></p>
-      </article>
-
-      <article id="step-done" class="step">
-        <h2>You are set</h2>
-        <p>
-          Keep using Ctrl+Alt+H whenever you want the live view.
-          Initialise Handoff in a repository with <code>/handoff:init</code> or
-          <code>/handoff:continue</code> when a ledger already exists.
-        </p>
-        <div class="footer-links">
-          <a href="https://github.com/divijshrivastava/handoff-skill#install">Install the skill</a>
-          <a href="https://github.com/divijshrivastava/handoff-skill#installing-the-viewer-key">Viewer key docs</a>
-          <a href="https://github.com/divijshrivastava/handoff-skill">GitHub repository</a>
-        </div>
-      </article>
-
-      <div class="actions">
-        <button type="button" class="secondary" id="back">Back</button>
-        <button type="button" class="primary" id="next">Continue</button>
+        <div class="session-thread"><span>Session A <span aria-hidden="true">↗</span></span><span class="thread-line" aria-hidden="true"></span><span><span aria-hidden="true">↗</span> Session B</span></div>
+        <p class="visual-caption">The conversation ends. The record stays.</p>
       </div>
     </section>
+
+    <div class="guide-layout" id="guide">
+      <aside class="guide-nav">
+        <p class="tiny-label">YOUR FIRST HANDOFF</p>
+        <nav aria-label="Tutorial lessons">
+          <a href="#install" aria-current="step"><span>01</span> Install the skill</a>
+          <a href="#first-task"><span>02</span> Track a real task</a>
+          <a href="#understand"><span>03</span> Read the record</a>
+          <a href="#viewer"><span>04</span> Open the dashboard</a>
+          <a href="#handoff"><span>05</span> Pass it on</a>
+        </nav>
+        <div class="nav-note"><span class="small-file" aria-hidden="true">↳</span><p>The skill guides your agent.<br>The ledger keeps the record.<br>The dashboard shows it.</p></div>
+        <a class="help-link" href="#troubleshooting">Something not working? <span aria-hidden="true">↗</span></a>
+      </aside>
+
+      <div class="lessons">
+        <section class="lesson" id="install" aria-labelledby="install-title">
+          <div class="lesson-kicker"><span>01 / INSTALL</span><span class="pill">ONE TIME</span></div>
+          <h2 id="install-title">Give your agent the skill.</h2>
+          <p>Use an existing Git repository you can edit. You’ll need your coding agent and Git; the helper and dashboard also need Python 3.9 or newer.</p>
+          <fieldset class="selector"><legend>Which agent do you use?</legend><div class="segmented">
+            <label><input type="radio" name="host" value="codex" checked><span>Codex</span></label>
+            <label><input type="radio" name="host" value="claude"><span>Claude Code</span></label>
+            <label><input type="radio" name="host" value="cursor"><span>Cursor</span></label>
+            <label><input type="radio" name="host" value="other"><span>Another agent</span></label>
+          </div></fieldset>
+          <div class="command-box"><div class="command-heading"><span id="install-context">IN YOUR TERMINAL · FROM YOUR PROJECT</span><button type="button" class="copy" data-copy="skill-command" aria-label="Copy skill install command">Copy <span aria-hidden="true">⧉</span></button></div><pre><code id="skill-command">npx skills add divijshrivastava/handoff-skill --skill handoff -g</code></pre></div>
+          <p id="install-note" class="small-note">This uses the skills CLI and requires Node.js/npm. Select your agent in the installer, then open a new agent session in your project. The <code>-g</code> flag makes the skill available across projects.</p>
+          <details><summary>Already installed, or prefer a plugin?</summary><p>You can skip this command if your agent already has Handoff. Claude Code’s plugin commands are available above; Cursor also supports <a href="https://github.com/divijshrivastava/handoff-skill#cursor">marketplace installation</a>. A copied skill folder works too. Restart or reload the agent after installation.</p></details>
+          <div class="checkpoint"><span class="check-label">CHECKPOINT</span><p>In the new agent session, ask: <strong>“Can you find the installed handoff skill and read its instructions?”</strong> It should find <code>SKILL.md</code>. If it cannot, finish installation before going on.</p></div>
+        </section>
+
+        <section class="lesson" id="first-task" aria-labelledby="task-title">
+          <div class="lesson-kicker"><span>02 / FIRST TASK</span><span class="pill">IN YOUR PROJECT</span></div>
+          <h2 id="task-title">Make the work visible.</h2>
+          <p>First, open your agent in the repository you want to work on. Send this as a message to the agent, not as a shell command.</p>
+          <div class="command-box prompt-box"><div class="command-heading"><span>MESSAGE TO YOUR AGENT</span><button type="button" class="copy" data-copy="init-prompt" aria-label="Copy initialization prompt">Copy <span aria-hidden="true">⧉</span></button></div><pre><code id="init-prompt">Initialise the handoff.</code></pre></div>
+          <p>This creates <code>HANDOFF.md</code> when needed, or audits the one already there. <strong>Initialising does not start a task.</strong> Now give the agent something small and concrete:</p>
+          <div class="command-box prompt-box"><div class="command-heading"><span>MESSAGE TO YOUR AGENT</span><button type="button" class="copy" data-copy="task-prompt" aria-label="Copy first task prompt">Copy <span aria-hidden="true">⧉</span></button></div><pre><code id="task-prompt">Use handoff. Create a short PROJECT_MAP.md describing this repository's main folders. Check every listed path against the repository, then record the verification result. If PROJECT_MAP.md already exists, review and improve it instead.</code></pre></div>
+          <div class="checkpoint"><span class="check-label">WHAT TO LOOK FOR</span><p>Open <code>HANDOFF.md</code> in your editor. Before implementation, the task should have an owner, <strong>In progress</strong> checked, and steps for the work and verification. Once the paths are checked, the entry should record that evidence and completion.</p></div>
+          <p class="small-note">Already have unfinished work? The agent audits it and may ask which task should go first. Give it that ordering. An existing ledger automatically activates Handoff in later sessions.</p>
+        </section>
+
+        <section class="lesson" id="understand" aria-labelledby="understand-title">
+          <div class="lesson-kicker"><span>03 / READ THE RECORD</span><span class="pill accent">TRY IT HERE</span></div>
+          <h2 id="understand-title">A checkbox is a clue.<br>The evidence tells the story.</h2>
+          <p>Imagine the agent wrote the project map, then stopped before checking the paths. Explore the three moments below to see what the next agent inherits.</p>
+          <div class="simulation" aria-label="Interactive handoff example">
+            <div class="simulation-heading"><span><span class="status-dot" aria-hidden="true"></span> EXAMPLE REPOSITORY</span><span>No local files are changed</span></div>
+            <div class="scene-buttons" role="group" aria-label="Example stages">
+              <button type="button" data-scene="0" aria-pressed="true"><span>1</span> Record</button>
+              <button type="button" data-scene="1" aria-pressed="false"><span>2</span> Pause</button>
+              <button type="button" data-scene="2" aria-pressed="false"><span>3</span> Continue</button>
+            </div>
+            <div class="simulation-content" aria-live="polite" aria-atomic="true">
+              <div class="example-stats"><div><span>OWNER</span><strong id="example-owner">Atlas</strong></div><div><span>STEPS DONE</span><strong id="example-count">0 / 2</strong></div><div><span>TASK STATE</span><strong id="example-state">In progress</strong></div></div>
+              <div class="example-task"><div class="example-task-heading"><span class="small-file" aria-hidden="true">↳</span><h3>Write a project map</h3><span class="task-badge">1 task</span></div><p id="example-step-one"><span aria-hidden="true">□</span> Write PROJECT_MAP.md</p><p id="example-step-two"><span aria-hidden="true">□</span> Verify each path exists</p></div>
+              <div class="example-evidence"><span class="tiny-label">RECORDED STATUS</span><p id="example-evidence">Task recorded before editing. Next: inspect the repository and write the map.</p></div>
+              <p class="scene-lesson" id="scene-lesson">A name alone is not progress. The task entry makes the planned work visible.</p>
+            </div>
+          </div>
+          <div class="knowledge-check"><h3>Your turn</h3><p>The document exists, but verification is unchecked. What should the next agent do first?</p><div class="answer-options"><button type="button" data-answer="rewrite">Rewrite the document</button><button type="button" data-answer="audit">Inspect the document and later evidence</button><button type="button" data-answer="complete">Mark the task complete</button></div><p id="answer-feedback" class="answer-feedback" role="status">Choose an answer to check your understanding.</p></div>
+          <details><summary>How do the ledger checkboxes work?</summary><div class="table-scroll"><table><caption>Task-level state in HANDOFF.md</caption><thead><tr><th scope="col">State</th><th scope="col">In progress</th><th scope="col">Completed</th></tr></thead><tbody><tr><th scope="row">Pending</th><td><code>[ ]</code></td><td><code>[ ]</code></td></tr><tr><th scope="row">Working or blocked</th><td><code>[x]</code></td><td><code>[ ]</code></td></tr><tr><th scope="row">Finished and verified</th><td><code>[x]</code></td><td><code>[x]</code></td></tr></tbody></table></div><p>Completed tasks keep both state boxes checked. The dashboard counts recorded tasks and steps; it does not prove tests passed or that an agent is still running.</p></details>
+        </section>
+
+        <section class="lesson" id="viewer" aria-labelledby="viewer-title">
+          <div class="lesson-kicker"><span>04 / THE DASHBOARD</span><span class="pill">OPTIONAL, USEFUL</span></div>
+          <h2 id="viewer-title">Keep the work one shortcut away.</h2>
+          <p>The ledger already works in your editor. The live dashboard makes it easier to browse agents, inspect tasks, and assign work. Use macOS, Linux, or WSL for the live terminal view.</p>
+          <h3 class="substep"><span>A</span> Set up the launcher</h3>
+          <p>The skill install does not necessarily put <code>handoff-tui</code> on your PATH. Ask your agent to set it up from the installed copy:</p>
+          <div class="command-box prompt-box"><div class="command-heading"><span>MESSAGE TO YOUR AGENT</span><button type="button" class="copy" data-copy="launcher-prompt" aria-label="Copy launcher setup prompt">Copy <span aria-hidden="true">⧉</span></button></div><pre><code id="launcher-prompt">Find the installed handoff skill. Create ~/.local/bin if needed, copy its scripts/handoff-tui launcher there, and make it executable. Ensure ~/.local/bin is on my shell PATH. Verify with handoff-tui --which and show me which installed helper it resolves to.</code></pre></div>
+          <p class="small-note">Copy the launcher; a symlink into a versioned plugin directory can break after an update. Open a fresh terminal if your PATH changed.</p>
+          <h3 class="substep"><span>B</span> Open it once before binding a key</h3>
+          <div class="field"><label for="repo-path">Absolute path to your project</label><input id="repo-path" type="text" placeholder="/Users/you/code/your-project" spellcheck="false" autocomplete="off" aria-describedby="path-help path-error"><p id="path-help" class="small-note">Run <code>pwd</code> in your project’s terminal, then paste the result. For WSL, use its Linux path. Paths with spaces are supported.</p><p id="path-error" class="field-error" role="status"></p></div>
+          <div class="command-box"><div class="command-heading"><span>IN YOUR TERMINAL</span><button type="button" class="copy" data-copy="viewer-command" aria-label="Copy viewer command" disabled>Enter a path first</button></div><pre><code id="viewer-command">handoff-tui --root '/absolute/path/to/your-project'</code></pre></div>
+          <div class="checkpoint"><span class="check-label">YOU SHOULD SEE</span><p>An <strong>Agents</strong> view with the owner from your ledger. Select that owner and press <kbd>Enter</kbd> for tasks, then <kbd>Enter</kbd> again for steps and status. Press <kbd>q</kbd> to close the viewer.</p></div>
+          <h3 class="substep"><span>C</span> Bind the shortcut for your terminal</h3>
+          <fieldset class="selector"><legend>Where will you open the dashboard?</legend><div class="segmented">
+            <label><input type="radio" name="terminal" value="iterm2" checked><span>iTerm2</span></label><label><input type="radio" name="terminal" value="cursor"><span>Cursor terminal</span></label><label><input type="radio" name="terminal" value="tmux"><span>tmux + agent CLI</span></label>
+          </div></fieldset>
+          <div id="cli-field" class="field" hidden><label for="agent-cli">Agent to launch inside tmux</label><select id="agent-cli"><option value="codex">Codex CLI</option><option value="claude">Claude Code CLI</option></select><p class="small-note">Requires tmux 3.2+ and the selected agent CLI on PATH. For another CLI, replace the name after <code>--with</code>.</p></div>
+          <div class="command-box"><div class="command-heading"><span id="shortcut-context">IN YOUR TERMINAL · INSTALL THE BINDING</span><button type="button" class="copy" data-copy="shortcut-command" aria-label="Copy shortcut command" disabled>Enter a path first</button></div><pre><code id="shortcut-command">HANDOFF_VIEWER_KEY=C-M-h handoff-tui --install-viewer-key --emulator iterm2 --root '/absolute/path/to/your-project'</code></pre></div>
+          <p id="terminal-note" class="small-note">iTerm2: installs a global key binding and a dedicated profile that opens this repository’s dashboard in a new window. If iTerm2 asks to load changed preferences, reload them before trying the key.</p>
+          <div class="shortcut-card"><div class="keycaps" aria-label="Control plus Alt plus H"><kbd>Ctrl</kbd><span>+</span><kbd>Alt</kbd><span>+</span><kbd>H</kbd></div><p>On a Mac: <strong>Control + Option + H</strong>.<br>Switch to your selected terminal to try it.</p></div>
+          <p class="small-note">The shortcut is tested in your terminal. A browser keypress cannot verify the installed binding.</p>
+          <fieldset class="verify-choice"><legend>Did the dashboard open from the shortcut?</legend><label><input type="radio" name="verified" value="yes"> Yes, I saw this project’s tasks</label><label><input type="radio" name="verified" value="no"> Not yet</label></fieldset>
+          <p id="verify-feedback" class="verify-feedback" role="status">Not verified yet. You can still use HANDOFF.md and continue the guide.</p>
+          <div class="key-reference"><h3>The four keys to learn first</h3><dl><div><dt><kbd>Enter</kbd></dt><dd>Open an owner or task</dd></div><div><dt><kbd>b</kbd></dt><dd>Go back one level</dd></div><div><dt><kbd>Tab</kbd></dt><dd>Switch Agents / Tasks</dd></div><div><dt><kbd>q</kbd></dt><dd>Close the dashboard</dd></div></dl></div>
+        </section>
+
+        <section class="lesson" id="handoff" aria-labelledby="handoff-title">
+          <div class="lesson-kicker"><span>05 / CONTINUE THE WORK</span><span class="pill">THE PAYOFF</span></div>
+          <h2 id="handoff-title">Leave a starting point.<br>Not a guessing game.</h2>
+          <p>When you need to stop during a task, ask the current agent to make the record useful to its successor. If your project-map task is already complete, keep it complete; use this on your next unfinished task.</p>
+          <div class="command-box prompt-box"><div class="command-heading"><span>MESSAGE TO THE CURRENT AGENT</span><button type="button" class="copy" data-copy="pause-prompt" aria-label="Copy pause prompt">Copy <span aria-hidden="true">⧉</span></button></div><pre><code id="pause-prompt">Pause this task using handoff. Record what is finished, what is still unverified, any blockers, changed files, and the exact next action. Preserve ownership and leave unfinished steps unchecked.</code></pre></div>
+          <p>After the prior agent has stopped writing, open a new agent session in the <strong>same repository</strong>. Ask it to audit and resume:</p>
+          <div class="command-box prompt-box"><div class="command-heading"><span>MESSAGE TO THE NEXT AGENT</span><button type="button" class="copy" data-copy="resume-prompt" aria-label="Copy continuation prompt">Copy <span aria-hidden="true">⧉</span></button></div><pre><code id="resume-prompt">Use handoff. Read HANDOFF.md and audit the open work against later entries, commits, and current files. Tell me what actually remains and who owns it before starting.</code></pre></div>
+          <p>If the remaining task belongs to the stopped session, explicitly direct the new agent to take over from that recorded owner. It should preserve their work and verify the remaining outcome.</p>
+          <details><summary>Move a task in the dashboard instead</summary><ol><li>Select the unfinished task and press <kbd>x</kbd> to cut it.</li><li>Press <kbd>a</kbd> for Agents, select the receiving agent, then press <kbd>p</kbd> to assign it.</li><li>Confirm it appears under the new owner. A receiving agent finishes its current task, then audits and executes the assignment.</li></ol><p>Assignment is an execution request, but it cannot wake a stopped model. Start or resume the receiving session. In task details, <kbd>x</kbd> moves a single step; <kbd>X</kbd> moves the whole task.</p></details>
+          <div class="finish-card"><span class="tiny-label">YOUR FIRST HANDOFF, UNDERSTOOD</span><h3>Success is a next agent that knows where to start.</h3><p>Look for a recorded task, evidence for the work already done, and a precise next action. The next agent should inspect that evidence before continuing.</p><a class="text-link" href="https://github.com/divijshrivastava/handoff-skill#use-it">Explore the full workflow <span aria-hidden="true">↗</span></a></div>
+        </section>
+
+        <section class="lesson troubleshooting" id="troubleshooting" aria-labelledby="help-title">
+          <p class="lesson-kicker">WHEN SOMETHING GETS IN THE WAY</p><h2 id="help-title">Get unstuck.</h2>
+          <details><summary>“handoff-tui: command not found”</summary><p>Return to <a href="#viewer">launcher setup</a>. Check that <code>~/.local/bin/handoff-tui</code> exists and is executable, and that <code>~/.local/bin</code> is on PATH. Open a fresh terminal after changing PATH. <code>handoff-tui --which</code> should print a path to <code>handoff_tui.py</code>.</p></details>
+          <details><summary>“No handoff_tui.py found” or an unknown option</summary><p>The launcher exists, but the skill may be missing or outdated. Run <code>handoff-tui --which</code> to inspect the resolved copy. Ask your agent to find and update the installed skill, then verify the launcher resolves the updated helper.</p></details>
+          <details><summary>The dashboard is empty or shows another project</summary><p>Check the absolute path passed to <code>--root</code> and open that project’s <code>HANDOFF.md</code>. Initialisation alone creates no task. Send the <a href="#first-task">first task prompt</a> to populate it. Press <kbd>m</kbd> in Agents if you need to return from machine scope to repository scope.</p></details>
+          <details><summary>Ctrl+Alt+H does nothing</summary><p>First run the viewer command directly. If that works, rerun the binding command for the correct terminal and repository. In Cursor, reload the window and focus its integrated terminal. In iTerm2, check that the Handoff profile and binding loaded. For tmux, launch the agent with the generated wrapper command and press the shortcut inside that session. Read any conflict reported by the installer.</p><p>On a Mac, use Control and Option, not Command. A binding saved for one repository does not follow you automatically to another: install it for the intended root. You can always run <code>handoff-tui --root</code> with your project path directly.</p></details>
+          <details><summary>I’m on Windows or the terminal is too small</summary><p>Use WSL for the live dashboard and the tmux wrapper. Live view needs at least 64 columns and 14 rows. On a terminal without curses support, add <code>--once</code> to the viewer command for a text snapshot, or read <code>HANDOFF.md</code> in your editor.</p></details>
+          <details><summary>The agent has a name, but no task progress</summary><p>A session name only identifies the agent. Progress comes from task entries in <code>HANDOFF.md</code>. Ask it to record the request with an owner, steps, and <strong>In progress</strong> checked before continuing its investigation or implementation.</p></details>
+        </section>
+      </div>
+    </div>
   </main>
+  <footer class="site-footer wrap"><a class="brand" href="#">handoff<span class="brand-dot">.</span></a><p>A little structure. A lot less starting over.</p><a href="https://github.com/divijshrivastava/handoff-skill#keyboard-shortcuts">All keyboard shortcuts <span aria-hidden="true">↗</span></a></footer>
+  <div id="copy-status" class="sr-only" role="status"></div>
+  <noscript><p class="noscript-note">The full guide is readable without JavaScript. Agent selection, command personalization, and the interactive example need JavaScript. Copy visible commands manually and replace the example project path.</p></noscript>
   <script src="tutorial.js"></script>
 </body>
 </html>

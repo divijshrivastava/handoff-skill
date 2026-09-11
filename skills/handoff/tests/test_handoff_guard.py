@@ -865,7 +865,7 @@ class HarnessFieldTests(unittest.TestCase):
             self.assertEqual(claims[0].harness, "Cursor")
             self.assertEqual(claims[0].ledger, str(ledger.resolve()))
 
-    def test_agent_startup_notice_requires_a_ledger_entry_before_code(self):
+    def test_agent_startup_notice_requires_a_ledger_entry_before_task_work(self):
         with tempfile.TemporaryDirectory() as directory:
             cache = Path(directory) / "names"
             ledger = Path(directory) / "HANDOFF.md"
@@ -874,7 +874,7 @@ class HarnessFieldTests(unittest.TestCase):
                 name, notice = handoff_guard.agent_startup_notice(
                     "spawn-seed", ledger, harness="Cursor")
             self.assertIn(name, handoff_guard.MYTHIC_NAMES)
-            self.assertIn("record the task in HANDOFF.md before you edit files", notice)
+            self.assertIn("record the task in HANDOFF.md before you investigate or edit files", notice)
             self.assertIn("Preflight first", notice)
 
     def test_apply_session_intake_records_in_progress_work_for_a_new_owner(self):
