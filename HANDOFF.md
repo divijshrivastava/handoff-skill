@@ -92,13 +92,13 @@ Status: In progress. The user asked for the meta-harness coordinator from notes/
 State:
 
 - [x] In progress
-- [ ] Completed
+- [x] Completed
 
 Steps:
 
-- [ ] Open the note with SmallDocs, verify the result, and record the handoff.
+- [x] Open the note with SmallDocs, verify the result, and record the handoff.
 
-Status: Assigned. Step transferred 2026-09-11 from Orpheus in the handoff viewer at the user's direction. Source task: 2026-09-11 - Open the leader coordinator review in SmallDocs (owner: Orpheus) (harness: Codex). Only the selected step moved; its checkbox was preserved. Audit the source context before working; moving does not verify work. Execution request: Ilmarinen must finish its current task, then audit and complete this task, including verification, without waiting for another user prompt. Preserve prior work; record any concrete blocker and next action.
+Status: Assigned. Step transferred 2026-09-11 from Orpheus in the handoff viewer at the user's direction. Source task: 2026-09-11 - Open the leader coordinator review in SmallDocs (owner: Orpheus) (harness: Codex). Only the selected step moved; its checkbox was preserved. Audit the source context before working; moving does not verify work. Execution request: Ilmarinen must finish its current task, then audit and complete this task, including verification, without waiting for another user prompt. Preserve prior work; record any concrete blocker and next action. Complete 2026-09-11 by Ilmarinen. Orpheus recorded a blocker here: its browser launcher failed with kLSExecutableIncorrectFormat and a permission prompt was declined. From this session sdoc opened the note without either problem, returning a local viewing URL. notes/leader-coordinator-review.md was then read and acted on: four of its five findings were verified against the code, the fifth was resolved differently, both recorded in notes/leader-coordinator-plan-v2.md, and the resulting leader coordinator shipped as c54fac9.
 
 Source status at transfer:
 > Status: Blocked on browser opening. Saved notes/leader-coordinator-review.md with the five reviewed findings and verification limits. sdoc generated a local viewing URL, but the default browser launcher failed with kLSExecutableIncorrectFormat. Opening the generated URL through the browser tool was then rejected because the user declined permission; no workaround was attempted. The user can open the saved note manually. Ledger structure and whitespace checks pass. No runtime changes, commit, cloud upload, or publication. The earlier release remains with Ilmarinen; its local tag exists and publication remains unverified here.
@@ -153,7 +153,7 @@ Status update 2026-09-11: Complete. Taken over by Rangi (harness: Claude Code) f
 State:
 
 - [x] In progress
-- [ ] Completed
+- [x] Completed
 
 Steps:
 
@@ -161,9 +161,9 @@ Steps:
 - [x] Update SKILL.md Step 0, commands/init.md, README.md, and CONTRIBUTING.md to the single call.
 - [x] Add PreflightTests regression coverage (skills/handoff/tests/test_handoff_guard.py).
 - [x] Run both suites, check_versions, sync_manifests --check, validate, package_skill, and git diff --check.
-- [ ] Commit, tag v1.22.0, and push so the release workflow publishes the archives.
+- [x] Commit, tag v1.22.0, and push so the release workflow publishes the archives.
 
-Status: In progress. Concrete failure: Step 0 ran name, read, doctor, and git as four commands, and `read` returned the whole 188 KB ledger — 80 finished entries and one open one — so an agent spent about a minute reading history it did not need, and the four separate reads let a peer write bind an audit of old text to a newer version. `preflight` answers all of it from one read: open entries in full, finished ones as heading plus their own Status line, capped by --completed. Measured on this repository: 205,851 bytes returned before, 13,791 after. Committed as ecc4de9 and c0e284f. Verified 2026-09-11: 408 helper tests and 54 root tests pass; check_versions reports 1.22.0 across 6 manifests, sync_manifests --check, validate, and git diff --check pass; package_skill builds a 17-entry archive whose handoff_guard.py carries preflight. Remaining: tag v1.22.0 and push, so the release workflow publishes the archives. 1.22.0 was set in SKILL.md by the exhaustion-handling work at 915cad6 and never tagged; this release carries every commit since v1.21.0.
+Status: In progress. Concrete failure: Step 0 ran name, read, doctor, and git as four commands, and `read` returned the whole 188 KB ledger — 80 finished entries and one open one — so an agent spent about a minute reading history it did not need, and the four separate reads let a peer write bind an audit of old text to a newer version. `preflight` answers all of it from one read: open entries in full, finished ones as heading plus their own Status line, capped by --completed. Measured on this repository: 205,851 bytes returned before, 13,791 after. Committed as ecc4de9 and c0e284f. Verified 2026-09-11: 408 helper tests and 54 root tests pass; check_versions reports 1.22.0 across 6 manifests, sync_manifests --check, validate, and git diff --check pass; package_skill builds a 17-entry archive whose handoff_guard.py carries preflight. Remaining: tag v1.22.0 and push, so the release workflow publishes the archives. 1.22.0 was set in SKILL.md by the exhaustion-handling work at 915cad6 and never tagged; this release carries every commit since v1.21.0. Complete. Published 2026-09-10T23:26:57Z: tag v1.22.0 on origin at f9b0ad6, with handoff.zip, handoff.skill, and SHA256SUMS attached. The published archive hash de1c739f matches the locally built one, so the build is reproducible. Re-verified 2026-09-11 with git ls-remote and gh release view; the boxes above were left unchecked after the release itself completed.
 
 ## 2026-09-10 - Record assigned work in the ledger immediately (owner: Zorya) (harness: Cursor)
 
