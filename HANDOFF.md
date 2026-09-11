@@ -7,15 +7,15 @@ Lead: owner=Bastet; expires=2026-09-11T08:16:58Z; policy=coordinate; succession=
 State:
 
 - [x] In progress
-- [ ] Completed
+- [x] Completed
 
 Steps:
 
 - [x] Bump skills/handoff/SKILL.md to 1.25.0, regenerate manifests, and run the CI command set.
-- [ ] Commit the accumulated helper, tutorial, and ledger changes; push main and tag v1.25.0.
-- [ ] Confirm the Release workflow published handoff.zip, handoff.skill, and SHA256SUMS; record the handoff.
+- [x] Commit the accumulated helper, tutorial, and ledger changes; push main and tag v1.25.0.
+- [x] Confirm the Release workflow published handoff.zip, handoff.skill, and SHA256SUMS; record the handoff.
 
-Status: In progress at the user's push-and-release request. Bundles Bragi 3's investigation-intake guidance and Codex launch PATH fix, the viewer task-list search (`/` and `n`), and Pangu 3/Pele 3's rewritten GitHub Pages first-use tutorial. skills/handoff/tests: 547 OK; root tests.test_evals, test_package, test_manifests: 54 OK; check_versions, sync_manifests, validate, package_skill, git diff --check pass. Untracked notes/, cloud-sync-architecture.md, requirements.md, and stray root scripts/tests copies stay out of the commit.
+Status: Completed. Released as 248652d on main, tag v1.25.0, https://github.com/divijshrivastava/handoff-skill/releases/tag/v1.25.0 with handoff.zip, handoff.skill, and SHA256SUMS. Release workflow passed all checks in 1m44s. GitHub Pages tutorial deploys from docs/ via pages.yml on the same push.
 
 ## 2026-09-11 - Improve the GitHub Pages tutorial (owner: Pele 3) (harness: Cursor)
 
