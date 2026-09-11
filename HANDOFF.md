@@ -5,15 +5,17 @@
 State:
 
 - [x] In progress
-- [ ] Completed
+- [x] Completed
 
 Steps:
 
-- [ ] Stage only HANDOFF.md, handoff_guard.py, handoff_tui.py, progress-viewer.md, test_handoff_tui.py and test_handoff_codex.py, and verify the staged tree on Python 3.9 and 3.12.
-- [ ] Commit the viewer step moves and the tmux probe fix with the ledger.
-- [ ] Push main to origin fast-forward only, confirm with git ls-remote, and record the handoff.
+- [x] Stage only HANDOFF.md, handoff_guard.py, handoff_tui.py, progress-viewer.md, test_handoff_tui.py and test_handoff_codex.py, and verify the staged tree on Python 3.9 and 3.12.
+- [x] Commit the viewer step moves and the tmux probe fix with the ledger.
+- [x] Push main to origin fast-forward only, confirm with git ls-remote, and record the handoff.
 
 Status: In progress. The user asked to commit and push the finished step-move and tmux work. After git fetch, local main is one commit ahead of origin/main f9b0ad6 and none behind; that commit is Ilmarinen's c54fac9 (the leader coordinator, recorded complete), so this push publishes it too. Untracked cloud-sync-architecture.md, notes/ and requirements.md are not part of this work and stay out of the commit.
+
+Complete 2026-09-11. Committed as 1cb7b84 and pushed: origin/main fast-forwarded f9b0ad6..1cb7b84 without force, confirmed with git ls-remote, which also published Ilmarinen's c54fac9. Verified on the staged tree exported with git checkout-index: 470 helper tests and 54 root tests on Python 3.9.10 and 3.12.7, check_versions (1.22.0 across 6 manifests), sync_manifests --check, validate, package_skill, and git diff --cached --check. The first verification run hung rather than failed: a test starts handoff_tui.py --bar without redirecting stdin, and this harness supplied an open socket, so the bar waited for status-line input. That run was stopped, and the rerun with stdin from /dev/null passed. 141 leftover tmux probe servers from earlier test runs (hc-test-*/s sockets under the user's TMPDIR, up to two days old) are still running on this machine; the probe that ran before this fix never registered cleanup. They were not killed. GitHub Actions Validate run 34547930326 for 1cb7b84 was in progress when this was recorded. This ledger record is committed separately.
 
 ## 2026-09-11 - Update the global npx skills copy of handoff (owner: Rangi) (harness: Claude Code)
 
@@ -66,6 +68,8 @@ Taken over 2026-09-11 by Rangi (harness: Claude Code) from Orpheus, following th
 Cause confirmed 2026-09-11 (Rangi): the sandbox Orpheus's Codex session ran in denies Unix sockets, and tmux 3.6a can report 'error creating <socket> (Operation not permitted)' while exiting 0, so HEAD's probe passed and the first real command failed. Reproduced on this machine with the same /usr/local/bin/tmux 3.6a: under sandbox-exec with network access denied, a clean c54fac9 tree gives the same ERROR (set-option ... status on, exit 1) and FAIL (bind_viewer returned False) as /tmp/handoff-step-baseline-tmux.log, and both pass unsandboxed. The fix was already in Orpheus's uncommitted test_handoff_codex.py, now held by Rangi: TmuxIntegrationTests.server probes socket creation and a has-session connection, skipping only on socket permission errors and failing on anything else, and both integration tests use it. Six TmuxProbeTests cover the zero-exit denial, denial on connect, an unreachable server, and unrelated errors. With the fix and sockets denied, both cases skip; unsandboxed, both pass. No runtime code changed. Remaining: resolve the viewer verification entry after a live key check, then complete this entry.
 
 Complete 2026-09-11 (Rangi). On Python 3.9.10 and 3.12.7, the full helper suite (470 tests) and root suite (54 tests) pass; check_versions (1.22.0 across 6 manifests), sync_manifests --check, validate --root ., package_skill and git diff --check pass. TmuxIntegrationTests skip under sandbox-exec with sockets denied and pass unsandboxed. The viewer entry's verification blocker is resolved by this entry, and that entry records the live key check. Not committed: the fix remains uncommitted in skills/handoff/tests/test_handoff_codex.py beside the viewer changes.
+
+Committed 2026-09-11 as 1cb7b84 and pushed to origin/main; see the commit-and-push entry above.
 
 ## 2026-09-11 - Add an optional leader coordinator (owner: Ilmarinen) (harness: Claude Code)
 
@@ -120,6 +124,8 @@ place in ledger order.
 Taken over 2026-09-11 by Rangi (harness: Claude Code) from Orpheus, following the user's viewer move above. Orpheus's last channel report is about 36 hours old, and the six files carrying its uncommitted changes did not change between the start of this session and the takeover; those changes (856-line diff against c54fac9, plus file copies) are preserved at /private/tmp/handoff-orpheus-recovery-20260911. Audit: the two checked steps' outcomes exist in the working tree (transfer_step in handoff_guard.py, step selection with x/a/p in handoff_tui.py, progress-viewer.md), and their SKILL.md paragraph was committed inside Ilmarinen's c54fac9, so HEAD documents step moves whose code is still uncommitted. On Python 3.9.10, 470 helper tests and 54 root tests, check_versions, sync_manifests --check, validate, package_skill and git diff --check pass. Remaining: the Python 3.12 run and a live key-sequence check of the source viewer against a scratch ledger.
 
 Complete 2026-09-11 (Rangi). The tmux blocker is resolved by the tmux entry above: a sandbox denied sockets, not a code defect. On Python 3.9.10 and 3.12.7, the full helper suite (470 tests) and root suite (54 tests) pass; check_versions (1.22.0 across 6 manifests), sync_manifests --check, validate --root ., package_skill and git diff --check pass. Live key check: drove the working-tree viewer in a private tmux session against a scratch two-owner ledger outside this repository. Enter opened details, j selected the unchecked step, x marked it held, a opened Agents, j selected a receiver, and p wrote a new entry under that owner carrying the step's checkbox, the source status and the execution request, while the source kept its checked step, a transfer note and a quoted historical record; the scratch ledger validated. The receiver list showed this machine's recent name claims beside ledger owners, as progress-viewer.md documents. Not committed: HEAD c54fac9 already carries this feature's SKILL.md paragraph, so HEAD documents step moves whose code (handoff_guard.py, handoff_tui.py, progress-viewer.md, test_handoff_tui.py, test_handoff_codex.py) is uncommitted. No commit was requested.
+
+Committed 2026-09-11 as 1cb7b84 and pushed to origin/main; see the commit-and-push entry above.
 
 ## 2026-09-11 - Open the leader coordinator review in SmallDocs (owner: Rangi) (harness: Claude Code)
 
