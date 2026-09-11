@@ -3,7 +3,7 @@ name: handoff
 description: "Coordinate progressive repository work across agents with a shared HANDOFF.md ledger. Use in repositories with a ledger, or on explicit handoff requests: /handoff:init, 'initialise the handoff', /handoff:continue, /handoff:status, /handoff:view, /handoff:purge, or 'use handoff'. After activation: handoff_guard.py name --root <repo> claims the session name; handoff_guard.py read --root <repo> returns ledger text and version in one snapshot. Audit later entries and code before treating unchecked boxes as unfinished. For ledger writes: handoff_guard.py apply --root <repo> --expect-version V with --entry FILE or --content FILE. On exit 3, re-read and re-audit; never retry the stale write. A user viewer assignment is required queued work: finish your current task, then audit and complete it without another prompt. Skip read-only questions needing no tracking or mutation."
 license: MIT
 metadata:
-  version: "1.23.0"
+  version: "1.24.0"
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
 ---
 
@@ -67,6 +67,16 @@ requires.
   each scenario. Routine tool narration does not help the user decide.
 - Show only necessary ledger snippets as Markdown. Avoid reproducing a whole
   entry for a single state transition or repeating a snippet in prose.
+
+## Ledger before code
+
+In a repository that already keeps `HANDOFF.md`, every agent session follows
+the same order whether it was opened from the viewer with **N**, wrapped with
+`--with`, or started in a plain terminal: **record the task in the ledger
+before editing files**. A name claim or a recent label in the viewer is not a
+task entry. Run preflight, write or update your entry with `In progress`
+checked when you begin, and only then implement. The viewer's WIP column reads
+only from those ledger entries.
 
 ## Step 0: Preflight before task work
 

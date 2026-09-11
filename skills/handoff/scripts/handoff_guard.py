@@ -466,6 +466,89 @@ def make_template(task_date: str, title: str, owner: str, steps: list[str],
     )
 
 
+def intake_task_title(task: str, *, max_len: int = 60) -> str:
+    """Turn one user-typed spawn task into a ledger heading title."""
+    title = " ".join(task.strip().split())
+    if not title:
+        return "Session work"
+    if len(title) <= max_len:
+        return title
+    return title[: max_len - 1].rstrip() + "…"
+
+
+def session_intake_entry(owner: str, harness: str | None = None,
+                         when: str | None = None, task: str | None = None) -> str:
+    """One pending task entry for an agent session opened from the handoff viewer."""
+    stamp = when or date.today().isoformat()
+    label = f" (harness: {harness.strip()})" if harness and harness.strip() else ""
+    direction = (task or "").strip()
+    if direction:
+        step_lines = "\n".join(
+            "- [ ] " + step for step in (
+                "Implement the requested outcome.",
+                "Verify and record the handoff.",
+            )
+        )
+        status = (
+            f"In progress. Opened from the handoff viewer with user direction: "
+            f"{direction}. Execution request: {owner} must audit and complete this "
+            "task, including verification, without waiting for another user prompt."
+        )
+        title = intake_task_title(direction)
+    else:
+        step_lines = "\n".join(
+            "- [ ] " + step for step in (
+                "Record the user's direction at intake.",
+                "Implement the remaining outcome.",
+                "Verify and record the handoff.",
+            )
+        )
+        status = (
+            "In progress. Session opened from the handoff viewer; record the "
+            "user's direction here at intake."
+        )
+        title = "Session work"
+    return (
+        f"## {stamp} - {title} (owner: {owner}){label}\n\n"
+        "State:\n\n"
+        "- [x] In progress\n"
+        "- [ ] Completed\n\n"
+        "Steps:\n\n"
+        f"{step_lines}\n\n"
+        f"Status: {status}\n"
+    )
+
+
+def apply_session_intake(ledger: Path, expect_version: str, owner: str,
+                         harness: str | None = None,
+                         task: str | None = None) -> dict[str, object]:
+    """Record one intake entry when the viewer opens a new agent against this ledger."""
+    try:
+        current = ledger.read_text(encoding="utf-8")
+    except OSError as error:
+        return {"status": "error", "errors": [str(error)]}
+    current_version = ledger_version(current)
+    if not version_matches(current_version, expect_version):
+        return {
+            "status": "conflict",
+            "expected_version": expect_version,
+            "current_version": current_version,
+            "errors": ["HANDOFF.md changed since this writer read it"],
+        }
+    if any(task.owner == owner and task.state != "completed" and not task.errors
+           for task in parse_tasks(current)):
+        return {
+            "status": "skipped",
+            "current_version": current_version,
+            "note": f"{owner} already holds open work in the ledger; no intake entry was added.",
+        }
+
+    def build(text: str) -> str:
+        return insert_entry(text, session_intake_entry(owner, harness, task=task))
+
+    return swap_ledger(ledger, expect_version, build)
+
+
 def ledger_version(text: str) -> str:
     """Content hash identifying the ledger revision a writer read."""
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
@@ -656,6 +739,20 @@ def detect_harness() -> str | None:
     return None
 
 
+def harness_for_agent(agent: str) -> str | None:
+    """Map a wrapped agent CLI name to the harness label the ledger uses."""
+    return {
+        "claude": "Claude Code",
+        "codex": "Codex",
+        "kimi": "Kimi Code",
+        "kimi-code-cli": "Kimi Code",
+        "grok": "Grok CLI",
+        "cursor-agent": "Cursor",
+        "gemini": "Gemini",
+        "opencode": "opencode",
+    }.get(Path(agent).name)
+
+
 def name_cache_dir() -> Path:
     location = os.environ.get("HANDOFF_NAME_CACHE")
     if location:
@@ -687,15 +784,49 @@ def held_names(directory: Path, record: Path) -> set[str]:
     return names - {""}
 
 
+@dataclass(frozen=True)
+class NameClaim:
+    """One session's recent name claim on this machine."""
+
+    name: str
+    harness: str
+    ledger: str | None = None
+
+
+def parse_name_claim(lines: list[str]) -> NameClaim | None:
+    """Read one name-cache record, or None when it names no session."""
+    if not lines or not lines[0].strip():
+        return None
+    ledger = lines[2].strip() if len(lines) > 2 and lines[2].strip() else None
+    return NameClaim(lines[0].strip(),
+                     lines[1].strip() if len(lines) > 1 else "",
+                     ledger)
+
+
+def claim_is_for_ledger(claim: NameClaim, ledger: Path) -> bool:
+    """True only when the claim explicitly names this ledger file.
+
+    Legacy records without a ledger path cannot prove which repository they
+    belong to, so they are excluded from strict repo-scoped checks such as
+    leader assignment.
+    """
+    if not claim.ledger:
+        return False
+    try:
+        return Path(claim.ledger).resolve() == ledger.resolve()
+    except OSError:
+        return claim.ledger == str(ledger)
+
+
 def recent_claims(directory: Path | None = None,
-                  max_age: float = RECENT_CLAIM_SECONDS) -> list[tuple[str, str]]:
-    """Recent name claims as (name, harness), newest claim first.
+                  max_age: float = RECENT_CLAIM_SECONDS) -> list[NameClaim]:
+    """Recent name claims on this machine, newest claim first.
 
     A record is touched only when a session asks for its name. This reports a
     recent claim on this machine, not a running process.
     """
     directory = directory or name_cache_dir()
-    live: list[tuple[float, str, str]] = []
+    live: list[tuple[float, NameClaim]] = []
     fresh = time.time() - max_age
     try:
         entries = list(directory.iterdir())
@@ -708,15 +839,27 @@ def recent_claims(directory: Path | None = None,
             mtime = entry.stat().st_mtime
             if mtime < fresh:
                 continue
-            lines = entry.read_text(encoding="utf-8").splitlines()
+            claim = parse_name_claim(entry.read_text(encoding="utf-8").splitlines())
         except OSError:
             continue
-        if lines and lines[0].strip():
-            name = lines[0].strip()
-            harness = lines[1].strip() if len(lines) > 1 else ""
-            live.append((mtime, name, harness))
+        if claim is not None:
+            live.append((mtime, claim))
     live.sort(key=lambda row: row[0], reverse=True)
-    return [(name, harness) for _, name, harness in live]
+    return [claim for _, claim in live]
+
+
+def recent_claims_for_ledger(ledger: Path,
+                             directory: Path | None = None,
+                             max_age: float = RECENT_CLAIM_SECONDS) -> list[NameClaim]:
+    """Recent claims that name this ledger, newest claim first.
+
+    A record without a ledger path, as every helper before ledger recording
+    writes, names no repository. Counting it as a match put another
+    repository's session into this one's viewer, so it is left to the
+    machine-wide list, which makes no claim about where a session works.
+    """
+    return [claim for claim in recent_claims(directory, max_age)
+            if claim_is_for_ledger(claim, ledger)]
 
 
 def held_sessions(directory: Path | None = None,
@@ -727,7 +870,15 @@ def held_sessions(directory: Path | None = None,
     is touched only when a session asks for its name. Callers must not present
     it as proof that an agent is working.
     """
-    return {name: harness for name, harness in recent_claims(directory, max_age)}
+    return {claim.name: claim.harness for claim in recent_claims(directory, max_age)}
+
+
+def held_sessions_for_ledger(ledger: Path,
+                             directory: Path | None = None,
+                             max_age: float = RECENT_CLAIM_SECONDS) -> dict[str, str]:
+    """Harness by name for recent claims against one ledger only."""
+    return {claim.name: claim.harness
+            for claim in recent_claims_for_ledger(ledger, directory, max_age)}
 
 
 def free_name(order: list[str], reserved: set[str]) -> str:
@@ -801,7 +952,8 @@ def recall_name(seed: str, ledger: Path) -> str | None:
     return name or None
 
 
-def claim_name(seed: str, ledger: Path, taken: set[str]) -> tuple[str, bool]:
+def claim_name(seed: str, ledger: Path, taken: set[str],
+               *, harness: str | None = None) -> tuple[str, bool]:
     """Name this session for this ledger, and remember it for later calls.
 
     A named session keeps its name even once its own entry makes that name
@@ -812,16 +964,18 @@ def claim_name(seed: str, ledger: Path, taken: set[str]) -> tuple[str, bool]:
     """
     record = name_record(seed, ledger)
     directory = record.parent
-    harness = detect_harness()
+    resolved = detect_harness() if harness is None else harness
     try:
         lines = record.read_text(encoding="utf-8").splitlines()
     except OSError:
         lines = []
     remembered = lines[0].strip() if lines else ""
+    ledger_line = str(ledger.resolve())
     if remembered:
         # Refresh the record so a live session keeps its claim and its harness.
         try:
-            record.write_text(remembered + "\n" + (harness or "") + "\n", encoding="utf-8")
+            record.write_text(remembered + "\n" + (resolved or "") + "\n" + ledger_line + "\n",
+                              encoding="utf-8")
         except OSError:
             pass
         return remembered, True
@@ -829,11 +983,46 @@ def claim_name(seed: str, ledger: Path, taken: set[str]) -> tuple[str, bool]:
     chosen = name_for_slot(allocate_fcfs_slot(directory), reserved)
     try:
         directory.mkdir(parents=True, exist_ok=True)
-        record.write_text(chosen + "\n" + (harness or "") + "\n", encoding="utf-8")
+        record.write_text(chosen + "\n" + (resolved or "") + "\n" + ledger_line + "\n",
+                          encoding="utf-8")
         invalidate_bar_cache(ledger)
     except OSError:
         pass
     return chosen, False
+
+
+def seed_claim(seed: str, ledger: Path, agent: str) -> str | None:
+    """Claim a session name when spawning a wrapped agent against one ledger."""
+    name, _notice = agent_startup_notice(seed, ledger, harness=harness_for_agent(agent))
+    return name
+
+
+def agent_startup_notice(seed: str, ledger: Path,
+                         *, harness: str | None = None) -> tuple[str | None, str]:
+    """Claim a session name and return a banner: ledger before code.
+
+    Wrapped agents (--with, N in the viewer) and plain terminals share one rule
+    in a handoff-initialised repository: record the task in HANDOFF.md before
+    editing files.
+    """
+    if not ledger.is_file():
+        return None, ("Handoff: this repository has no HANDOFF.md yet. "
+                      "Record your task there before editing files.")
+    try:
+        text = ledger.read_text(encoding="utf-8")
+    except OSError:
+        return None, ("Handoff: HANDOFF.md is unreadable. Fix it before work, "
+                      "then record your task before editing files.")
+    name, _remembered = claim_name(seed, ledger.resolve(), taken_names(text),
+                                   harness=harness)
+    queued = assigned_unstarted(parse_tasks(text), name)
+    lines = [
+        f"Handoff · you are {name} · record the task in HANDOFF.md before you edit files",
+        "Preflight first (Step 0), intake write second (Step 1), implementation last.",
+    ]
+    if queued:
+        lines.append(f"{len(queued)} task(s) already assigned to you — audit those before new work.")
+    return name, "\n".join(lines)
 
 
 def owner_label_error(owner: str) -> str | None:
@@ -929,6 +1118,103 @@ def set_lease(text: str, line: int, heading: str, lease: str | None) -> str:
         raise ValueError(f"task '{heading}' has no Status line to carry a lease")
     lines[status + 1 : status + 1] = ["", lease]
     return "\n".join(lines) + "\n"
+
+
+def _task_step_line_indices(lines: list[str], line: int, end: int) -> list[int]:
+    """Return source line indices for concrete steps under one task block."""
+    masked = outside_fence_lines(lines)
+    steps_start = next(index for index in range(line, end)
+                       if masked[index].strip() == "Steps:")
+    status_start = next((index for index in range(steps_start + 1, end)
+                         if masked[index].strip().startswith("Status:")), end)
+    return [index for index in range(steps_start + 1, status_start)
+            if (match := BOX_RE.match(masked[index]))
+            and match.group(2).strip().casefold() not in {"in progress", "completed"}]
+
+
+def _ensure_state_checked(lines: list[str], line: int, end: int, label: str) -> None:
+    """Check one task-level state box when it is still open."""
+    masked = outside_fence_lines(lines)
+    steps_start = next((index for index in range(line, end)
+                        if masked[index].strip() == "Steps:"), end)
+    for index in range(line, steps_start):
+        stripped = lines[index].strip()
+        if stripped == f"- [ ] {label}":
+            lines[index] = f"- [x] {label}"
+            return
+
+
+def append_status_note(text: str, line: int, heading: str, note: str) -> str:
+    """Append one dated sentence inside a task's status paragraph."""
+    lines = text.splitlines()
+    locate_task(lines, line, heading)
+    masked = outside_fence_lines(lines)
+    end = task_block_end(lines, line)
+    status_end = status_paragraph_end(masked, line, end)
+    if status_end is None:
+        raise ValueError(f"task '{heading}' has no Status line")
+    lines.insert(status_end + 1, note)
+    return "\n".join(lines) + "\n"
+
+
+def mark_step_complete(text: str, line: int, heading: str, step_index: int,
+                       expected_step: tuple[bool, str], when: str | None = None) -> str:
+    """Check one step at the user's direction without completing the whole task."""
+    lines = text.splitlines()
+    locate_task(lines, line, heading)
+    task = next(task for task in parse_tasks(text) if task.line == line)
+    if not task.modern or task.errors:
+        raise ValueError("Repair this task's structure before marking a step complete")
+    if not 0 <= step_index < len(task.steps) or task.steps[step_index] != expected_step:
+        raise ValueError("The selected step changed; read the ledger and select it again")
+    done, label = expected_step
+    if done:
+        return text if text.endswith("\n") else text + "\n"
+
+    end = task_block_end(lines, line)
+    step_lines = _task_step_line_indices(lines, line, end)
+    match = BOX_RE.match(outside_fence_lines(lines)[step_lines[step_index]])
+    if match is None:
+        raise ValueError("The selected step changed; read the ledger and select it again")
+    lines[step_lines[step_index]] = f"- [x] {match.group(2).rstrip()}"
+    _ensure_state_checked(lines, line, end, "In progress")
+    all_steps_done = all(
+        BOX_RE.match(outside_fence_lines(lines)[index]).group(1).strip().casefold() == "x"
+        for index in step_lines
+    )
+    if all_steps_done:
+        _ensure_state_checked(lines, line, end, "Completed")
+    result = "\n".join(lines) + "\n"
+    if all_steps_done:
+        result = set_lease(result, line, heading, None)
+    stamp = when or date.today().isoformat()
+    note = (f"Marked complete by user override in the handoff viewer on {stamp}: "
+            f"{label.strip()}")
+    return append_status_note(result, line, heading, note)
+
+
+def mark_task_complete(text: str, line: int, heading: str,
+                       when: str | None = None) -> str:
+    """Check every step and the task-level boxes at the user's direction."""
+    lines = text.splitlines()
+    locate_task(lines, line, heading)
+    task = next(task for task in parse_tasks(text) if task.line == line)
+    if not task.modern or task.errors:
+        raise ValueError("Repair this task's structure before marking it complete")
+    if task.completed:
+        return text if text.endswith("\n") else text + "\n"
+
+    end = task_block_end(lines, line)
+    for index in _task_step_line_indices(lines, line, end):
+        match = BOX_RE.match(outside_fence_lines(lines)[index])
+        if match and match.group(1).strip().casefold() != "x":
+            lines[index] = f"- [x] {match.group(2).rstrip()}"
+    _ensure_state_checked(lines, line, end, "In progress")
+    _ensure_state_checked(lines, line, end, "Completed")
+    result = set_lease("\n".join(lines) + "\n", line, heading, None)
+    stamp = when or date.today().isoformat()
+    note = (f"Marked complete by user override in the handoff viewer on {stamp}.")
+    return append_status_note(result, line, heading, note)
 
 
 def mark_task_in_progress(text: str, line: int, heading: str) -> str:

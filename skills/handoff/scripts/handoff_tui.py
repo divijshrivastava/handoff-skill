@@ -10,12 +10,15 @@ import hashlib
 import json
 import math
 import os
+import secrets
 from pathlib import Path
 import sqlite3
 import sys
 import textwrap
 import time
 import unicodedata
+
+from handoff_keys import available_agents, open_agent
 
 try:
     from handoff_channel import Channel
@@ -26,20 +29,37 @@ except ImportError:  # an installed copy without the channel module beside it
     Channel = None  # type: ignore[assignment]
 from handoff_guard import (
     OWNER_RE,
+    NameClaim,
     Task,
+    apply_session_intake,
     assigned_unstarted,
     find_repo_root,
+    harness_for_agent,
     held_sessions,
+    held_sessions_for_ledger,
     ledger_version,
+    mark_step_complete,
+    mark_task_complete,
     outside_fence_lines,
     owner_label_error,
     parse_tasks,
     recent_claims,
+    recent_claims_for_ledger,
     reassign_task,
     recall_name,
     replace_owner,
+    seed_claim,
     swap_ledger,
     transfer_step,
+)
+from handoff_lead import (
+    DEFAULT_VIEWER_LEAD_HOURS,
+    Assignment,
+    build_claim,
+    build_resign,
+    completed_ids,
+    read_assignment,
+    read_lead,
 )
 
 UNASSIGNED = "unassigned"
@@ -63,6 +83,7 @@ class Snapshot:
     statuses: list[str]
     version: str
     read_at: datetime
+    text: str = ""
 
 
 def count_tasks(tasks: list[Task]) -> Counts:
@@ -104,8 +125,21 @@ def owner_counts(tasks: list[Task]) -> list[tuple[str, Counts]]:
     return [(owner, count_tasks(groups[owner])) for owner in groups]
 
 
-def agent_rows(tasks: list[Task]) -> list[tuple[str, Counts]]:
-    """Ledger owners plus recent name claims that hold no tasks yet.
+def repo_display_label(ledger_path: str | None, ledger: Path) -> str:
+    """Short repository label for one name claim."""
+    if not ledger_path:
+        return "?"
+    try:
+        other = Path(ledger_path).resolve()
+    except OSError:
+        return "?"
+    if other == ledger.resolve():
+        return "here"
+    return other.parent.name or other.name
+
+
+def agent_rows(tasks: list[Task], ledger: Path | None = None) -> list[tuple[str, Counts]]:
+    """Ledger owners plus recent name claims for this ledger that hold no tasks yet.
 
     A session that claimed its name during preflight but has not written a
     ledger entry yet should still appear so the user can hand it work from the
@@ -115,12 +149,18 @@ def agent_rows(tasks: list[Task]) -> list[tuple[str, Counts]]:
     ledger_owners = {owner for owner, _ in recorded}
     waiting: list[tuple[str, Counts]] = []
     seen: set[str] = set()
-    for name, _harness in recent_claims():
-        if name in ledger_owners or name == UNASSIGNED or name in seen:
+    claims = recent_claims_for_ledger(ledger) if ledger is not None else recent_claims()
+    for claim in claims:
+        if claim.name in ledger_owners or claim.name == UNASSIGNED or claim.name in seen:
             continue
-        seen.add(name)
-        waiting.append((name, Counts()))
+        seen.add(claim.name)
+        waiting.append((claim.name, Counts()))
     return waiting + recorded
+
+
+def machine_agent_rows(ledger: Path) -> list[tuple[str, NameClaim]]:
+    """Every recent name claim on this machine, newest claim first."""
+    return [(claim.name, claim) for claim in recent_claims()]
 
 
 def owner_harnesses(tasks: list[Task]) -> dict[str, str]:
@@ -179,7 +219,7 @@ def parse_snapshot(text: str) -> Snapshot:
         )
         statuses.append(" ".join(line.strip() for line in block[start:] if line.strip())
                         if start is not None else "Status: Not recorded.")
-    return Snapshot(tasks, statuses, ledger_version(text), datetime.now())
+    return Snapshot(tasks, statuses, ledger_version(text), datetime.now(), text=text)
 
 
 class Watcher:
@@ -233,14 +273,89 @@ def progress(checked: int, total: int, width: int = 12) -> str:
     return f"[{'#' * filled}{'-' * (width - filled)}] {percent} {checked}/{total}"
 
 
+def format_utc_short(stamp: str) -> str:
+    """Show a UTC mandate or accept-by time in local clock form."""
+    try:
+        moment = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+        return moment.astimezone().strftime("%H:%M")
+    except ValueError:
+        return stamp
+
+
+def lead_summary(text: str) -> str | None:
+    """One header line for the recorded mandate, or None when leadership is off."""
+    lead = read_lead(text)
+    if lead is None:
+        return None
+    state = lead.state()
+    if state == "invalid":
+        return f"LEAD  invalid mandate on line {lead.line}"
+    if state == "expired":
+        return f"LEAD  {lead.owner} expired {lead.expires}"
+    if lead.epoch is None:
+        return f"LEAD  {lead.owner} until {lead.expires}"
+    remaining = max(0, int(lead.epoch - time.time()))
+    hours, rem = divmod(remaining, 3600)
+    minutes = rem // 60
+    left = f"{hours}h {minutes}m left" if hours else f"{minutes}m left"
+    return f"LEAD  {lead.owner} | {left} | expires {lead.expires}"
+
+
+def assignment_lines(text: str, task: Task, completed: set[str]) -> list[str]:
+    """Provenance, reservation, and dependency markers for one entry."""
+    assignment = read_assignment(text, task)
+    if assignment is None:
+        return []
+    lines = [assignment_summary(assignment)]
+    unmet = [need for need in assignment.needs if need not in completed]
+    if unmet:
+        lines.append(f"Blocked by: {', '.join(unmet)}")
+    if assignment.paths:
+        lines.append(f"Reserved paths: {', '.join(assignment.paths)}")
+    return lines
+
+
+def assignment_summary(assignment: Assignment) -> str:
+    parts = [f"state={assignment.state}"]
+    if assignment.by:
+        parts.append(f"assigned by {assignment.by}")
+    if assignment.accept_by:
+        parts.append(f"accept by {format_utc_short(assignment.accept_by)}")
+    return "Assignment: " + ", ".join(parts)
+
+
+def task_assignment_marker(text: str, task: Task, completed: set[str]) -> str:
+    """A compact marker for the task list when leadership metadata is present."""
+    assignment = read_assignment(text, task)
+    if assignment is None:
+        return ""
+    parts = [assignment.state]
+    if assignment.by:
+        parts.append(f"by {assignment.by}")
+    if assignment.accept_by:
+        parts.append(f"accept {format_utc_short(assignment.accept_by)}")
+    unmet = [need for need in assignment.needs if need not in completed]
+    marker = " ".join(parts)
+    if unmet:
+        marker += f" | needs {unmet[0]}"
+        if len(unmet) > 1:
+            marker += f"+{len(unmet) - 1}"
+    return f" [{marker}]"
+
+
 def summary_lines(snapshot: Snapshot | None) -> list[str]:
     counts = count_tasks(snapshot.tasks if snapshot else [])
-    return [
+    lines = [
         f"TASKS  {progress(counts.completed, counts.tracked)} completed"
         f"   {counts.in_progress} in progress / {counts.pending} pending",
         f"STEPS  {progress(counts.checked, counts.steps)} checked",
         f"Excluded from totals: {counts.invalid} invalid / {counts.legacy} legacy entries",
     ]
+    if snapshot and snapshot.text:
+        lead_line = lead_summary(snapshot.text)
+        if lead_line:
+            lines.insert(0, lead_line)
+    return lines
 
 
 def use_utf8_stdout() -> None:
@@ -359,20 +474,31 @@ def bar_session_name(ledger: Path, payload: str | None = None,
     return None
 
 
-def owner_row(owner: str, counts: Counts, width: int, harness: str = "") -> str:
+def machine_agent_row(name: str, claim: NameClaim, ledger: Path, width: int) -> str:
+    """One machine-wide claim row: name, harness, repository."""
+    repo = repo_display_label(claim.ledger, ledger)
+    harness = claim.harness or "unknown"
+    name_width = max(12, width - 44)
+    return (f"{fit(name, name_width, pad=True)}  {fit(harness, 16, pad=True)}  "
+            f"{fit(repo, 20, pad=True)}  (recent)")
+
+
+def owner_row(owner: str, counts: Counts, width: int, harness: str = "",
+              leader: str | None = None) -> str:
     # The harness borrows from the name column rather than widening the row, so
     # narrow terminals keep every count visible.
+    label = owner + (" [LEAD]" if leader and owner == leader else "")
     harness_width = 0 if not harness else min(20, max(8, width - 72))
     name_width = max(12, width - 52 - (harness_width + 2 if harness_width else 0))
     shown = f"{fit(harness, harness_width, pad=True)}  " if harness_width else ""
-    return (f"{fit(owner, name_width, pad=True)}  {shown}"
+    return (f"{fit(label, name_width, pad=True)}  {shown}"
             f"{counts.completed:3}/{counts.tracked:<3}  "
             f"{counts.in_progress:3}  {counts.pending:3}  "
             f"{progress(counts.checked, counts.steps, 8)}"
             f"  !{counts.invalid} ?{counts.legacy}")
 
 
-def plain_report(watcher: Watcher) -> str:
+def plain_report(watcher: Watcher, *, agent_scope: str = "repo") -> str:
     """One readable snapshot for pipes and terminals without curses."""
     lines = ["HANDOFF | Recorded progress", str(watcher.path)]
     if watcher.error:
@@ -380,19 +506,29 @@ def plain_report(watcher: Watcher) -> str:
         if watcher.snapshot:
             lines.append("Showing the last readable snapshot; data is stale.")
     lines.extend(summary_lines(watcher.snapshot))
-    lines.extend(["", "AGENTS (waiting first, then recorded owners newest first) | harness, "
-                  "done/tasks, in progress, pending, checked steps",
-                  "! = invalid; ? = legacy (excluded from totals); (recent) = claimed its "
-                  "name here in the last 15 minutes with no ledger tasks yet"])
+    if agent_scope == "machine":
+        lines.extend(["", "AGENTS ON THIS MACHINE (newest claim first) | name, harness, repository",
+                      "(recent) = claimed a name in the last 15 minutes; not proof of a running process"])
+    else:
+        lines.extend(["", "AGENTS IN THIS REPOSITORY (waiting first, then recorded owners newest first)"
+                      " | harness, done/tasks, in progress, pending, checked steps",
+                      "! = invalid; ? = legacy (excluded from totals); (recent) = claimed its "
+                      "name here in the last 15 minutes with no ledger tasks yet"])
     if watcher.snapshot:
         harnesses = owner_harnesses(watcher.snapshot.tasks)
-        live = held_sessions()
-        for owner, counts in agent_rows(watcher.snapshot.tasks):
-            harness = harness_label(owner, harnesses, live)
-            # Avoid truncating ownership in redirected reports.
-            width = max(110, sum(cell_width(c) for c in clean_text(owner))
-                        + 62 + (len(harness) + 2 if harness else 0))
-            lines.append(owner_row(owner, counts, width, harness))
+        live = (held_sessions_for_ledger(watcher.path) if agent_scope == "repo"
+                else held_sessions())
+        if agent_scope == "machine":
+            width = 110
+            for name, claim in machine_agent_rows(watcher.path):
+                lines.append(machine_agent_row(name, claim, watcher.path, width))
+        else:
+            for owner, counts in agent_rows(watcher.snapshot.tasks, watcher.path):
+                harness = harness_label(owner, harnesses, live)
+                # Avoid truncating ownership in redirected reports.
+                width = max(110, sum(cell_width(c) for c in clean_text(owner))
+                            + 62 + (len(harness) + 2 if harness else 0))
+                lines.append(owner_row(owner, counts, width, harness))
         lines.extend(["", "TASKS (ledger order)"])
         for task, status in zip(watcher.snapshot.tasks, watcher.snapshot.statuses):
             checked = sum(done for done, _ in task.steps)
@@ -442,6 +578,7 @@ class Dashboard:
         # seed; without it the window belongs to no session and says so.
         self.seed = seed
         self.view = "agents"
+        self.agent_scope = "repo"
         self.owner: str | None = None
         self.selected = 0
         self.offset = 0
@@ -455,6 +592,8 @@ class Dashboard:
         self.cut_step: int | None = None
         self.cut_version: str | None = None
         self.prompt: str | None = None
+        self.prompt_kind: str | None = None
+        self.spawn_agent: str | None = None
         self.message: str | None = None
         # The last completed move, kept until the next one: a transient message
         # cannot answer "did it land" when checking costs a keypress.
@@ -543,8 +682,14 @@ class Dashboard:
                 rows = [row for row in rows if row["sender"] == session
                         or row["recipient"] in (session, "*")]
             return [(row["id"], row) for row in rows]
+        if self.view == "spawn":
+            return [(agent, agent) for agent in available_agents()]
         if self.view == "agents":
-            return [(owner, counts) for owner, counts in agent_rows(snapshot.tasks)] if snapshot else []
+            if snapshot is None:
+                return []
+            if self.agent_scope == "machine":
+                return machine_agent_rows(self.watcher.path)
+            return [(owner, counts) for owner, counts in agent_rows(snapshot.tasks, self.watcher.path)]
         return [(task.heading, task) for task in self.tasks()]
 
     def refresh(self) -> None:
@@ -695,21 +840,146 @@ class Dashboard:
             self.selected = self.offset = self.detail_offset = 0
 
     def handle_prompt(self, key: int, curses) -> bool:
-        """Read one owner name for a task whose new agent has no ledger entry yet."""
+        """Read one owner name or an optional spawn task from the user."""
+        limit = 200 if self.prompt_kind == "spawn_task" else 60
         if key in (27, 3):
-            self.prompt = None
-            self.message = "Naming cancelled. The task is still held; press x to release it."
-        elif key in (10, 13, curses.KEY_ENTER):
-            name, self.prompt = self.prompt.strip(), None
-            problem = owner_label_error(name) if name else "no name was typed"
-            if problem:
-                self.message = f"Nothing was moved: {problem}."
+            if self.prompt_kind == "spawn_task":
+                self.prompt = self.prompt_kind = self.spawn_agent = None
+                self.message = "Spawn cancelled."
             else:
-                self.move_task(name)
+                self.prompt = None
+                self.message = ("Naming cancelled. The task is still held; "
+                                "press x to release it.")
+        elif key in (10, 13, curses.KEY_ENTER):
+            text, self.prompt = self.prompt.strip(), None
+            if self.prompt_kind == "spawn_task":
+                agent = self.spawn_agent
+                self.prompt_kind = self.spawn_agent = None
+                self.launch_selected_agent(task=text or None, agent=agent)
+            else:
+                problem = owner_label_error(text) if text else "no name was typed"
+                if problem:
+                    self.message = f"Nothing was moved: {problem}."
+                else:
+                    self.move_task(text)
         elif key in (curses.KEY_BACKSPACE, 127, 8):
             self.prompt = self.prompt[:-1]
-        elif 32 <= key < 127 and len(self.prompt) < 60:
+        elif 32 <= key < 127 and len(self.prompt) < limit:
             self.prompt += chr(key)
+        return True
+
+    def reload_detail(self, heading: str) -> None:
+        """Keep detail view open on one heading after the ledger changes."""
+        snapshot = self.watcher.snapshot
+        if snapshot is None:
+            self.detail = None
+            return
+        self.detail = next((task for task in snapshot.tasks if task.heading == heading), None)
+        if self.detail and self.detail.steps:
+            limit = len(self.detail.steps) - 1
+            self.detail_step = min(self.detail_step or 0, limit)
+        else:
+            self.detail_step = None
+
+    def complete_step(self) -> None:
+        """Mark the selected detail step complete at the user's direction."""
+        task = self.detail
+        snapshot = self.watcher.snapshot
+        if task is None or self.detail_step is None:
+            self.message = "Open task details and select a step with j/k first."
+            return
+        if snapshot is None or not self.watcher.path.is_file():
+            self.message = f"Nothing was saved: no ledger at {self.watcher.path}."
+            return
+        expected = task.steps[self.detail_step]
+        if expected[0]:
+            self.message = "That step is already marked complete."
+            return
+        if not task.modern or task.errors:
+            self.message = "Repair this task's structure before marking a step complete."
+            return
+
+        def build(text: str) -> str:
+            return mark_step_complete(text, task.line, task.heading,
+                                      self.detail_step, expected)
+
+        try:
+            result = swap_ledger(self.watcher.path, snapshot.version, build)
+        except (OSError, UnicodeError, ValueError, RuntimeError) as error:
+            self.message = f"Nothing was saved: {error}"
+            return
+        if result["status"] == "applied":
+            self.message = f"Marked step complete in '{fit(task_title(task), 40)}'."
+            self.refresh()
+            self.reload_detail(task.heading)
+            return
+        if result["status"] == "conflict":
+            self.message = ("The ledger changed while this view was open, so nothing "
+                            "was saved. Reloaded; select the step and try again.")
+        else:
+            self.message = "Nothing was saved: " + "; ".join(
+                str(error) for error in (result.get("errors") or ["write refused"]))
+        self.refresh()
+        self.reload_detail(task.heading)
+
+    def complete_task(self) -> None:
+        """Mark every step and the task-level boxes complete at the user's direction."""
+        task = self.detail or self.selected_task()
+        snapshot = self.watcher.snapshot
+        if task is None:
+            self.message = "Select a task to mark it complete."
+            return
+        if snapshot is None or not self.watcher.path.is_file():
+            self.message = f"Nothing was saved: no ledger at {self.watcher.path}."
+            return
+        if task.state == "completed" and not task.errors:
+            self.message = "That task is already marked complete."
+            return
+        if not task.modern or task.errors:
+            self.message = "Repair this task's structure before marking it complete."
+            return
+
+        def build(text: str) -> str:
+            return mark_task_complete(text, task.line, task.heading)
+
+        try:
+            result = swap_ledger(self.watcher.path, snapshot.version, build)
+        except (OSError, UnicodeError, ValueError, RuntimeError) as error:
+            self.message = f"Nothing was saved: {error}"
+            return
+        if result["status"] == "applied":
+            self.message = f"Marked '{fit(task_title(task), 46)}' complete."
+            self.refresh()
+            if self.detail:
+                self.reload_detail(task.heading)
+            return
+        if result["status"] == "conflict":
+            self.message = ("The ledger changed while this view was open, so nothing "
+                            "was saved. Reloaded; select the task and try again.")
+        else:
+            self.message = "Nothing was saved: " + "; ".join(
+                str(error) for error in (result.get("errors") or ["write refused"]))
+        self.refresh()
+        if self.detail:
+            self.reload_detail(task.heading)
+
+    def handle_complete_key(self, key: int) -> bool:
+        """Handle user override completion keys; return False when the key was not one."""
+        if key not in (ord("d"), ord("D")):
+            return False
+        if self.read_only:
+            self.message = "Completion is disabled in read-only mode."
+            return True
+        if key == ord("d"):
+            if not self.detail:
+                self.message = "Open task details to mark one step complete with d."
+                return True
+            self.complete_step()
+            return True
+        if self.view not in ("tasks",) and not self.detail:
+            self.message = "Open a task to mark it complete with D."
+            return True
+        self.complete_task()
         return True
 
     def handle_move_key(self, key: int) -> bool:
@@ -750,6 +1020,112 @@ class Dashboard:
                 self.move_task(target)
         return True
 
+    def begin_spawn_task_prompt(self) -> None:
+        """Ask for an optional task before opening the selected agent CLI."""
+        rows = self.rows()
+        if not rows:
+            self.message = "No agent CLIs on PATH. Install one, then try again."
+            return
+        self.spawn_agent = rows[self.selected][0]
+        self.prompt_kind = "spawn_task"
+        self.prompt = ""
+
+    def launch_selected_agent(self, task: str | None = None,
+                              agent: str | None = None) -> None:
+        """Open one agent CLI in a new tab under the handoff bar."""
+        rows = self.rows()
+        if agent is None:
+            if not rows:
+                self.message = "No agent CLIs on PATH. Install one, then try again."
+                return
+            agent = rows[self.selected][0]
+        seed = secrets.token_hex(16)
+        ledger = self.watcher.path
+        name = seed_claim(seed, ledger, agent)
+        message = ""
+        if name and not self.read_only:
+            snapshot = self.watcher.snapshot
+            if snapshot is not None:
+                result = apply_session_intake(
+                    ledger, snapshot.version, name, harness_for_agent(agent), task=task)
+                if result["status"] == "applied":
+                    message = "Recorded session intake in the ledger."
+                elif result["status"] == "skipped":
+                    message = str(result.get("note", ""))
+                elif result["status"] == "conflict":
+                    message = ("Session intake was not recorded: the ledger changed "
+                               "while the agent opened; reload and check.")
+        code, open_message, returned_name = open_agent(
+            ledger.resolve().parent, agent, seed=seed, ledger=ledger,
+            task=task, name=name)
+        name = returned_name or name
+        if code != 0:
+            message = open_message
+        elif open_message:
+            message = (open_message + (" " + message if message else "")).strip()
+        self.view = "agents"
+        self.selected = self.offset = 0
+        self.message = message or None
+        self.refresh()
+        if code == 0 and name:
+            rows = self.rows()
+            self.selected = next((i for i, (row_name, _) in enumerate(rows)
+                                  if row_name == name), 0)
+            self.offset = 0
+
+    def designate_leader(self) -> None:
+        """Designate the selected agent as leader, or resign the current one."""
+        if self.read_only:
+            self.message = "Leadership changes are disabled in read-only mode."
+            return
+        rows = self.rows()
+        if self.view != "agents" or not rows:
+            self.message = "Open the Agents view and select an agent first."
+            return
+        if self.agent_scope == "machine":
+            self.message = "Press m for this repository's agents before designating a leader."
+            return
+        owner = rows[self.selected][0]
+        if owner == UNASSIGNED:
+            self.message = "Nothing was written: unassigned cannot lead."
+            return
+        problem = owner_label_error(owner)
+        if problem or ";" in owner:
+            self.message = f"Nothing was written: {problem or 'owner name cannot contain a semicolon'}."
+            return
+        snapshot = self.watcher.snapshot
+        if snapshot is None or not self.watcher.path.is_file():
+            self.message = f"Nothing was written: no ledger at {self.watcher.path}."
+            return
+        lead = read_lead(snapshot.text)
+        resigning = lead is not None and lead.owner == owner and lead.state() == "active"
+
+        def build(text: str) -> str:
+            if resigning:
+                return build_resign(text, owner)
+            return build_claim(text, owner, DEFAULT_VIEWER_LEAD_HOURS)
+
+        try:
+            result = swap_ledger(self.watcher.path, snapshot.version, build)
+        except (OSError, UnicodeError, ValueError, RuntimeError) as error:
+            self.message = f"Nothing was written: {error}"
+            return
+        if result["status"] == "applied":
+            if resigning:
+                self.message = f"{owner} resigned the leadership mandate."
+            else:
+                self.message = (f"{owner} is leader for {DEFAULT_VIEWER_LEAD_HOURS} hours. "
+                                "Press L on that agent again to resign.")
+            self.refresh()
+            return
+        if result["status"] == "conflict":
+            self.message = ("The ledger changed while this view was open, so nothing "
+                            "was written. Reloaded; try again.")
+        else:
+            self.message = "Nothing was written: " + "; ".join(
+                str(error) for error in (result.get("errors") or ["write refused"]))
+        self.refresh()
+
     def handle_key(self, key: int, curses, page: int) -> bool:
         if self.prompt is not None:
             return self.handle_prompt(key, curses)
@@ -758,12 +1134,38 @@ class Dashboard:
             self.message = None
             # An idle poll passes -1; only a real keypress ends a pending "gg".
             pending_g, self.pending_g = self.pending_g, False
+        if self.view == "spawn" and key in (27, ord("b"), curses.KEY_BACKSPACE, 127):
+            self.view = "agents"
+            self.selected = self.offset = 0
+            return True
+        if self.view == "spawn" and key in (10, 13, curses.KEY_ENTER):
+            self.begin_spawn_task_prompt()
+            return True
+        if self.view == "agents" and key == ord("m"):
+            self.agent_scope = "machine" if self.agent_scope == "repo" else "repo"
+            self.selected = self.offset = 0
+            self.message = ("Showing every recent name claim on this machine."
+                            if self.agent_scope == "machine" else
+                            "Showing agents for this repository only.")
+            return True
+        if self.view == "agents" and key == ord("N"):
+            if not available_agents():
+                self.message = "No agent CLIs on PATH. Install one, then try again."
+            else:
+                self.view = "spawn"
+                self.selected = self.offset = 0
+            return True
+        if self.view == "agents" and key in (ord("l"), ord("L")):
+            self.designate_leader()
+            return True
         if key in (ord("g"), ord("G")):
             # vim: G goes to the bottom, gg to the top; a lone g awaits its pair.
             if key == ord("G") or pending_g:
                 self.jump_to_end(bottom=key == ord("G"))
             else:
                 self.pending_g = True
+            return True
+        if self.handle_complete_key(key):
             return True
         if self.handle_move_key(key):
             return True
@@ -795,8 +1197,10 @@ class Dashboard:
             self.channel_detail = None
             self.selected = self.offset = 0
         elif key in (9, ord("a"), ord("t"), ord("c")):
-            self.view = ("tasks" if self.view == "agents" else "agents") if key == 9 else (
-                {ord("a"): "agents", ord("t"): "tasks", ord("c"): "channel"}[key])
+            if key == 9:
+                self.view = "tasks" if self.view == "agents" else "agents"
+            else:
+                self.view = {ord("a"): "agents", ord("t"): "tasks", ord("c"): "channel"}[key]
             self.owner = None
             self.detail = None
             self.channel_detail = None
@@ -806,7 +1210,9 @@ class Dashboard:
         elif key in (10, 13, curses.KEY_ENTER) and not (self.detail or self.channel_detail):
             rows = self.rows()
             if rows:
-                if self.view == "channel":
+                if self.view == "spawn":
+                    self.begin_spawn_task_prompt()
+                elif self.view == "channel":
                     if self.channel_mode == "sessions":
                         self.channel_session = rows[self.selected][0]
                         self.channel_mode = "messages"
@@ -815,9 +1221,14 @@ class Dashboard:
                         self.channel_detail = rows[self.selected][1]
                         self.detail_offset = 0
                 elif self.view == "agents":
-                    self.owner = rows[self.selected][0]
-                    self.view = "tasks"
-                    self.selected = self.offset = 0
+                    if self.agent_scope == "machine":
+                        self.message = ("Machine view lists recent name claims only. "
+                                        "Press m for this repository's agents, then Enter "
+                                        "to browse tasks.")
+                    else:
+                        self.owner = rows[self.selected][0]
+                        self.view = "tasks"
+                        self.selected = self.offset = 0
                 else:
                     self.detail = rows[self.selected][1]
                     self.detail_offset = 0
@@ -868,9 +1279,13 @@ class Dashboard:
         if task is None or snapshot is None:
             return []
         index = snapshot.tasks.index(task)
+        completed = completed_ids(snapshot.text)
         blocks = [(block, None) for block in [task.heading,
                   f"Owner: {owner_name(task)} | State: {task_state(task)}",
                   f"Steps: {progress(sum(done for done, _ in task.steps), len(task.steps))}", ""]]
+        blocks.extend((line, None) for line in assignment_lines(snapshot.text, task, completed))
+        if assignment_lines(snapshot.text, task, completed):
+            blocks.append(("", None))
         for step_index, (done, step) in enumerate(task.steps):
             held = self.cut is not None and self.cut.heading == task.heading and self.cut_step == step_index
             mark = "*" if held else ">" if self.detail_step == step_index else " "
@@ -902,14 +1317,27 @@ class Dashboard:
 
         write(0, " HANDOFF  /  Recorded progress", curses.A_BOLD)
         write(1, f" {self.watcher.path}", curses.A_DIM)
-        for i, line in enumerate(summary_lines(self.watcher.snapshot), 2):
-            write(i, " " + line)
-        write(5, f" Agents   Tasks   [Channel]  {self.channel_mode} | s: sessions/messages" if self.view == "channel" else
-              " [Agents]   Tasks   c: Channel   Enter: owner's tasks" if self.view == "agents" else
+        snapshot = self.watcher.snapshot
+        summary = summary_lines(snapshot)
+        for index, line in enumerate(summary, 2):
+            write(index, " " + line)
+        tab_line = 2 + len(summary)
+        scope = f" | {self.agent_scope}" if self.view == "agents" else ""
+        write(tab_line, f" Agents   Tasks   [Channel]  {self.channel_mode} | s: sessions/messages" if self.view == "channel" else
+              f" [Agents{scope}]   Tasks   c: Channel   m: scope   N: new agent   Enter: owner's tasks"
+              if self.view == "agents" and self.agent_scope == "repo" else
+              f" [Agents{scope}]   Tasks   c: Channel   m: scope   N: new agent   Enter: repo agents"
+              if self.view == "agents" else
+              " [Agents]   Tasks   c: Channel   N: pick agent CLI   Enter: open in terminal" if self.view == "spawn" else
               f" Agents   [Tasks]    Owner: {self.owner or 'all'}", curses.A_BOLD)
-        content_start = 7
+        content_start = tab_line + 2
         available = max(1, height - content_start - 4)
         rows = self.rows()
+        leader = None
+        if self.view == "agents" and snapshot and snapshot.text:
+            lead = read_lead(snapshot.text)
+            if lead and lead.state() == "active":
+                leader = lead.owner
         if self.detail or self.channel_detail:
             if self.detail and width != self.detail_width:
                 self.focus_step = self.detail_step is not None
@@ -926,26 +1354,34 @@ class Dashboard:
                 self.focus_step = False
             self.detail_offset = min(self.detail_offset, max(0, len(lines) - available))
             label = "MESSAGE" if self.channel_detail else "TASK"
-            write(6, f" {label} DETAILS | lines {self.detail_offset + 1}-{min(len(lines), self.detail_offset + available)}"
+            write(tab_line + 1, f" {label} DETAILS | lines {self.detail_offset + 1}-{min(len(lines), self.detail_offset + available)}"
                   f"/{len(lines)} | b: back", curses.A_DIM)
             for i, (line, step) in enumerate(detail_rows[self.detail_offset:self.detail_offset + available]):
                 selected = self.detail is not None and step is not None and step == self.detail_step
                 write(content_start + i, " " + line, curses.A_REVERSE if selected else 0)
         else:
             if self.view == "agents":
-                harnesses = owner_harnesses(self.tasks())
-                recent = held_sessions()
-                shown = any(harness_label(owner, harnesses, recent) for owner, _ in rows)
-                heading = ("WAITING / RECORDED OWNER (newest first)"
-                             + ("  HARNESS" if shown else ""))
-                write(6, f" {fit(heading, max(12, width - 55), pad=True)}"
-                      "  DONE/TASK  WIP WAIT  CHECKED STEPS  !bad ?old", curses.A_DIM)
+                if self.agent_scope == "machine":
+                    write(tab_line + 1, " NAME                 HARNESS           REPOSITORY           NOTE",
+                          curses.A_DIM)
+                else:
+                    harnesses = owner_harnesses(self.tasks())
+                    recent = held_sessions_for_ledger(self.watcher.path)
+                    shown = any(harness_label(owner, harnesses, recent) for owner, _ in rows)
+                    heading = ("WAITING / RECORDED OWNER (newest first)"
+                                 + ("  HARNESS" if shown else ""))
+                    write(tab_line + 1, f" {fit(heading, max(12, width - 55), pad=True)}"
+                          "  DONE/TASK  WIP WAIT  CHECKED STEPS  !bad ?old", curses.A_DIM)
+            elif self.view == "spawn":
+                write(tab_line + 1,
+                      " AGENT CLI ON PATH | Enter: optional task, then open with handoff bar",
+                      curses.A_DIM)
             elif self.view == "channel":
                 session = self.selected_session()
-                write(6, " SESSION / HARNESS | REPORTED STATE / AGE" if self.channel_mode == "sessions" else
+                write(tab_line + 1, " SESSION / HARNESS | REPORTED STATE / AGE" if self.channel_mode == "sessions" else
                       f" TIME   SENDER -> RECIPIENT | ACK | BODY (newest; {session['owner'] if session else 'all'})", curses.A_DIM)
             else:
-                write(6, " STATE          STEPS    TASK / OWNER (ledger order)", curses.A_DIM)
+                write(tab_line + 1, " STATE          STEPS    TASK / OWNER (ledger order)", curses.A_DIM)
             self.offset = max(0, min(self.offset, self.selected))
             if self.selected >= self.offset + available:
                 self.offset = self.selected - available + 1
@@ -953,8 +1389,13 @@ class Dashboard:
                 selected = self.offset + i == self.selected
                 held = landed = False
                 if self.view == "agents":
-                    line = owner_row(label, value, width - 3,
-                                     harness_label(label, harnesses, recent))
+                    if self.agent_scope == "machine":
+                        line = machine_agent_row(label, value, self.watcher.path, width - 3)
+                    else:
+                        line = owner_row(label, value, width - 3,
+                                         harness_label(label, harnesses, recent), leader=leader)
+                elif self.view == "spawn":
+                    line = fit(label, width - 3)
                 elif self.view == "channel":
                     if self.channel_mode == "sessions":
                         age = max(0, int(time.time() - value["reported"]))
@@ -969,12 +1410,18 @@ class Dashboard:
                     held = self.cut is not None and self.cut.heading == value.heading
                     landed = self.moved is not None and self.moved[0] == value.heading
                     checked = sum(done for done, _ in value.steps)
+                    marker = (task_assignment_marker(snapshot.text, value, completed_ids(snapshot.text))
+                              if snapshot and snapshot.text else "")
                     line = (f"{task_state(value):13}  {checked:2}/{len(value.steps):<2}  "
-                            f"{task_title(value)} / {owner_name(value)}")
+                            f"{task_title(value)} / {owner_name(value)}{marker}")
                 mark = "*" if held else "+" if landed else ">" if selected else " "
                 write(content_start + i, mark + line, curses.A_REVERSE if selected else 0)
             if not rows:
-                write(content_start, " No channel messages or sessions to display. Waiting for channel changes."
+                write(content_start, " No agent CLIs on PATH. Install one, then press N again."
+                      if self.view == "spawn" else
+                      " No recent name claims on this machine. Press m for this repository's agents."
+                      if self.view == "agents" and self.agent_scope == "machine" else
+                      " No channel messages or sessions to display. Waiting for channel changes."
                       if self.view == "channel" else " No entries to display. Waiting for ledger changes.")
 
         write(height - 4, self.banner(), curses.A_BOLD)
@@ -995,11 +1442,21 @@ class Dashboard:
         # cut and give act on tasks, and the channel view has no task to hold.
         keys = (" q quit | a/t/c views | j/k move | gg/G ends | Enter open"
                 " | b back | r reload")
-        if not self.read_only:
-            keys += " | n nudge" if self.view == "channel" else " | x cut | p give"
+        if self.view == "spawn":
+            keys = " j/k move | Enter task prompt | b back | q quit"
+        elif not self.read_only:
+            if self.view == "channel":
+                keys += " | n nudge"
+            elif self.view == "tasks":
+                keys += " | N new agent | x cut | p give | D mark task"
+            elif self.view == "agents":
+                keys += " | m repo/machine | L leader | N new agent | x cut | p give"
+            else:
+                keys += " | N new agent | x cut | p give"
         if self.detail:
             keys = (" j/k select step | PgUp/PgDn scroll | b back | a agents | q quit" if self.read_only else
-                    " x cut step | p give | j/k select | a agents | X whole task | b back | q quit")
+                    " d mark step | D mark task | x cut step | p give | j/k select | "
+                    "a agents | X whole task | b back | q quit")
         write(height - 1, keys)
         screen.refresh()
         return available
@@ -1007,6 +1464,10 @@ class Dashboard:
     def banner(self) -> str:
         """One line for the pending move: the prompt, the last outcome, or what is held."""
         if self.prompt is not None:
+            if self.prompt_kind == "spawn_task":
+                agent = self.spawn_agent or "agent"
+                return (f" Task for {agent} (optional): {self.prompt}_"
+                        "   Enter: spawn | Esc: cancel")
             return f" Give to agent: {self.prompt}_   Enter: confirm | Esc: cancel"
         if self.message:
             return " " + self.message
@@ -1078,6 +1539,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--interval", type=refresh_interval, default=1.0,
                         help="Refresh seconds, 0.1 to 60 (default: 1)")
     parser.add_argument("--once", action="store_true", help="Print a snapshot and exit")
+    parser.add_argument("--agents", choices=("repo", "machine"), default="repo",
+                        help="Agents section scope for --once: this repository or this machine")
     parser.add_argument("--read-only", action="store_true",
                         help="Disable the cut and paste keys in the live view, including the "
                              "one Codex mode opens, so it never writes")
@@ -1141,7 +1604,8 @@ def main(argv: list[str] | None = None) -> int:
         agent = DEFAULT_AGENT if args.codex is not None else arguments.pop(0)
         return run_agent(watcher, args.file.resolve().parent if args.file else root.resolve(),
                          arguments, args.interval, color=not args.no_color,
-                         read_only=args.read_only, agent=agent)
+                         read_only=args.read_only, agent=agent,
+                         session_seed=args.session_seed)
     if args.bar:
         # A status line must never break the host: no ledger means no row.
         if not path.is_file():
@@ -1155,7 +1619,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.once or not (sys.stdin.isatty() and sys.stdout.isatty()):
         watcher.poll()
-        print(plain_report(watcher), end="")
+        print(plain_report(watcher, agent_scope=args.agents), end="")
         return 1 if watcher.error or (watcher.snapshot and any(task.errors for task in watcher.snapshot.tasks)) else 0
     return run_live(watcher, args.interval, read_only=args.read_only, seed=args.session_seed)
 

@@ -263,7 +263,7 @@ class ViewerResolutionTests(unittest.TestCase):
         real = (SCRIPTS / "handoff_tui.py").read_text(encoding="utf-8")
         target.write_text(real if supports_bar else "import sys\nsys.exit(2)\n", encoding="utf-8")
         if supports_bar:
-            for helper in ("handoff_guard.py",):
+            for helper in ("handoff_guard.py", "handoff_lead.py", "handoff_keys.py"):
                 (target.parent / helper).write_text(
                     (SCRIPTS / helper).read_text(encoding="utf-8"), encoding="utf-8")
         return target

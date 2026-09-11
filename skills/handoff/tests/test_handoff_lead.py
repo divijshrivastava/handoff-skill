@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 SCRIPTS = Path(__file__).parents[1] / "scripts"
@@ -37,6 +39,19 @@ class LeadTestCase(unittest.TestCase):
         self.root = Path(self.directory.name)
         self.ledger = self.root / "HANDOFF.md"
         self.ledger.write_text("# Handoff\n", encoding="utf-8")
+        self.cache_dir = self.root / "names"
+        self.cache_dir.mkdir()
+        self.env_patch = patch.dict(os.environ, {"HANDOFF_NAME_CACHE": str(self.cache_dir)})
+        self.env_patch.start()
+        self.addCleanup(self.env_patch.stop)
+        for name in ("Epona", "Fenrir", "Garuda"):
+            self.register_agent(name)
+
+    def register_agent(self, name: str, harness: str = "Codex",
+                       ledger: Path | None = None) -> None:
+        target = ledger or self.ledger
+        record = self.cache_dir / name.lower()
+        record.write_text(f"{name}\n{harness}\n{target.resolve()}\n", encoding="utf-8")
 
     def version(self) -> str:
         return handoff_guard.ledger_version(self.ledger.read_text(encoding="utf-8"))
@@ -105,6 +120,35 @@ class InertWithoutLeaderTests(LeadTestCase):
         self.assertEqual(handoff_guard.structure_findings(self.text()), [])
         self.assertEqual([label for _, label in tasks[0].steps],
                          ["Implement it.", "Verify it."])
+
+
+class RepoAgentTests(LeadTestCase):
+    """A leader may assign only to agents recorded in this repository."""
+
+    def test_assign_refuses_an_agent_from_another_repository(self) -> None:
+        other = self.root / "other" / "HANDOFF.md"
+        other.parent.mkdir()
+        self.register_agent("Stranger", ledger=other)
+        self.claim()
+        result = self.assign(to="Stranger", expect=1)
+        self.assertIn("not recorded in this repository", result["stderr"])
+
+    def test_assign_refuses_a_name_with_no_claim_here(self) -> None:
+        self.claim()
+        result = self.assign(to="Nobody", expect=1)
+        self.assertIn("not recorded in this repository", result["stderr"])
+
+    def test_a_ledger_owner_may_be_assigned_without_a_recent_claim(self) -> None:
+        self.ledger.write_text(
+            "# Handoff\n\n"
+            "## Existing (owner: Zorya)\n\nState:\n- [x] In progress\n- [ ] Completed\n\n"
+            "Steps:\n- [ ] Finish it.\n\nStatus: Pending.\n\n",
+            encoding="utf-8",
+        )
+        self.claim()
+        result = self.assign(to="Zorya", title="Follow-up")
+        self.assertEqual(result["status"], "applied")
+        self.assertEqual(handoff_guard.parse_tasks(self.text())[0].owner, "Zorya")
 
 
 class MandateTests(LeadTestCase):

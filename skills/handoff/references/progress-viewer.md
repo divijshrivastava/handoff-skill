@@ -49,21 +49,37 @@ including after an atomic replacement by `handoff_guard.py apply`. Progress
 appears when an agent saves a ledger update; it does not monitor an agent
 process or unsaved work.
 
-The live view makes exactly one kind of edit: handing a task to another agent,
-described in [Moving a task to another agent](#moving-a-task-to-another-agent).
-Every other mode - `--once`, `--bar`, `--codex` - only reads; the Codex bar
-opens that live view on `Ctrl-G` rather than editing anything itself, and
-`--read-only` turns the move keys off in the live view and in that popup.
+The live view makes two kinds of edit: handing a task to another agent,
+described in [Moving a task to another agent](#moving-a-task-to-another-agent),
+and marking work complete at the user's direction, described in
+[Marking work complete](#marking-work-complete). Every other mode - `--once`,
+`--bar`, `--codex` - only reads; the Codex bar opens that live view on `Ctrl-G`
+rather than editing anything itself, and `--read-only` turns those write keys off
+in the live view and in that popup.
 
 ## Views and controls
 
 Overall completed tasks and checked steps stay visible above the current view.
-The **Agents** view lists every agent the user can hand work to. **Waiting**
-agents lead the list: sessions that claimed a name on this machine within the
-last fifteen minutes but hold no ledger tasks yet, newest claim first. Below
-them, **recorded owners** appear in ledger order rather than alphabetically, so
-the agent who most recently raised work leads that section; the header says
-`newest first`. Each row shows completed/total tasks, in-progress tasks, pending
+When a `Lead:` mandate is recorded, a **LEAD** summary line names who coordinates
+and how long the mandate has left. In the Agents list that owner is tagged
+`[LEAD]`. In Tasks, entries with leader assignment metadata show compact
+provenance and dependency markers; open a task for the full assignment line,
+reserved paths, and any unmet `needs`.
+The **Agents** view lists every agent the user can hand work to. By default it
+shows **this repository** only: **waiting** agents lead the list — sessions
+that claimed a name for this ledger on this machine within the last fifteen
+minutes but hold no ledger tasks yet, newest claim first. Opening an agent
+with **N** also asks for an optional task, writes one in-progress intake entry
+for that name (a **Session work** placeholder or a task entry with your
+direction), and passes a typed task to the agent CLI as its opening prompt, so
+its Done/Task and WIP counters update immediately. Below them,
+**recorded owners** appear in ledger order rather than alphabetically, so the
+agent who most recently raised work leads that section; the header says
+`newest first`. Press **`m`** to switch to **machine** scope and see every
+recent name claim on this machine, with harness and repository (`here` marks
+this ledger). That view is read-only for task browsing: press **`m`** again
+to return to this repository's agents before pressing Enter on an owner.
+Each repo-scoped row shows completed/total tasks, in-progress tasks, pending
 tasks, and step progress. Beside a name sits the harness that owner recorded,
 taken from their newest entry that names one, so a ledger written by Claude
 Code, Codex and Cursor sessions reads as more than a list of names. `(recent)`
@@ -78,6 +94,9 @@ owner.
 | Key | Action |
 | --- | --- |
 | Tab, a, t | Switch views, or open Agents / Tasks directly |
+| m (Agents) | Toggle agent scope between this repository and every recent claim on this machine |
+| L (Agents) | Designate the selected agent as leader for four hours; press again on the current leader to resign |
+| N (Agents) | Pick an agent CLI on PATH, optionally type a task, and open it in a new terminal under the handoff bar; the viewer writes one in-progress intake entry for that agent (a **Session work** placeholder when the task is left blank, or a task entry carrying your direction and an execution request when you typed one) so Done/Task and WIP counters update before the agent edits the ledger, and a typed task is also passed to the agent CLI as its opening prompt |
 | c | Open the local agent channel |
 | s (Channel) | Toggle messages and registered sessions |
 | Up/Down, k/j | Select a row; in task details, select an individual step |
@@ -90,6 +109,8 @@ owner.
 | X | Cut the whole task, including from task details |
 | p | Give the held task or step to the selected agent or task's owner |
 | P | Give the held task to an owner name you type |
+| d (details) | Mark the selected step complete at your direction |
+| D | Mark the selected task complete at your direction |
 | q, Ctrl-C | Quit and restore the terminal |
 
 Resize the terminal as needed; live mode needs at least 64 columns and 14 rows.
@@ -121,6 +142,28 @@ Long headings are clipped in lists and available in task details. The screen
 shows read errors and retains the last readable snapshot, labelled stale, until
 the file becomes readable again. A missing file at startup is retried without
 creating it.
+
+## Marking work complete
+
+When you know a step or whole task is done but the ledger still shows it open,
+mark it complete from the live view. This is a user override: it checks boxes and
+appends a dated note naming the override; it does not prove an agent finished the
+work or replace a proper audit.
+
+Open a task with Enter. Use Up/Down or `j`/`k` to select a step, then press `d`
+to check that step, ensure `In progress` is checked, and record which step you
+marked. When `d` checks the last open step, it also checks `Completed` and
+clears any lease, so the task reads as finished. Press `D` from the Tasks view or
+from task details to check every step at once,
+check both `In progress` and `Completed`, clear any lease on that entry, and
+append a dated completion note. Already-complete steps and tasks are left alone.
+Structural problems in the entry are refused until the ledger is repaired.
+
+The write uses the same compare-and-swap path as moves and `handoff_guard.py
+apply`: one lock, one version check against the revision on screen, and refusal
+to introduce structural errors. If a peer changed the ledger after you opened the
+view, nothing is written and the view reloads so you can read what changed.
+Read-only mode disables both `d` and `D`.
 
 ## Moving a task to another agent
 
@@ -200,6 +243,17 @@ someone else's repository:
 ```sh
 handoff-tui --root /path/to/repository --read-only
 ```
+
+## Designating a leader
+
+When optional leadership is in play, press `L` on an agent in the Agents view
+to designate it as leader for four hours. The mandate is written above the first
+entry as a `Lead:` line, using the same compare-and-swap as every other ledger
+write. Press `L` again on the current leader to resign. If another agent already
+holds an active mandate, the viewer refuses rather than replacing it silently.
+Use `scripts/handoff_lead.py` for renew, assign, and the full assignment
+lifecycle; see `references/leader.md`. `--read-only` disables the key, as it
+disables the move keys.
 
 ## Nudging a silent agent
 
@@ -349,6 +403,9 @@ the hint from the row rather than advertising a key that does nothing.
 ```sh
 # Print once; also the default when input or output is not a terminal
 python3 /path/to/skill/scripts/handoff_tui.py --root /path/to/repository --once
+
+# List every recent name claim on this machine instead of this repository only
+python3 /path/to/skill/scripts/handoff_tui.py --root /path/to/repository --once --agents machine
 
 # Use a specific ledger filename, including a lowercase handoff.md
 python3 /path/to/skill/scripts/handoff_tui.py --file /path/to/handoff.md

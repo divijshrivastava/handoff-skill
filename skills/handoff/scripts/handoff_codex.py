@@ -15,6 +15,7 @@ import sys
 import tempfile
 import time
 
+from handoff_guard import agent_startup_notice, harness_for_agent
 from handoff_tui import Watcher, bar_line, bar_session_name, clean_text, count_tasks
 from handoff_keys import (
     CLAUDE_KEYBINDINGS,
@@ -24,6 +25,7 @@ from handoff_keys import (
     host_key_name,
     install_claude_release as install_host_keybindings,
     key_label,
+    resolve_agent,
     viewer_key,
 )
 
@@ -116,7 +118,7 @@ class AgentSession:
                         command).returncode == 0
 
     def start(self, agent: str, arguments: list[str], cwd: Path, row: str,
-              session_seed: str | None = None) -> None:
+              session_seed: str | None = None, notice: str = "") -> None:
         # start() may follow an explicit close() that only tore down a probe
         # server; reopen the lifecycle so a later close() reaches kill-server.
         self._closed = False
@@ -141,16 +143,18 @@ class AgentSession:
         # separator. Encode user arguments so its parser cannot interpret them.
         payload = base64.b64encode(json.dumps(
             [str(cwd), [agent, *arguments], str(self.status_file),
-             session_seed or ""]).encode()).decode()
+             session_seed or "", notice]).encode()).decode()
         # The shim waits for the agent rather than exec'ing it, so the exit status
         # survives a tmux that does not report pane_dead_status. It ignores
         # SIGINT so Ctrl-C reaches the agent alone, as a shell would.
         self.call("respawn-pane", "-k", "-t", "handoff:0.0", "-c", str(self.directory),
                   sys.executable, "-c",
                   "import base64,json,os,pathlib,signal,subprocess,sys; "
-                  "d,a,s,h=json.loads(base64.b64decode(sys.argv[1])); os.chdir(d); "
+                  "d,a,s,h,n=json.loads(base64.b64decode(sys.argv[1])); os.chdir(d); "
                   "h and os.environ.__setitem__('HANDOFF_SESSION', h); "
-                  "signal.signal(signal.SIGINT, signal.SIG_IGN); c=subprocess.call(a); "
+                  "signal.signal(signal.SIGINT, signal.SIG_IGN); "
+                  "n and print('\\n' + n + '\\n', file=sys.stderr, flush=True); "
+                  "c=subprocess.call(a); "
                   "pathlib.Path(s).write_text(str(c)); sys.exit(c)", payload)
 
     def attach(self) -> None:
@@ -196,7 +200,7 @@ class AgentSession:
 
 def run_agent(watcher: Watcher, cwd: Path, arguments: list[str],
               interval: float, color: bool = True, read_only: bool = False,
-              agent: str = DEFAULT_AGENT) -> int:
+              agent: str = DEFAULT_AGENT, session_seed: str | None = None) -> int:
     """Run one agent CLI under the bar, whichever agent the user named.
 
     Nothing below is specific to Codex: the footer, the viewer key and the exit
@@ -211,7 +215,7 @@ def run_agent(watcher: Watcher, cwd: Path, arguments: list[str],
         print(f"{agent} bar mode needs an interactive terminal; "
               f"run handoff-tui --with {agent} there.", file=sys.stderr)
         return 1
-    tmux, executable = shutil.which("tmux"), shutil.which(agent)
+    tmux, executable = shutil.which("tmux"), resolve_agent(agent)
     if not tmux or not executable:
         missing = "tmux (3.2+)" if not tmux else agent
         print(f"{agent} bar mode needs {missing} on PATH.", file=sys.stderr)
@@ -224,17 +228,22 @@ def run_agent(watcher: Watcher, cwd: Path, arguments: list[str],
         raise KeyboardInterrupt
 
     previous = signal.signal(signal.SIGTERM, stop)
-    session_seed = os.urandom(16).hex()
+    session_seed = session_seed or os.urandom(16).hex()
+    harness = harness_for_agent(agent)
+    _name, notice = agent_startup_notice(session_seed, watcher.path.resolve(),
+                                         harness=harness)
     try:
         with tempfile.TemporaryDirectory(prefix="hc-") as directory:
             session = AgentSession(tmux, Path(directory) / "s")
             session.environment["HANDOFF_SESSION"] = session_seed
+            if harness:
+                session.environment["HANDOFF_HARNESS"] = harness
             try:
                 watcher.poll()
                 key = viewer_key()
                 row = footer(watcher, color, key, session_seed=session_seed)
                 session.start(executable, arguments, cwd, row,
-                              session_seed=session_seed)
+                              session_seed=session_seed, notice=notice)
                 if key and not session.bind_viewer(
                         key, viewer_command(watcher.path, interval, read_only), cwd):
                     # An unusable binding is not worth failing the session over,

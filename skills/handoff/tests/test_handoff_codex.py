@@ -181,13 +181,14 @@ class SessionTests(unittest.TestCase):
             session.start("/some path/codex", arguments, Path("/repo with space"), "bar",
                           session_seed="seed-for-agent")
         command = call.call_args.args
-        cwd, forwarded, status, handoff_session = json.loads(
+        cwd, forwarded, status, handoff_session, notice = json.loads(
             base64.b64decode(command[-1]))
         self.assertEqual(forwarded, ["/some path/codex", *arguments])
         # Compare as paths: Windows renders this as a backslash path.
         self.assertEqual(Path(cwd), Path("/repo with space"))
         self.assertEqual(Path(status), session.status_file)
         self.assertEqual(handoff_session, "seed-for-agent")
+        self.assertEqual(notice, "")
         call.assert_any_call("set-option", "-t", "handoff", "prefix", "None")
         call.assert_any_call("set-option", "-t", "handoff", "status-format[0]", "bar")
         self.assertEqual(session.command[2], "-S")
@@ -249,6 +250,29 @@ class RunTests(unittest.TestCase):
             self.assertEqual(codex.run_codex(watcher, Path(directory), [], 1), 1)
         session.close.assert_called_once()
         session.attach.assert_not_called()
+
+    @unittest.skipIf(os.name == "nt", "Codex launch mode requires POSIX tmux")
+    def test_wrapped_launch_claims_a_name_before_the_agent_starts(self):
+        stack, session = self.context()
+        session.exit_status.side_effect = [0]
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory) / "names"
+            path = Path(directory) / "HANDOFF.md"
+            path.write_text(entry(), encoding="utf-8")
+            stack.enter_context(patch.dict(os.environ, {"HANDOFF_NAME_CACHE": str(cache)}))
+            with patch.object(codex, "agent_startup_notice",
+                              wraps=codex.agent_startup_notice) as bootstrap:
+                self.assertEqual(
+                    codex.run_agent(tui.Watcher(path), Path(directory), [], 1,
+                                    agent="cursor-agent", session_seed="spawn-seed"), 0)
+            bootstrap.assert_called_once_with("spawn-seed", path.resolve(),
+                                              harness="Cursor")
+            self.assertEqual(session.environment.__setitem__.call_args_list,
+                             [(("HANDOFF_SESSION", "spawn-seed"),),
+                              (("HANDOFF_HARNESS", "Cursor"),)])
+            notice = session.start.call_args.kwargs["notice"]
+            self.assertIn("record the task in HANDOFF.md", notice)
+            self.assertEqual(session.start.call_args.kwargs["session_seed"], "spawn-seed")
 
     @unittest.skipIf(os.name == "nt", "Codex launch mode requires POSIX tmux")
     def test_refreshes_without_input_then_returns_child_failure(self):
@@ -324,7 +348,8 @@ class RunTests(unittest.TestCase):
             self.assertEqual(run.call_args.args[1:], (Path(directory).resolve(),
                              ["resume", "--last", "--model", "example"], 2.0))
             self.assertEqual(run.call_args.kwargs,
-                             {"color": False, "read_only": False, "agent": "codex"})
+                             {"color": False, "read_only": False, "agent": "codex",
+                              "session_seed": None})
 
     def test_read_only_reaches_the_popup_the_codex_bar_opens(self):
         with tempfile.TemporaryDirectory() as directory:

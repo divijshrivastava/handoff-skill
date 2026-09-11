@@ -12,7 +12,7 @@ Handoff is an agent skill for repositories where work continues across multiple 
 
 A real session: `/handoff:continue` claims a name and runs preflight on the left while the dashboard on the right tracks five agents against the same ledger.
 
-**Version:** 1.23.0
+**Version:** 1.24.0
 
 ## Why Handoff?
 
@@ -132,7 +132,7 @@ In a repository with no ledger and no such request, the agent does none of this 
 Handoff treats the ledger as progressive history, not a flat todo list. Every session follows the same contract (defined in `skills/handoff/SKILL.md`):
 
 1. **Preflight** — One `preflight` call claims a session name and returns, from a single versioned snapshot, every open ledger entry with its steps, a summary of recent finished ones, structure errors, and Git state. Read repository instructions, audit the open entries newest to oldest, and check active ownership.
-2. **Intake** — Turn each request into a dated task entry with separate `In progress` and `Completed` boxes, concrete steps, verification, and a factual status line.
+2. **Intake** — Turn each request into a dated task entry with separate `In progress` and `Completed` boxes, concrete steps, verification, and a factual status line. In a repository that already keeps `HANDOFF.md`, record the task in the ledger **before editing files** — whether the session was opened from the viewer, wrapped with `--with`, or started in a plain terminal. A name claim or a recent label in the viewer is not a task entry.
 3. **Progressive audit** — For each apparently unfinished entry, weigh later ledger entries, commits, current source, live ownership, and the old entry's boxes. Classify the effective scope as **Complete**, **Partially complete**, **Superseded**, **Unfinished**, or **Unknown**. Preserve history by annotating rather than deleting.
 4. **Ownership resolution** — When effective unfinished work exists alongside a new request, ask whether to finish eligible work first or leave it with its current owner and start the new task. An explicit ordering such as "finish X first, then Y" is already the choice.
 5. **Safe writes** — Update the ledger at real transitions. When peers may write the same tree, route every write through the helper's locked compare-and-swap.
@@ -262,6 +262,9 @@ Run this from a checkout of this repository, or use the script's path inside you
 | Key | Action |
 | --- | --- |
 | Tab, a, t | Switch views, or open Agents / Tasks directly |
+| m (Agents) | Toggle between this repository's agents and every recent claim on this machine |
+| L (Agents) | Designate the selected agent as leader for four hours; press again on the current leader to resign |
+| N (Agents) | Open an agent CLI in a new terminal under the handoff bar and write one in-progress **Session work** intake entry |
 | Up/Down, k/j | Select a row or scroll task details |
 | Page Up/Page Down, Home/End | Move through long lists or details |
 | gg, G | Jump to the first or last line |

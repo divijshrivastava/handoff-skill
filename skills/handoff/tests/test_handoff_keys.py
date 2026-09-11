@@ -237,6 +237,8 @@ class HandoffKeysTests(unittest.TestCase):
             # sending a command into whatever agent holds the terminal.
             self.assertIn('--root "${workspaceFolder}"', task["command"])
             self.assertNotIn(str(repo), task["command"])
+            self.assertIn(" -lic ", task["command"])
+            self.assertNotIn("options", task)
             self.assertEqual(task["presentation"]["panel"], "dedicated")
             configuration = json.loads((user / "settings.json").read_text())
             self.assertEqual(configuration["editor.fontSize"], 13)
@@ -320,7 +322,30 @@ class HandoffKeysTests(unittest.TestCase):
         self.assertIn("iTerm2", message)
         script = run.call_args.args[0][2]
         self.assertIn("write text", script)
+        self.assertIn("set newTab to (create tab with default profile)", script)
+        self.assertIn("tell newTab to select", script)
+        self.assertIn("current session of newTab", script)
         self.assertNotIn("create window with default profile command", script)
+
+    def test_open_kitty_uses_a_tab(self) -> None:
+        with patch.object(keys, "open_candidates", return_value=["kitty"]):
+            with patch.object(keys, "viewer_launch_command", return_value="handoff-tui --root /repo"):
+                with patch.object(keys.subprocess, "run") as run:
+                    code, message = keys.open_viewer(Path("/repo"))
+        self.assertEqual(code, 0)
+        self.assertIn("kitty", message)
+        self.assertEqual(run.call_args.args[0][:4],
+                         ["kitty", "@", "launch", "--type=tab"])
+
+    def test_open_terminal_app_uses_a_tab_when_a_window_exists(self) -> None:
+        with patch.object(keys, "open_candidates", return_value=["terminal"]):
+            with patch.object(keys, "viewer_launch_command", return_value="handoff-tui --root /repo"):
+                with patch.object(keys.subprocess, "run") as run:
+                    code, message = keys.open_viewer(Path("/repo"))
+        self.assertEqual(code, 0)
+        self.assertIn("Terminal", message)
+        script = run.call_args.args[0][2]
+        self.assertIn("in front window", script)
 
     def test_open_falls_back_when_spawn_fails(self) -> None:
         with patch.object(keys, "open_candidates", return_value=["iterm2"]):

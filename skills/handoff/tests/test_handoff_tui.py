@@ -132,17 +132,82 @@ class ProgressTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             cache = Path(directory)
             (cache / "waiting").write_text("Waiting Agent\nCursor\n", encoding="utf-8")
-            with patch.object(tui, "recent_claims", return_value=[("Waiting Agent", "Cursor")]):
-                rows = tui.agent_rows(tui.parse_snapshot(text).tasks)
+            with patch.object(tui, "recent_claims_for_ledger",
+                              return_value=[guard.NameClaim("Waiting Agent", "Cursor")]):
+                rows = tui.agent_rows(tui.parse_snapshot(text).tasks, Path("/repo/HANDOFF.md"))
         self.assertEqual([owner for owner, _ in rows[:3]],
                          ["Waiting Agent", "Agent A", "Agent B"])
         self.assertEqual(rows[0][1].tracked, 0)
 
     def test_ledger_owner_is_not_duplicated_when_also_recent(self):
         text = entry("First", owner="Agent A")
-        with patch.object(tui, "recent_claims", return_value=[("Agent A", "Cursor")]):
-            rows = tui.agent_rows(tui.parse_snapshot(text).tasks)
+        with patch.object(tui, "recent_claims_for_ledger",
+                          return_value=[guard.NameClaim("Agent A", "Cursor")]):
+            rows = tui.agent_rows(tui.parse_snapshot(text).tasks, Path("/repo/HANDOFF.md"))
         self.assertEqual([owner for owner, _ in rows], ["Agent A"])
+
+    def test_agent_rows_ignore_claims_for_other_repositories(self):
+        text = entry("First", owner="Agent A")
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory) / "names"
+            cache.mkdir()
+            here = Path(directory) / "here" / "HANDOFF.md"
+            there = Path(directory) / "there" / "HANDOFF.md"
+            here.parent.mkdir(parents=True)
+            there.parent.mkdir(parents=True)
+            (cache / "remote").write_text(
+                f"Remote Agent\nCodex\n{there.resolve()}\n", encoding="utf-8")
+            with patch.dict(os.environ, {"HANDOFF_NAME_CACHE": str(cache)}):
+                rows = tui.agent_rows(tui.parse_snapshot(text).tasks, here)
+        self.assertEqual([owner for owner, _ in rows], ["Agent A"])
+
+    def test_repo_scope_excludes_a_claim_that_names_no_ledger(self):
+        # A released helper writes "name\nharness\n" with no ledger line; such a
+        # session working in another repository was listed in this one.
+        text = entry("First", owner="Agent A")
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory) / "names"
+            cache.mkdir()
+            here = Path(directory) / "here" / "HANDOFF.md"
+            here.parent.mkdir(parents=True)
+            here.write_text(text, encoding="utf-8")
+            (cache / "elsewhere").write_text("Barong 2\nClaude Code\n", encoding="utf-8")
+            with patch.dict(os.environ, {"HANDOFF_NAME_CACHE": str(cache)}):
+                rows = tui.agent_rows(tui.parse_snapshot(text).tasks, here)
+                watcher = tui.Watcher(here)
+                watcher.poll()
+                report = tui.plain_report(watcher)
+                machine = tui.machine_agent_rows(here)
+        self.assertEqual([owner for owner, _ in rows], ["Agent A"])
+        self.assertNotIn("Barong 2", report)
+        self.assertEqual([name for name, _ in machine], ["Barong 2"])
+
+    def test_machine_agent_rows_list_every_recent_claim(self):
+        claims = [
+            guard.NameClaim("Beta", "Cursor", "/tmp/b/HANDOFF.md"),
+            guard.NameClaim("Alpha", "Codex", "/tmp/a/HANDOFF.md"),
+        ]
+        with patch.object(tui, "recent_claims", return_value=claims):
+            rows = tui.machine_agent_rows(Path("/tmp/a/HANDOFF.md"))
+        self.assertEqual([name for name, _ in rows], ["Beta", "Alpha"])
+
+    def test_repo_display_label_marks_the_current_ledger(self):
+        ledger = Path("/tmp/handoff-skill/HANDOFF.md")
+        self.assertEqual(tui.repo_display_label(str(ledger.resolve()), ledger), "here")
+        self.assertEqual(tui.repo_display_label("/tmp/other/HANDOFF.md", ledger), "other")
+
+    def test_plain_report_can_list_machine_wide_agents(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "HANDOFF.md"
+            path.write_text(entry(), encoding="utf-8")
+            watcher = tui.Watcher(path)
+            watcher.poll()
+            claims = [guard.NameClaim("Alpha", "Codex", str(path.resolve()))]
+            with patch.object(tui, "recent_claims", return_value=claims):
+                report = tui.plain_report(watcher, agent_scope="machine")
+            self.assertIn("AGENTS ON THIS MACHINE", report)
+            self.assertIn("Alpha", report)
+            self.assertIn("here", report)
 
     def test_owner_row_keeps_every_count_visible_when_a_harness_is_shown(self):
         counts = tui.Counts(tracked=2, completed=1, in_progress=1, checked=3, steps=4)
@@ -335,6 +400,9 @@ class DashboardTests(unittest.TestCase):
         self.recent_patch = patch.object(tui, "recent_claims", return_value=[])
         self.recent_patch.start()
         self.addCleanup(self.recent_patch.stop)
+        self.recent_ledger_patch = patch.object(tui, "recent_claims_for_ledger", return_value=[])
+        self.recent_ledger_patch.start()
+        self.addCleanup(self.recent_ledger_patch.stop)
 
     def dashboard(self):
         watcher = tui.Watcher(Path("unused"))
@@ -412,6 +480,19 @@ class DashboardTests(unittest.TestCase):
             dashboard.refresh()
         self.assertEqual(dashboard.selected, 2)
         self.assertEqual(dashboard.detail.state, "completed")
+
+    def test_machine_scope_draws_without_crashing(self):
+        """Pressing m must not raise when rendering machine-wide agent rows."""
+        dashboard = self.dashboard()
+        dashboard.watcher.path = Path("/tmp/handoff-skill/HANDOFF.md")
+        claim = guard.NameClaim("Waiting", "Codex", str(dashboard.watcher.path))
+        with patch.object(tui, "recent_claims", return_value=[claim]):
+            dashboard.handle_key(ord("m"), FakeCurses, 10)
+            self.assertEqual(dashboard.agent_scope, "machine")
+            screen = Screen(24, 100)
+            dashboard.draw(screen, FakeCurses)
+        self.assertIn("REPOSITORY", screen.frames[-1])
+        self.assertIn("Waiting", screen.frames[-1])
 
     def test_draw_handles_resize_long_names_and_scrolled_details(self):
         dashboard = self.dashboard()
@@ -674,12 +755,79 @@ class MoveTests(unittest.TestCase):
         self.assertIn("Agent B", dashboard.banner())
 
     def test_cut_and_paste_hands_one_task_to_a_waiting_agent(self):
-        with patch.object(tui, "recent_claims", return_value=[("Waiting Agent", "Cursor")]):
-            dashboard = self.press(self.dashboard(), ord("x"), ord("a"))
-            dashboard.selected = [row[0] for row in dashboard.rows()].index("Waiting Agent")
-            self.press(dashboard, ord("p"))
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory) / "cache"
+            cache.mkdir()
+            (cache / "waiting").write_text(
+                f"Waiting Agent\nCursor\n{self.path.resolve()}\n", encoding="utf-8")
+            with patch.dict(os.environ, {"HANDOFF_NAME_CACHE": str(cache)}):
+                dashboard = self.press(self.dashboard(), ord("x"), ord("a"))
+                dashboard.selected = [row[0] for row in dashboard.rows()].index("Waiting Agent")
+                self.press(dashboard, ord("p"))
         self.assertEqual(self.owners(), ["Waiting Agent", "Agent B"])
         self.assertIn("Waiting Agent must", self.read())
+
+    def test_launching_an_agent_records_session_intake_in_the_ledger(self):
+        dashboard = self.dashboard()
+        dashboard.view = "spawn"
+        dashboard.selected = 0
+        with patch.object(tui, "recent_claims_for_ledger", return_value=[]):
+            with patch.object(tui, "available_agents", return_value=["cursor-agent"]):
+                with patch.object(tui, "seed_claim", return_value="Atalanta"):
+                    with patch.object(tui, "open_agent", return_value=(0, "Opened.", "Atalanta")):
+                        self.press(dashboard, 10, 10)
+            task = tui.parse_tasks(self.read())[0]
+            self.assertEqual(task.owner, "Atalanta")
+            self.assertEqual(task.state, "in_progress")
+            rows = tui.agent_rows(tui.parse_tasks(self.read()), self.path)
+            self.assertEqual(rows[0][0], "Atalanta")
+            self.assertEqual((rows[0][1].tracked, rows[0][1].in_progress), (1, 1))
+
+    def test_spawn_prompt_records_a_user_task_and_passes_it_to_the_agent(self):
+        dashboard = self.dashboard()
+        dashboard.view = "spawn"
+        dashboard.selected = 0
+        with patch.object(tui, "available_agents", return_value=["cursor-agent"]):
+            with patch.object(tui, "seed_claim", return_value="Atalanta"):
+                with patch.object(tui, "open_agent", return_value=(0, "Opened.", "Atalanta")) as opened:
+                    self.press(dashboard, 10, *map(ord, "Add login page"), 10)
+        task = tui.parse_tasks(self.read())[0]
+        self.assertIn("Add login page", task.heading)
+        self.assertIn("Add login page", self.read())
+        self.assertIn("Execution request: Atalanta must", self.read())
+        opened.assert_called_once()
+        self.assertEqual(opened.call_args.kwargs["task"], "Add login page")
+
+    def test_spawn_prompt_allows_an_empty_task(self):
+        dashboard = self.dashboard()
+        dashboard.view = "spawn"
+        dashboard.selected = 0
+        with patch.object(tui, "available_agents", return_value=["cursor-agent"]):
+            with patch.object(tui, "seed_claim", return_value="Atalanta"):
+                with patch.object(tui, "open_agent", return_value=(0, "Opened.", "Atalanta")) as opened:
+                    self.press(dashboard, 10, 10)
+        task = tui.parse_tasks(self.read())[0]
+        self.assertIn("Session work", task.heading)
+        self.assertEqual(task.owner, "Atalanta")
+        opened.assert_called_once()
+        self.assertIsNone(opened.call_args.kwargs["task"])
+
+    def test_spawned_agent_shows_task_counts_after_assignment(self):
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory) / "cache"
+            cache.mkdir()
+            with patch.dict(os.environ, {"HANDOFF_NAME_CACHE": str(cache)}):
+                name = guard.seed_claim("spawn-seed", self.path, "cursor-agent")
+                rows_before = tui.agent_rows(tui.parse_tasks(self.read()), self.path)
+                self.assertEqual(rows_before[0], (name, tui.Counts()))
+                dashboard = self.press(self.dashboard(), ord("x"), ord("a"))
+                dashboard.selected = [row[0] for row in dashboard.rows()].index(name)
+                self.press(dashboard, ord("p"))
+                rows_after = tui.agent_rows(tui.parse_tasks(self.read()), self.path)
+        self.assertEqual([owner for owner, _ in rows_after], [name, "Agent B"])
+        counts = rows_after[0][1]
+        self.assertEqual((counts.tracked, counts.in_progress, counts.steps),
+                         (1, 1, 2))
 
     def test_a_move_checks_in_progress_without_changing_steps(self):
         before = tui.parse_tasks(self.read())[0]
@@ -1269,3 +1417,167 @@ class NudgeKeyTests(unittest.TestCase):
         read_only = self.board(read_only=True)
         read_only.draw(screen, FakeCurses)
         self.assertNotIn("n nudge", screen.lines[screen.height - 1])
+
+
+class CompletionTests(unittest.TestCase):
+    """User override to mark steps or whole tasks complete from the live view."""
+
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.path = Path(self.directory.name) / "HANDOFF.md"
+        self.write("# Handoff\n\n" + entry("Work", steps=(False, False)))
+
+    def write(self, text):
+        self.path.write_text(text, encoding="utf-8")
+
+    def read(self):
+        return self.path.read_text(encoding="utf-8")
+
+    def dashboard(self, read_only=False):
+        watcher = tui.Watcher(self.path)
+        watcher.poll()
+        dashboard = tui.Dashboard(watcher, read_only=read_only)
+        dashboard.view = "tasks"
+        return dashboard
+
+    def press(self, dashboard, *keys):
+        for key in keys:
+            dashboard.handle_key(key, FakeCurses, 5)
+        return dashboard
+
+    def test_d_marks_the_selected_step_complete(self):
+        dashboard = self.press(self.dashboard(), 10, ord("j"), ord("d"))
+        task = tui.parse_tasks(self.read())[0]
+        self.assertEqual(task.steps, [(False, "Outcome 0."), (True, "Outcome 1.")])
+        self.assertEqual(task.state, "in_progress")
+        self.assertIn("Marked complete by user override", self.read())
+        self.assertEqual(guard.structure_findings(self.read()), [])
+
+    def test_d_on_the_last_open_step_completes_the_task(self):
+        self.write("# Handoff\n\n" + entry("Work", steps=(True, False)))
+        self.press(self.dashboard(), 10, ord("j"), ord("d"))
+        task = tui.parse_tasks(self.read())[0]
+        self.assertEqual(task.state, "completed")
+        self.assertTrue(all(checked for checked, _ in task.steps))
+
+    def test_D_marks_the_whole_task_from_the_tasks_view(self):
+        self.press(self.dashboard(), ord("D"))
+        task = tui.parse_tasks(self.read())[0]
+        self.assertEqual(task.state, "completed")
+        self.assertTrue(all(checked for checked, _ in task.steps))
+        self.assertIn("Marked complete by user override", self.read())
+
+    def test_D_marks_the_whole_task_from_task_details(self):
+        self.press(self.dashboard(), 10, ord("D"))
+        task = tui.parse_tasks(self.read())[0]
+        self.assertEqual(task.state, "completed")
+        self.assertTrue(all(checked for checked, _ in task.steps))
+
+    def test_read_only_mode_refuses_completion(self):
+        dashboard = self.press(self.dashboard(read_only=True), 10, ord("d"), ord("D"))
+        task = tui.parse_tasks(self.read())[0]
+        self.assertEqual(task.state, "in_progress")
+        self.assertFalse(all(checked for checked, _ in task.steps))
+        self.assertIn("read-only", dashboard.banner())
+
+    def test_d_without_details_asks_to_open_them(self):
+        dashboard = self.press(self.dashboard(), ord("d"))
+        self.assertIn("Open task details", dashboard.banner())
+        self.assertFalse(all(checked for checked, _ in tui.parse_tasks(self.read())[0].steps))
+
+
+class LeaderViewerTests(unittest.TestCase):
+    """The L key and leadership markers in the live viewer."""
+
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.path = Path(self.directory.name) / "HANDOFF.md"
+        self.write("# Handoff\n\n" + entry("First", owner="Agent A")
+                   + entry("Second", owner="Agent B"))
+
+    def write(self, text):
+        self.path.write_text(text, encoding="utf-8")
+
+    def read(self):
+        return self.path.read_text(encoding="utf-8")
+
+    def dashboard(self, read_only=False):
+        watcher = tui.Watcher(self.path)
+        watcher.poll()
+        dashboard = tui.Dashboard(watcher, read_only=read_only)
+        dashboard.view = "agents"
+        return dashboard
+
+    def press(self, dashboard, *keys):
+        for key in keys:
+            dashboard.handle_key(key, FakeCurses, 5)
+        return dashboard
+
+    def agents(self, read_only=False):
+        with patch.object(tui, "recent_claims", return_value=[]):
+            return self.dashboard(read_only=read_only)
+
+    def test_l_designates_the_selected_agent_as_leader(self):
+        dashboard = self.agents()
+        dashboard.selected = [row[0] for row in dashboard.rows()].index("Agent B")
+        self.press(dashboard, ord("L"))
+        self.assertIn("Lead: owner=Agent B", self.read())
+        self.assertIn("Agent B is leader", dashboard.message)
+
+    def test_l_on_the_current_leader_resigns(self):
+        dashboard = self.agents()
+        dashboard.selected = [row[0] for row in dashboard.rows()].index("Agent A")
+        self.press(dashboard, ord("L"))
+        self.assertIn("Lead: owner=Agent A", self.read())
+        self.press(dashboard, ord("L"))
+        self.assertNotIn("Lead:", self.read())
+        self.assertIn("resigned", dashboard.message)
+
+    def test_l_refuses_when_another_leader_is_active(self):
+        dashboard = self.agents()
+        dashboard.selected = [row[0] for row in dashboard.rows()].index("Agent A")
+        self.press(dashboard, ord("L"))
+        dashboard.selected = [row[0] for row in dashboard.rows()].index("Agent B")
+        self.press(dashboard, ord("L"))
+        self.assertIn("Lead: owner=Agent A", self.read())
+        self.assertIn("already holds", dashboard.message)
+
+    def test_read_only_mode_refuses_leadership_changes(self):
+        dashboard = self.agents(read_only=True)
+        self.press(dashboard, ord("L"))
+        self.assertNotIn("Lead:", self.read())
+        self.assertIn("read-only", dashboard.message)
+
+    def test_lead_summary_appears_when_a_mandate_is_recorded(self):
+        self.write(self.read().replace("# Handoff\n\n",
+                                        "# Handoff\n\n"
+                                        "Lead: owner=Agent A; expires=2099-01-01T00:00:00Z; "
+                                        "policy=coordinate; succession=none\n\n"))
+        snapshot = tui.parse_snapshot(self.read())
+        lines = tui.summary_lines(snapshot)
+        self.assertTrue(any(line.startswith("LEAD  Agent A") for line in lines))
+
+    def test_assignment_provenance_appears_in_task_details(self):
+        assigned = (
+            "## Offered work (owner: Agent B)\n\nState:\n- [x] In progress\n- [ ] Completed\n\n"
+            "Task: id=tabc1234\n"
+            "Assigned: by=Agent A; to=Agent B; state=offered; accept-by=2099-01-01T00:00:00Z\n\n"
+            "Steps:\n- [ ] Implement it.\n\nStatus: Offered.\n\n"
+        )
+        self.write("# Handoff\n\n" + assigned)
+        dashboard = self.dashboard()
+        dashboard.view = "tasks"
+        dashboard.selected = 0
+        self.press(dashboard, 10)
+        rows = dashboard.detail_rows(80)
+        joined = "\n".join(line for line, _ in rows)
+        self.assertIn("assigned by Agent A", joined)
+        self.assertIn("accept by", joined)
+
+    def test_the_agents_footer_offers_the_leader_key(self):
+        dashboard = self.agents()
+        screen = Screen(width=120)
+        dashboard.draw(screen, FakeCurses)
+        self.assertIn("L leader", screen.lines[screen.height - 1])

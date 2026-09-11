@@ -844,6 +844,129 @@ class HarnessFieldTests(unittest.TestCase):
         self.assertNotIn("harness", without)
         self.assertEqual(handoff_guard.parse_tasks(with_harness)[0].errors, [])
 
+    def test_harness_for_agent_maps_known_clis(self):
+        self.assertEqual(handoff_guard.harness_for_agent("cursor-agent"), "Cursor")
+        self.assertEqual(handoff_guard.harness_for_agent("claude"), "Claude Code")
+        self.assertIsNone(handoff_guard.harness_for_agent("unknown-cli"))
+
+    def test_seed_claim_names_a_spawned_agent_against_an_existing_ledger(self):
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory) / "names"
+            root = Path(directory) / "repo"
+            root.mkdir()
+            ledger = root / "HANDOFF.md"
+            ledger.write_text(MINIMAL_LEDGER, encoding="utf-8")
+            with unittest.mock.patch.dict(os.environ, {"HANDOFF_NAME_CACHE": str(cache)}):
+                name = handoff_guard.seed_claim("spawn-seed", ledger, "cursor-agent")
+            self.assertIn(name, handoff_guard.MYTHIC_NAMES)
+            claims = handoff_guard.recent_claims(cache)
+            self.assertEqual(len(claims), 1)
+            self.assertEqual(claims[0].name, name)
+            self.assertEqual(claims[0].harness, "Cursor")
+            self.assertEqual(claims[0].ledger, str(ledger.resolve()))
+
+    def test_agent_startup_notice_requires_a_ledger_entry_before_code(self):
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory) / "names"
+            ledger = Path(directory) / "HANDOFF.md"
+            ledger.write_text(MINIMAL_LEDGER, encoding="utf-8")
+            with unittest.mock.patch.dict(os.environ, {"HANDOFF_NAME_CACHE": str(cache)}):
+                name, notice = handoff_guard.agent_startup_notice(
+                    "spawn-seed", ledger, harness="Cursor")
+            self.assertIn(name, handoff_guard.MYTHIC_NAMES)
+            self.assertIn("record the task in HANDOFF.md before you edit files", notice)
+            self.assertIn("Preflight first", notice)
+
+    def test_apply_session_intake_records_in_progress_work_for_a_new_owner(self):
+        with tempfile.TemporaryDirectory() as directory:
+            ledger = Path(directory) / "HANDOFF.md"
+            ledger.write_text(MINIMAL_LEDGER, encoding="utf-8")
+            version = handoff_guard.ledger_version(MINIMAL_LEDGER)
+            result = handoff_guard.apply_session_intake(ledger, version, "Atalanta", "Cursor")
+            self.assertEqual(result["status"], "applied")
+            task = handoff_guard.parse_tasks(ledger.read_text(encoding="utf-8"))[0]
+            self.assertEqual(task.owner, "Atalanta")
+            self.assertEqual(task.harness, "Cursor")
+            self.assertEqual(task.state, "in_progress")
+            self.assertEqual(len(task.steps), 3)
+
+    def test_apply_session_intake_records_a_spawn_task_with_execution_request(self):
+        with tempfile.TemporaryDirectory() as directory:
+            ledger = Path(directory) / "HANDOFF.md"
+            ledger.write_text(MINIMAL_LEDGER, encoding="utf-8")
+            version = handoff_guard.ledger_version(MINIMAL_LEDGER)
+            result = handoff_guard.apply_session_intake(
+                ledger, version, "Atalanta", "Cursor", task="Add login page")
+            self.assertEqual(result["status"], "applied")
+            text = ledger.read_text(encoding="utf-8")
+            task = handoff_guard.parse_tasks(text)[0]
+            self.assertIn("Add login page", task.heading)
+            self.assertEqual(len(task.steps), 2)
+            self.assertIn("Execution request: Atalanta must", text)
+            self.assertNotIn("Record the user's direction at intake.", text)
+
+    def test_apply_session_intake_skips_when_owner_already_has_open_work(self):
+        with tempfile.TemporaryDirectory() as directory:
+            ledger = Path(directory) / "HANDOFF.md"
+            ledger.write_text(MINIMAL_LEDGER, encoding="utf-8")
+            version = handoff_guard.ledger_version(MINIMAL_LEDGER)
+            first = handoff_guard.apply_session_intake(ledger, version, "Daedalus", "Cursor")
+            self.assertEqual(first["status"], "applied")
+            second = handoff_guard.apply_session_intake(
+                ledger, str(first["new_version"]), "Daedalus", "Cursor")
+            self.assertEqual(second["status"], "skipped")
+            self.assertEqual(len(handoff_guard.parse_tasks(ledger.read_text(encoding="utf-8"))), 2)
+
+    def _open_task(self, steps=("First.", "Second.")):
+        heading = "2026-09-11 - T (owner: Daedalus)"
+        body = "# Handoff\n\n## " + heading + "\n\nState:\n\n- [ ] In progress\n- [ ] Completed\n\nSteps:\n\n"
+        body += "".join(f"- [ ] {step}\n" for step in steps)
+        body += "\nStatus: Recorded status.\n"
+        return body, heading, handoff_guard.parse_tasks(body)[0].line
+
+    def test_mark_step_complete_checks_one_step_and_leaves_the_task_open(self):
+        text, heading, line = self._open_task()
+        task = handoff_guard.parse_tasks(text)[0]
+        updated = handoff_guard.mark_step_complete(text, line, heading, 0, task.steps[0])
+        parsed = handoff_guard.parse_tasks(updated)[0]
+        self.assertEqual(parsed.steps, [(True, "First."), (False, "Second.")])
+        self.assertEqual(parsed.state, "in_progress")
+        self.assertIn("Marked complete by user override", updated)
+        self.assertEqual(handoff_guard.structure_findings(updated), [])
+
+    def test_mark_step_complete_finishes_the_task_when_the_last_step_is_checked(self):
+        text, heading, line = self._open_task()
+        task = handoff_guard.parse_tasks(text)[0]
+        text = handoff_guard.mark_step_complete(text, line, heading, 0, task.steps[0])
+        task = handoff_guard.parse_tasks(text)[0]
+        updated = handoff_guard.mark_step_complete(text, line, heading, 1, task.steps[1])
+        parsed = handoff_guard.parse_tasks(updated)[0]
+        self.assertEqual(parsed.state, "completed")
+        self.assertTrue(all(checked for checked, _ in parsed.steps))
+        self.assertEqual(handoff_guard.structure_findings(updated), [])
+
+    def test_mark_task_complete_checks_every_box_and_clears_a_lease(self):
+        text, heading, line = self._open_task()
+        lease = handoff_guard.format_lease("Daedalus", time.time() + 3600)
+        text = handoff_guard.set_lease(text, line, heading, lease)
+        updated = handoff_guard.mark_task_complete(text, line, heading)
+        parsed = handoff_guard.parse_tasks(updated)[0]
+        self.assertEqual(parsed.state, "completed")
+        self.assertTrue(all(checked for checked, _ in parsed.steps))
+        self.assertIsNone(parsed.lease)
+        self.assertIn("Marked complete by user override", updated)
+        self.assertEqual(handoff_guard.structure_findings(updated), [])
+
+    def test_seed_claim_is_a_no_op_without_a_ledger(self):
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory) / "names"
+            root = Path(directory) / "repo"
+            root.mkdir()
+            with unittest.mock.patch.dict(os.environ, {"HANDOFF_NAME_CACHE": str(cache)}):
+                self.assertIsNone(handoff_guard.seed_claim("spawn-seed",
+                                                           root / "HANDOFF.md",
+                                                           "cursor-agent"))
+
     def test_detection_prefers_an_explicit_override(self):
         with unittest.mock.patch.dict(os.environ, {"HANDOFF_HARNESS": "Weird Tool",
                                      "CLAUDECODE": "1"}, clear=True):
@@ -866,8 +989,45 @@ class HarnessFieldTests(unittest.TestCase):
             now = time.time()
             os.utime(cache / "older", (now - 120, now - 120))
             os.utime(cache / "newer", (now - 30, now - 30))
-            self.assertEqual(handoff_guard.recent_claims(cache),
-                             [("Beta", "Cursor"), ("Alpha", "Codex")])
+            self.assertEqual([claim.name for claim in handoff_guard.recent_claims(cache)],
+                             ["Beta", "Alpha"])
+            self.assertEqual(handoff_guard.recent_claims(cache)[0].harness, "Cursor")
+
+    def test_recent_claims_for_ledger_ignore_other_repositories(self):
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory)
+            here = Path(directory) / "here" / "HANDOFF.md"
+            there = Path(directory) / "there" / "HANDOFF.md"
+            here.parent.mkdir(parents=True)
+            there.parent.mkdir(parents=True)
+            (cache / "one").write_text(f"Alpha\nCodex\n{here.resolve()}\n", encoding="utf-8")
+            (cache / "two").write_text(f"Beta\nCursor\n{there.resolve()}\n", encoding="utf-8")
+            (cache / "legacy").write_text("Gamma\nClaude Code\n", encoding="utf-8")
+            filtered = handoff_guard.recent_claims_for_ledger(here, cache)
+            self.assertEqual([claim.name for claim in filtered], ["Alpha"])
+            self.assertEqual(filtered[0].ledger, str(here.resolve()))
+            self.assertNotIn("Gamma", handoff_guard.held_sessions_for_ledger(here, cache))
+            self.assertIn("Gamma", handoff_guard.held_sessions(cache))
+
+    def test_claim_is_for_ledger_requires_an_explicit_ledger_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            here = Path(directory) / "HANDOFF.md"
+            legacy = handoff_guard.NameClaim("Alpha", "Codex", None)
+            scoped = handoff_guard.NameClaim("Beta", "Codex", str(here.resolve()))
+            self.assertFalse(handoff_guard.claim_is_for_ledger(legacy, here))
+            self.assertTrue(handoff_guard.claim_is_for_ledger(scoped, here))
+
+    def test_claim_name_refreshes_the_ledger_path_in_the_record(self):
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory)
+            ledger = Path(directory) / "repo" / "HANDOFF.md"
+            ledger.parent.mkdir()
+            ledger.write_text(MINIMAL_LEDGER, encoding="utf-8")
+            with unittest.mock.patch.dict(os.environ, {"HANDOFF_NAME_CACHE": str(cache)}):
+                handoff_guard.claim_name("seed-a", ledger, set())
+                record = handoff_guard.name_record("seed-a", ledger)
+            self.assertEqual(record.read_text(encoding="utf-8").splitlines()[2],
+                             str(ledger.resolve()))
 
     def test_recent_sessions_report_their_harness_within_a_short_window(self):
         with tempfile.TemporaryDirectory() as directory:

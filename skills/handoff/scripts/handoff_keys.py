@@ -71,6 +71,85 @@ def opener_seed() -> str | None:
     return None
 
 
+KNOWN_AGENTS = (
+    "claude", "codex", "kimi", "grok", "gemini", "opencode", "amp", "cline",
+    "cursor-agent", "droid", "kimi-code-cli",
+)
+
+_PATH_ENRICHED = False
+
+
+def agent_path_entries() -> list[str]:
+    """Common install locations GUI and task shells often omit from PATH."""
+    home = Path.home()
+    entries: list[Path] = [
+        home / ".local" / "bin",
+        home / ".kimi-code" / "bin",
+        home / ".grok" / "bin",
+        home / ".opencode" / "bin",
+        home / ".cargo" / "bin",
+    ]
+    nvm = home / ".nvm" / "versions" / "node"
+    if nvm.is_dir():
+        for version in sorted((path for path in nvm.iterdir() if path.is_dir()),
+                              reverse=True):
+            bindir = version / "bin"
+            if bindir.is_dir():
+                entries.append(bindir)
+                break
+    cursor_root = home / ".local" / "share" / "cursor-agent" / "versions"
+    if cursor_root.is_dir():
+        for version in sorted((path for path in cursor_root.iterdir() if path.is_dir()),
+                              reverse=True):
+            entries.append(version)
+            break
+    return [str(path) for path in entries if path.is_dir()]
+
+
+def enrich_path() -> None:
+    """Prepend known agent install directories once per process."""
+    global _PATH_ENRICHED
+    if _PATH_ENRICHED:
+        return
+    additions = agent_path_entries()
+    if additions:
+        current = os.environ.get("PATH", "")
+        os.environ["PATH"] = ":".join(additions + ([current] if current else []))
+    _PATH_ENRICHED = True
+
+
+def resolve_agent(name: str) -> str | None:
+    """Locate one agent CLI, including common paths task shells strip away."""
+    enrich_path()
+    return shutil.which(name)
+
+
+def available_agents() -> list[str]:
+    """Return known agent CLIs that are on PATH, in a stable order."""
+    enrich_path()
+    return [name for name in KNOWN_AGENTS if shutil.which(name)]
+
+
+def agent_launch_command(root: Path | None, agent: str,
+                         seed: str | None = None,
+                         task: str | None = None) -> str:
+    """Shell command that runs one agent CLI under the handoff bar."""
+    launcher = shutil.which("handoff-tui")
+    if launcher:
+        parts = [launcher]
+    else:
+        viewer = Path(__file__).resolve().with_name("handoff_tui.py")
+        parts = [sys.executable, str(viewer)]
+    if root is not None:
+        parts.extend(["--root", str(root.resolve())])
+    if seed:
+        parts.extend(["--session-seed", seed])
+    parts.extend(["--with", agent])
+    if task and task.strip():
+        parts.append(task.strip())
+    return " ".join(shlex.quote(part) for part in parts)
+
+
 def viewer_launch_command(root: Path | None = None, *, read_only: bool = False) -> str:
     """Prefer the PATH launcher so opened terminals survive skill upgrades."""
     launcher = shutil.which("handoff-tui")
@@ -397,12 +476,16 @@ def cursor_task(directory: Path) -> dict:
     # viewer_command with no root omits --root, which the task supplies itself.
     command = (" ".join(shlex.quote(part) for part in [sys.executable, launcher])
                if launcher else viewer_command(None))
+    # Cursor task shells often inherit a bare PATH. Run through a login shell
+    # in the command itself; options.shell is not reliable across hosts.
+    shell = os.environ.get("SHELL") or "/bin/zsh"
+    inner = command + ' --root "${workspaceFolder}"'
     return {
         "label": TASK_LABEL,
         "type": "shell",
         # ${workspaceFolder} keeps this file portable: the same task opens
         # whichever repository the window has open.
-        "command": command + ' --root "${workspaceFolder}"',
+        "command": f"{shell} -lic {shlex.quote(inner)}",
         "presentation": {"reveal": "always", "panel": "dedicated", "focus": True,
                          "clear": True},
         "problemMatcher": [],
@@ -566,25 +649,42 @@ def _open_iterm2(command: str) -> None:
     script = (
         'tell application "iTerm2"\n'
         "  activate\n"
-        "  create window with default profile\n"
-        "  tell current session of current window\n"
-        f"    write text {json.dumps(command)}\n"
-        "  end tell\n"
+        "  if (count of windows) = 0 then\n"
+        "    create window with default profile\n"
+        "    tell current session of current window\n"
+        f"      write text {json.dumps(command)}\n"
+        "    end tell\n"
+        "  else\n"
+        "    tell current window\n"
+        "      set newTab to (create tab with default profile)\n"
+        "      tell newTab to select\n"
+        "      tell current session of newTab\n"
+        f"        write text {json.dumps(command)}\n"
+        "      end tell\n"
+        "    end tell\n"
+        "  end if\n"
         "end tell"
     )
     subprocess.run(["osascript", "-e", script], check=True)
 
 
 def _open_terminal_app(command: str) -> None:
-    subprocess.run(
-        ["osascript", "-e", f'tell application "Terminal" to do script {json.dumps(command)}'],
-        check=True,
+    script = (
+        'tell application "Terminal"\n'
+        "  activate\n"
+        "  if (count of windows) = 0 then\n"
+        f"    do script {json.dumps(command)}\n"
+        "  else\n"
+        f"    do script {json.dumps(command)} in front window\n"
+        "  end if\n"
+        "end tell"
     )
+    subprocess.run(["osascript", "-e", script], check=True)
 
 
 def _open_kitty(command: str) -> None:
     subprocess.run(
-        ["kitty", "@", "launch", "--type=window", "sh", "-c", command + "; exec $SHELL"],
+        ["kitty", "@", "launch", "--type=tab", "sh", "-c", command + "; exec $SHELL"],
         check=True,
     )
 
@@ -599,39 +699,67 @@ def _open_linux(command: str) -> None:
         if terminal is None:
             continue
         if name == "gnome-terminal":
-            subprocess.run([terminal, "--", "sh", "-c", command + "; exec $SHELL"], check=True)
+            subprocess.run([terminal, "--tab", "--", "sh", "-c", command + "; exec $SHELL"],
+                           check=True)
         else:
             subprocess.run([terminal, "-e", command], check=True)
         return
     raise FileNotFoundError("no terminal emulator on PATH")
 
 
-def open_viewer(root: Path | None = None, *, read_only: bool = False) -> tuple[int, str]:
-    """Spawn the live viewer in a real terminal and return immediately."""
-    command = viewer_launch_command(root, read_only=read_only)
+def _open_in_terminal(command: str) -> tuple[int, str]:
+    """Run a shell command in a new terminal tab; return (code, message)."""
     errors: list[str] = []
     for emulator in open_candidates():
         try:
             if emulator == "iterm2":
                 _open_iterm2(command)
-                return 0, f"Opened the handoff viewer in iTerm2."
+                return 0, "iTerm2"
             if emulator == "terminal":
                 _open_terminal_app(command)
-                return 0, "Opened the handoff viewer in Terminal."
+                return 0, "Terminal"
             if emulator == "kitty":
                 _open_kitty(command)
-                return 0, "Opened the handoff viewer in kitty."
+                return 0, "kitty"
             if emulator == "wezterm":
                 _open_wezterm(command)
-                return 0, "Opened the handoff viewer in wezterm."
+                return 0, "wezterm"
         except (OSError, subprocess.CalledProcessError) as error:
             errors.append(f"{emulator}: {error}")
     if platform.system() == "Linux":
         try:
             _open_linux(command)
-            return 0, "Opened the handoff viewer."
+            return 0, "a new terminal"
         except OSError as error:
             errors.append(str(error))
     detail = "; ".join(errors) if errors else "no terminal emulator found"
     return 1, (f"Could not open a terminal ({detail}). "
                f"Run {command} in your own terminal.")
+
+
+def open_viewer(root: Path | None = None, *, read_only: bool = False) -> tuple[int, str]:
+    """Spawn the live viewer in a real terminal and return immediately."""
+    command = viewer_launch_command(root, read_only=read_only)
+    code, detail = _open_in_terminal(command)
+    if code == 0:
+        return 0, f"Opened the handoff viewer in {detail}."
+    return code, detail
+
+
+def open_agent(root: Path | None, agent: str,
+               seed: str | None = None, *, ledger: Path | None = None,
+               task: str | None = None, name: str | None = None) -> tuple[int, str, str | None]:
+    """Spawn one agent CLI under the handoff bar in a new terminal tab."""
+    from handoff_guard import find_repo_root, seed_claim
+
+    seed = seed or os.urandom(16).hex()
+    if ledger is None:
+        ledger = find_repo_root(root or Path.cwd()) / "HANDOFF.md"
+    if name is None:
+        name = seed_claim(seed, ledger, agent)
+    command = agent_launch_command(root, agent, seed=seed, task=task)
+    code, detail = _open_in_terminal(command)
+    if code == 0:
+        label = f"{agent} as {name}" if name else agent
+        return 0, f"Opened {label} with the handoff bar in {detail}.", name
+    return code, detail, None

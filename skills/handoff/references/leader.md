@@ -82,6 +82,11 @@ An agent is `eligible` only on a fresh availability report. **Unknown never
 means free**: silence is the case where handing out work does the most damage,
 because that agent may be mid-edit in the very files being assigned.
 
+`assign` refuses an assignee who is not recorded in **this** repository: a ledger
+owner, a channel peer on this checkout, or a session that claimed its name
+against this `HANDOFF.md`. Agents from other repositories, and names typed with
+no claim here, are rejected even when the label is syntactically valid.
+
 `--paths` declares the write scope, and `assign` refuses to hand two agents
 overlapping paths. A trailing slash declares a directory and covers everything
 beneath it. This is the main protection for real parallelism.

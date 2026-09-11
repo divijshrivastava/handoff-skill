@@ -30,10 +30,11 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from handoff_guard import (
-    APPLY_EXIT, LEASE_TIME_FORMAT, Task, find_repo_root, insert_entry,
-    lease_epoch, lease_state, ledger_version, make_template, mark_task_in_progress,
-    outside_fence_lines, owner_label_error, parse_tasks, reassign_task, set_lease,
-    status_paragraph_end, swap_ledger, task_block_end,
+    APPLY_EXIT, LEASE_TIME_FORMAT, Task, claim_is_for_ledger, find_repo_root,
+    insert_entry, lease_epoch, lease_state, ledger_version, make_template,
+    mark_task_in_progress, outside_fence_lines, owner_label_error, parse_tasks,
+    recent_claims, reassign_task, set_lease, status_paragraph_end, swap_ledger,
+    task_block_end,
 )
 
 
@@ -55,6 +56,7 @@ SUCCESSIONS = ("none", "auto")
 ASSIGNMENT_STATES = ("offered", "accepted", "declined")
 MAX_LEAD_HOURS = 168
 MAX_ACCEPT_HOURS = 72
+DEFAULT_VIEWER_LEAD_HOURS = 4
 
 
 def utc_stamp(seconds_from_now: float) -> str:
@@ -361,6 +363,30 @@ def find_task(text: str, task_id: str) -> Task:
     raise ValueError(f"No entry declares task id {task_id}")
 
 
+def repo_agents(ledger: Path, text: str) -> set[str]:
+    """Names that belong to this repository and may receive leader assignments.
+
+    A leader may hand work only to agents recorded here: ledger owners, channel
+    peers registered against this checkout, sessions that claimed a name for
+    this ledger file, and the current mandate holder.
+    """
+    agents = {task.owner for task in parse_tasks(text) if task.owner}
+    for claim in recent_claims():
+        if claim_is_for_ledger(claim, ledger):
+            agents.add(claim.name)
+    repo = find_repo_root(ledger.parent)
+    try:
+        from handoff_channel import Channel
+        for peer in Channel(repo).peers():
+            agents.add(peer["owner"])
+    except Exception:  # pragma: no cover - the channel is optional
+        pass
+    lead = read_lead(text)
+    if lead:
+        agents.add(lead.owner)
+    return agents
+
+
 def require_lead(text: str, owner: str) -> Lead:
     """Confirm this owner still holds an unexpired mandate, right now.
 
@@ -382,6 +408,43 @@ def require_lead(text: str, owner: str) -> Lead:
     return lead
 
 
+def build_claim(text: str, owner: str, hours: float, *, succession: str = "none",
+                renew: bool = False) -> str:
+    """Write or replace the mandate line. Used by the CLI and the viewer."""
+    current = read_lead(text)
+    if renew:
+        if current is None:
+            raise ValueError("No mandate exists to renew")
+        if current.owner != owner:
+            raise ValueError(f"{owner} does not hold the mandate; {current.owner} does")
+    elif current is not None and current.state() == "active" and current.owner != owner:
+        raise ValueError(
+            f"{current.owner} already holds an active mandate until {current.expires}. "
+            "Ask that leader to resign, or wait for it to expire.")
+    lead = Lead(owner, utc_stamp(hours * 3600), "coordinate",
+                succession if not renew else (current.succession if current else "none"))
+    if current is not None:
+        return replace_line(text, current.line, lead.render())
+    lines = text.splitlines()
+    anchor = next((index for index, line in enumerate(outside_fence_lines(lines))
+                   if line.startswith("## ")), len(lines))
+    # Keep a blank line on each side so the mandate reads as its own
+    # paragraph rather than running into the title or the first entry.
+    block = ([""] if anchor and lines[anchor - 1].strip() else []) + [lead.render(), ""]
+    lines[anchor:anchor] = block
+    return "\n".join(lines) + "\n"
+
+
+def build_resign(text: str, owner: str) -> str:
+    """Remove the mandate when the named owner still holds it."""
+    current = read_lead(text)
+    if current is None:
+        raise ValueError("No mandate exists to resign")
+    if current.owner != owner:
+        raise ValueError(f"{owner} does not hold the mandate; {current.owner} does")
+    return replace_line(text, current.line, None)
+
+
 def claim_command(args: argparse.Namespace) -> int:
     """Designate a leader, or renew an existing mandate.
 
@@ -394,32 +457,9 @@ def claim_command(args: argparse.Namespace) -> int:
     if problem or ";" in args.owner:
         return fail(f"owner label rejected ({problem or 'owner name cannot contain a semicolon'})")
 
-    renewing = args.command == "renew"
-
     def build(text: str) -> str:
-        current = read_lead(text)
-        if renewing:
-            if current is None:
-                raise ValueError("No mandate exists to renew")
-            if current.owner != args.owner:
-                raise ValueError(f"{args.owner} does not hold the mandate; "
-                                 f"{current.owner} does")
-        elif current is not None and current.state() == "active" and current.owner != args.owner:
-            raise ValueError(
-                f"{current.owner} already holds an active mandate until {current.expires}. "
-                "Ask that leader to resign, or wait for it to expire.")
-        lead = Lead(args.owner, utc_stamp(args.hours * 3600), "coordinate",
-                    args.succession if not renewing else (current.succession if current else "none"))
-        if current is not None:
-            return replace_line(text, current.line, lead.render())
-        lines = text.splitlines()
-        anchor = next((index for index, line in enumerate(outside_fence_lines(lines))
-                       if line.startswith("## ")), len(lines))
-        # Keep a blank line on each side so the mandate reads as its own
-        # paragraph rather than running into the title or the first entry.
-        block = ([""] if anchor and lines[anchor - 1].strip() else []) + [lead.render(), ""]
-        lines[anchor:anchor] = block
-        return "\n".join(lines) + "\n"
+        return build_claim(text, args.owner, args.hours,
+                           succession=args.succession, renew=args.command == "renew")
 
     return emit(swap_ledger(ledger_of(args), args.expect_version, build,
                             dry_run=args.dry_run), args)
@@ -427,12 +467,7 @@ def claim_command(args: argparse.Namespace) -> int:
 
 def resign_command(args: argparse.Namespace) -> int:
     def build(text: str) -> str:
-        current = read_lead(text)
-        if current is None:
-            raise ValueError("No mandate exists to resign")
-        if current.owner != args.owner:
-            raise ValueError(f"{args.owner} does not hold the mandate; {current.owner} does")
-        return replace_line(text, current.line, None)
+        return build_resign(text, args.owner)
 
     return emit(swap_ledger(ledger_of(args), args.expect_version, build,
                             dry_run=args.dry_run), args)
@@ -455,8 +490,15 @@ def assign_command(args: argparse.Namespace) -> int:
     task_id = mint_task_id()
     declared = [normalize_path(path) for path in (args.paths or "").split(",") if path.strip()]
 
+    ledger = ledger_of(args)
+
     def build(text: str) -> str:
         require_lead(text, args.owner)
+        if args.to not in repo_agents(ledger, text):
+            raise ValueError(
+                f"{args.to} is not recorded in this repository. Assign only to "
+                "ledger owners, channel peers, or agents that claimed a name "
+                "for this ledger.")
         known = {read_task_id(text, task) for task in parse_tasks(text)}
         for needed in args.needs or []:
             if needed not in known:
