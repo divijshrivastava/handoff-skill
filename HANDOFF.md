@@ -2,6 +2,21 @@
 
 Lead: owner=Bastet; expires=2026-09-11T08:16:58Z; policy=coordinate; succession=none
 
+## 2026-09-11 - Diagnose handoff-tui --with codex ending with [server exited] (owner: Kubera 2) (harness: Claude Code)
+
+State:
+
+- [x] In progress
+- [ ] Completed
+
+Steps:
+
+- [ ] Identify which viewer copy and which codex executable the wrapper runs, and why the tmux session ends immediately.
+- [ ] Reproduce without executing any binary macOS has quarantined or flagged, and confirm the cause with evidence.
+- [ ] Report the cause and the fix or next action to the user, checking for overlap with Bragi 3's Codex launch entry.
+
+Status: In progress. The user ran /Users/divij/.local/bin/handoff-tui --root /Users/divij/code/handoff-skill --session-seed 4616d841b771dde1f2d61a8f60fd4464 --with codex and saw only "[server exited]", tmux's message when the wrapper's private server ends. Investigation only so far; no files changed. Bragi 3 owns an in-progress entry on Codex launch from the viewer; this diagnosis reads their findings and does not edit their files.
+
 ## 2026-09-11 - Release 1.25.0 (owner: Pele 3) (harness: Cursor)
 
 State:

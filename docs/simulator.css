@@ -1,0 +1,1183 @@
+/* simulator.css - Interactive Simulator styling for Handoff Webapp Tutorial */
+
+:root {
+  --tui-bg: #062436;
+  --tui-cyan: #00f0ff;
+  --tui-cyan-bright: #38f8d4;
+  --tui-cyan-dim: #2aa8a8;
+  --tui-text: #c2e2ec;
+  --tui-dim: #628899;
+  --tui-select-bg: #00e5c9;
+  --tui-select-fg: #021824;
+  --tui-green: #48e596;
+  --tui-amber: #f8a838;
+  --tui-red: #ff5263;
+  --tui-border: #134259;
+  --tui-font: "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  
+  --chrome-bg: #1c2128;
+  --chrome-tab-bg: #161b22;
+  --chrome-tab-active: #0d1117;
+  --chrome-border: #30363d;
+  --chrome-text: #e6edf3;
+  --chrome-muted: #8b949e;
+}
+
+/* Simulator Top-level Container */
+.handoff-simulator-wrap {
+  margin: 40px 0 60px;
+  background: #0d1117;
+  border: 1px solid var(--chrome-border);
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  color: var(--chrome-text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+/* Mission Controller Header */
+.sim-mission-bar {
+  background: #161b22;
+  border-bottom: 1px solid var(--chrome-border);
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sim-mission-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.sim-mission-tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.sim-mission-pill {
+  background: #21262d;
+  color: var(--chrome-muted);
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 11px;
+  font-family: var(--tui-font);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.sim-mission-pill:hover {
+  background: #30363d;
+  color: #fff;
+}
+
+.sim-mission-pill.active {
+  background: #238636;
+  color: #fff;
+  border-color: #2ea043;
+}
+
+.sim-mission-pill.completed {
+  background: #1f3326;
+  color: #56d364;
+  border-color: #2ea043;
+}
+
+.sim-mission-pill.freeplay {
+  background: #38235a;
+  color: #d2a8ff;
+  border-color: #8957e5;
+}
+
+.sim-hud-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #1f6feb;
+  color: #fff;
+  border: 1px solid #388bfd;
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(31, 111, 235, 0.35);
+  transition: all 0.15s ease;
+}
+
+.sim-hud-trigger:hover {
+  background: #388bfd;
+}
+
+.sim-hud-trigger kbd {
+  background: rgba(0, 0, 0, 0.25);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: var(--tui-font);
+  font-size: 10px;
+}
+
+/* Mission Instruction Box */
+.sim-mission-card {
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  padding: 14px 18px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.sim-mission-info {
+  flex: 1;
+  min-width: 260px;
+}
+
+.sim-mission-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.sim-mission-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff;
+  margin: 0;
+}
+
+.sim-mission-badge {
+  font-family: var(--tui-font);
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #30363d;
+  color: #58a6ff;
+  font-weight: 600;
+}
+
+.sim-mission-desc {
+  font-size: 13px;
+  color: var(--chrome-muted);
+  margin: 0 0 8px;
+  line-height: 1.45;
+}
+
+.sim-mission-step {
+  font-size: 13px;
+  color: #7ee787;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(46, 160, 67, 0.1);
+  padding: 6px 10px;
+  border-radius: 5px;
+  border-left: 3px solid #3fb950;
+  margin-top: 6px;
+}
+
+.sim-mission-action {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sim-action-btn {
+  background: #238636;
+  color: #fff;
+  border: 1px solid #2ea043;
+  border-radius: 6px;
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.sim-action-btn:hover {
+  background: #2ea043;
+}
+
+.sim-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* macOS Window Chrome */
+.sim-window-chrome {
+  background: var(--chrome-bg);
+  border-bottom: 1px solid var(--chrome-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  height: 42px;
+  user-select: none;
+}
+
+.sim-traffic-lights {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 70px;
+}
+
+.sim-traffic-lights span {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.sim-traffic-lights .light-red { background: #ff5f56; border: 1px solid #e0443e; }
+.sim-traffic-lights .light-yellow { background: #ffbd2e; border: 1px solid #dea123; }
+.sim-traffic-lights .light-green { background: #27c93f; border: 1px solid #1aab29; }
+
+/* Harness Switcher Tabs */
+.sim-harness-tabs {
+  display: flex;
+  align-items: stretch;
+  height: 100%;
+  gap: 2px;
+  overflow-x: auto;
+}
+
+.sim-tab-btn {
+  background: transparent;
+  color: var(--chrome-muted);
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 0 14px;
+  font-size: 12px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.sim-tab-btn:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.sim-tab-btn.active {
+  color: #58a6ff;
+  background: var(--chrome-tab-active);
+  border-bottom-color: #1f6feb;
+  font-weight: 600;
+}
+
+.sim-tab-icon {
+  font-size: 14px;
+}
+
+.sim-tab-hotkey {
+  font-family: var(--tui-font);
+  font-size: 10px;
+  opacity: 0.6;
+}
+
+.sim-window-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--chrome-muted);
+}
+
+.sim-status-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--tui-font);
+  font-size: 11px;
+}
+
+.sim-pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #3fb950;
+  box-shadow: 0 0 8px #3fb950;
+  animation: sim-pulse 2s infinite ease-in-out;
+}
+
+@keyframes sim-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.85); }
+}
+
+/* Main Simulator Stage */
+.sim-stage {
+  position: relative;
+  min-height: 520px;
+  background: #0d1117;
+  overflow: hidden;
+  display: flex;
+}
+
+/* Individual Harness Screens */
+.sim-screen {
+  width: 100%;
+  display: none;
+  height: 520px;
+  overflow-y: auto;
+  position: relative;
+}
+
+.sim-screen.active {
+  display: flex;
+  flex-direction: column;
+}
+
+/* 1. CURSOR AGENT SCREEN */
+.sim-cursor-layout {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr) 300px;
+  height: 480px;
+  background: #1e1e1e;
+  color: #cccccc;
+  font-size: 13px;
+}
+
+.sim-cursor-sidebar {
+  background: #181818;
+  border-right: 1px solid #2b2b2b;
+  padding: 12px 10px;
+  font-family: var(--tui-font);
+  font-size: 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sim-cursor-sidebar-title {
+  color: #888;
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  font-weight: bold;
+}
+
+.sim-file-tree-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #aaa;
+}
+
+.sim-file-tree-item.active {
+  background: #2a2d2e;
+  color: #fff;
+}
+
+.sim-cursor-editor {
+  background: #1e1e1e;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid #2b2b2b;
+  overflow-y: auto;
+}
+
+.sim-editor-tabs {
+  display: flex;
+  background: #181818;
+  border-bottom: 1px solid #2b2b2b;
+  font-family: var(--tui-font);
+  font-size: 12px;
+}
+
+.sim-editor-tab {
+  padding: 8px 16px;
+  background: #1e1e1e;
+  color: #fff;
+  border-top: 2px solid #007acc;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sim-editor-content {
+  padding: 16px;
+  font-family: var(--tui-font);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.sim-diff-add {
+  background: rgba(46, 160, 67, 0.15);
+  color: #7ee787;
+  display: block;
+}
+
+.sim-diff-del {
+  background: rgba(248, 81, 73, 0.15);
+  color: #f85149;
+  display: block;
+}
+
+.sim-cursor-composer {
+  background: #1f1f1f;
+  display: flex;
+  flex-direction: column;
+  padding: 14px;
+  gap: 12px;
+}
+
+.sim-composer-header {
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #333;
+  padding-bottom: 8px;
+}
+
+.sim-composer-msg {
+  background: #2a2a2a;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.sim-composer-msg.agent {
+  background: #25282a;
+  border-left: 3px solid #007acc;
+}
+
+/* 2. CLAUDE CODE SCREEN */
+.sim-claude-layout {
+  background: #111418;
+  color: #e5e5e5;
+  padding: 24px;
+  height: 480px;
+  overflow-y: auto;
+  font-family: var(--tui-font);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.sim-claude-cost-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: #181d24;
+  border: 1px solid #2a313d;
+  padding: 8px 14px;
+  border-radius: 6px;
+  margin-bottom: 18px;
+  font-size: 11px;
+  color: #9ba3af;
+}
+
+.sim-claude-cost-bar strong {
+  color: #ff9857;
+}
+
+.sim-claude-stream-item {
+  margin-bottom: 16px;
+}
+
+.sim-claude-tool-call {
+  background: #181c22;
+  border: 1px solid #2b3340;
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin: 10px 0;
+}
+
+.sim-claude-tool-title {
+  color: #d97706;
+  font-weight: bold;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.sim-claude-prompt-input-box {
+  margin-top: 16px;
+  display: flex;
+  gap: 10px;
+}
+
+.sim-claude-input {
+  flex: 1;
+  background: #181c22;
+  border: 1px solid #384252;
+  color: #fff;
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-family: var(--tui-font);
+  font-size: 13px;
+}
+
+.sim-claude-input:focus {
+  outline: none;
+  border-color: #ff9857;
+}
+
+/* 3. CODEX CLI SCREEN */
+.sim-codex-layout {
+  background: #000;
+  color: #f0f0f0;
+  padding: 20px;
+  height: 480px;
+  overflow-y: auto;
+  font-family: var(--tui-font);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.sim-codex-cogitate {
+  color: #888;
+  font-style: italic;
+  margin-bottom: 12px;
+}
+
+.sim-codex-command {
+  background: #111;
+  border: 1px solid #262626;
+  padding: 10px 14px;
+  border-radius: 6px;
+  margin: 12px 0;
+}
+
+.sim-codex-error-badge {
+  color: #ff6b6b;
+  background: rgba(255, 107, 107, 0.1);
+  border: 1px solid rgba(255, 107, 107, 0.3);
+  padding: 4px 8px;
+  border-radius: 4px;
+  display: inline-block;
+  margin: 8px 0;
+  font-weight: bold;
+}
+
+/* 4. GROK SCREEN */
+.sim-grok-layout {
+  background: #08090a;
+  color: #f5f5f7;
+  padding: 24px;
+  height: 480px;
+  overflow-y: auto;
+  font-family: var(--tui-font);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.sim-grok-thought-accordion {
+  background: #121417;
+  border: 1px solid #20242a;
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 16px;
+  color: #a0a6b2;
+  font-size: 12px;
+}
+
+/* 5. TMUX AGENT FOOTER BAR */
+.sim-tmux-agent-bar {
+  background: #061e2c;
+  border-top: 1px solid #00f0ff;
+  color: #c2e2ec;
+  padding: 6px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--tui-font);
+  font-size: 11px;
+  user-select: none;
+}
+
+.sim-tmux-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sim-tmux-handoff-tag {
+  background: #00f0ff;
+  color: #000;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+
+.sim-tmux-progress {
+  color: #38f8d4;
+  font-weight: 600;
+}
+
+.sim-tmux-agents {
+  color: #88bbcc;
+}
+
+.sim-tmux-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #6a95a8;
+}
+
+.sim-tmux-hud-key {
+  color: #00f0ff;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+/* 6. HIGH-FIDELITY HANDOFF-TUI CURSES EMULATOR */
+.sim-tui-screen {
+  background: var(--tui-bg);
+  color: var(--tui-text);
+  font-family: var(--tui-font);
+  height: 520px;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 18px 8px;
+  box-sizing: border-box;
+  font-size: 12.5px;
+  line-height: 1.45;
+  user-select: none;
+}
+
+.tui-header-line-1 {
+  color: var(--tui-cyan-bright);
+  font-weight: bold;
+  font-size: 14px;
+  letter-spacing: 0.5px;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 2px;
+}
+
+.tui-header-path {
+  color: var(--tui-dim);
+  font-size: 11px;
+  margin-bottom: 6px;
+}
+
+.tui-header-lead {
+  color: var(--tui-cyan);
+  margin-bottom: 4px;
+}
+
+.tui-stat-line {
+  color: var(--tui-text);
+  margin-bottom: 2px;
+}
+
+.tui-stat-bar {
+  color: var(--tui-cyan-bright);
+  font-weight: bold;
+}
+
+.tui-excluded-line {
+  color: var(--tui-dim);
+  font-size: 11px;
+  margin-bottom: 8px;
+}
+
+/* TUI Navigation Views Tab */
+.tui-nav-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  border-top: 1px solid var(--tui-border);
+  border-bottom: 1px solid var(--tui-border);
+  padding: 6px 0;
+  margin-bottom: 6px;
+  font-weight: bold;
+  font-size: 12px;
+}
+
+.tui-nav-tab {
+  color: var(--tui-dim);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.tui-nav-tab:hover {
+  color: var(--tui-cyan);
+}
+
+.tui-nav-tab.active {
+  color: var(--tui-cyan-bright);
+  background: rgba(0, 240, 255, 0.12);
+}
+
+.tui-nav-hint {
+  margin-left: auto;
+  color: var(--tui-dim);
+  font-weight: normal;
+  font-size: 11px;
+}
+
+/* TUI Table / Content Area */
+.tui-table-header {
+  color: var(--tui-dim);
+  font-size: 11px;
+  padding: 4px 6px;
+  display: flex;
+  border-bottom: 1px dashed var(--tui-border);
+  margin-bottom: 4px;
+}
+
+.tui-table-body {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.tui-row {
+  display: flex;
+  align-items: center;
+  padding: 3px 6px;
+  cursor: pointer;
+  border-radius: 2px;
+}
+
+.tui-row:hover {
+  background: rgba(0, 240, 255, 0.08);
+}
+
+.tui-row.selected {
+  background: var(--tui-select-bg) !important;
+  color: var(--tui-select-fg) !important;
+  font-weight: bold;
+}
+
+.tui-row.selected .tui-subtext {
+  color: #032b3d !important;
+}
+
+.tui-row.selected .tui-bar-bracket {
+  color: #004d40 !important;
+}
+
+.tui-row.held {
+  background: rgba(248, 168, 56, 0.25);
+  border-left: 3px solid var(--tui-amber);
+}
+
+.tui-row.landed {
+  background: rgba(72, 229, 150, 0.25);
+  border-left: 3px solid var(--tui-green);
+}
+
+.tui-col-name { width: 170px; display: flex; align-items: center; gap: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tui-col-harness { width: 100px; color: var(--tui-dim); }
+.tui-col-done { width: 75px; text-align: right; }
+.tui-col-wip { width: 50px; text-align: right; }
+.tui-col-wait { width: 50px; text-align: right; }
+.tui-col-steps { width: 180px; text-align: right; }
+.tui-col-flags { width: 80px; text-align: right; color: var(--tui-dim); }
+
+/* TUI Task List Columns */
+.tui-col-task-state { width: 120px; font-weight: 600; }
+.tui-col-task-steps { width: 60px; text-align: center; }
+.tui-col-task-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* TUI Details View */
+.tui-detail-view {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 6px;
+  overflow-y: auto;
+}
+
+.tui-detail-title {
+  color: var(--tui-cyan-bright);
+  font-size: 13px;
+  font-weight: bold;
+}
+
+.tui-detail-meta {
+  color: var(--tui-dim);
+  font-size: 11px;
+}
+
+.tui-steps-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 6px 0;
+}
+
+.tui-step-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 2px;
+}
+
+.tui-step-item.selected {
+  background: var(--tui-select-bg);
+  color: var(--tui-select-fg);
+  font-weight: bold;
+}
+
+.tui-detail-status-box {
+  background: rgba(0, 0, 0, 0.25);
+  border-left: 2px solid var(--tui-cyan-dim);
+  padding: 8px 10px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--tui-text);
+}
+
+/* TUI Banner / Notification / Message Row */
+.tui-banner {
+  background: rgba(0, 0, 0, 0.35);
+  border-top: 1px solid var(--tui-border);
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: bold;
+  color: var(--tui-cyan-bright);
+  min-height: 20px;
+  display: flex;
+  align-items: center;
+}
+
+.tui-banner.held {
+  color: var(--tui-amber);
+  background: rgba(248, 168, 56, 0.15);
+}
+
+.tui-banner.success {
+  color: var(--tui-green);
+  background: rgba(72, 229, 150, 0.15);
+}
+
+.tui-meta-footer {
+  color: var(--tui-dim);
+  font-size: 10.5px;
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 0 1px;
+}
+
+.tui-keys-footer {
+  background: #041a28;
+  border-top: 1px solid var(--tui-border);
+  color: #7bb5cc;
+  font-size: 11px;
+  padding: 5px 8px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tui-key-pill {
+  color: var(--tui-cyan-bright);
+  font-weight: bold;
+}
+
+/* TUI Popover Overlay Modal */
+.sim-tui-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(6px);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 99999;
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+.sim-tui-modal-overlay.open {
+  display: flex;
+}
+
+.sim-tui-modal-window {
+  width: min(920px, 95%);
+  height: 480px;
+  background: var(--tui-bg);
+  border: 1px solid var(--tui-cyan);
+  border-radius: 8px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(0, 240, 255, 0.3);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.sim-tui-modal-header {
+  background: #031824;
+  border-bottom: 1px solid var(--tui-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 14px;
+}
+
+.sim-tui-modal-close {
+  background: transparent;
+  border: none;
+  color: var(--tui-dim);
+  cursor: pointer;
+  font-family: var(--tui-font);
+  font-size: 12px;
+}
+
+.sim-tui-modal-close:hover {
+  color: #fff;
+}
+
+/* Responsive adjustments */
+@media (max-width: 900px) {
+  .sim-cursor-layout {
+    grid-template-columns: 1fr;
+  }
+  .sim-cursor-sidebar {
+    display: none;
+  }
+  .sim-mission-card {
+    flex-direction: column;
+  }
+  .tui-col-harness, .tui-col-wip, .tui-col-wait {
+    display: none;
+  }
+}
+
+/* Guided Walkthrough Tour Styles */
+.sim-tour-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: #0d1117;
+  border: 1px solid #f59e0b;
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.4);
+  transition: all 0.15s ease;
+}
+
+.sim-tour-btn:hover {
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.5);
+}
+
+.sim-tour-btn.active {
+  background: #238636;
+  border-color: #2ea043;
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(46, 160, 67, 0.4);
+}
+
+/* Floating Tour Guide Card */
+.sim-tour-card {
+  position: fixed;
+  bottom: 28px;
+  right: 28px;
+  width: min(440px, calc(100vw - 40px));
+  background: #161b22;
+  border: 2px solid #f59e0b;
+  border-radius: 12px;
+  padding: 18px 20px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(245, 158, 11, 0.3);
+  z-index: 100000;
+  display: none;
+  flex-direction: column;
+  gap: 12px;
+  animation: sim-slide-up 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.sim-tour-card.visible {
+  display: flex;
+}
+
+@keyframes sim-slide-up {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.sim-tour-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sim-tour-step-badge {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-family: var(--tui-font);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.sim-tour-close-btn {
+  background: transparent;
+  border: none;
+  color: var(--chrome-muted);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.sim-tour-close-btn:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.sim-tour-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+  margin: 0;
+}
+
+.sim-tour-body {
+  font-size: 13px;
+  line-height: 1.55;
+  color: #c9d1d9;
+}
+
+.sim-tour-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 8px;
+  border-top: 1px solid #30363d;
+  margin-top: 4px;
+}
+
+.sim-tour-progress-dots {
+  display: flex;
+  gap: 6px;
+}
+
+.sim-tour-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #30363d;
+  transition: all 0.2s ease;
+}
+
+.sim-tour-dot.active {
+  background: #f59e0b;
+  transform: scale(1.3);
+}
+
+.sim-tour-dot.done {
+  background: #2ea043;
+}
+
+.sim-tour-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sim-tour-prev-btn, .sim-tour-next-btn, .sim-tour-act-btn {
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 5px;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.sim-tour-prev-btn {
+  background: #21262d;
+  color: #c9d1d9;
+  border: 1px solid #30363d;
+}
+
+.sim-tour-prev-btn:hover:not(:disabled) {
+  background: #30363d;
+  color: #fff;
+}
+
+.sim-tour-prev-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.sim-tour-act-btn {
+  background: #238636;
+  color: #fff;
+  border: 1px solid #2ea043;
+}
+
+.sim-tour-act-btn:hover {
+  background: #2ea043;
+}
+
+.sim-tour-next-btn {
+  background: #f59e0b;
+  color: #0d1117;
+  border: 1px solid #f59e0b;
+}
+
+.sim-tour-next-btn:hover {
+  background: #fbbf24;
+}
+
+/* Spotlight Highlight */
+.sim-spotlight-pulse {
+  position: relative;
+  outline: 3px solid #f59e0b !important;
+  outline-offset: 3px !important;
+  box-shadow: 0 0 24px rgba(245, 158, 11, 0.6) !important;
+  animation: sim-spotlight-glow 1.5s infinite alternate ease-in-out !important;
+}
+
+@keyframes sim-spotlight-glow {
+  from { outline-color: #f59e0b; box-shadow: 0 0 16px rgba(245, 158, 11, 0.4); }
+  to { outline-color: #38f8d4; box-shadow: 0 0 28px rgba(56, 248, 212, 0.7); }
+}
+
+@media (max-width: 640px) {
+  .sim-tour-card {
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    width: auto;
+    padding: 14px;
+  }
+}

@@ -8,6 +8,7 @@
   <title>Your first handoff · A hands-on guide</title>
   <link rel="icon" href="assets/handoff.svg" type="image/svg+xml">
   <link rel="stylesheet" href="tutorial.css">
+  <link rel="stylesheet" href="simulator.css">
 </head>
 <body>
   <a class="skip-link" href="#guide">Skip to the guide</a>
@@ -24,7 +25,7 @@
         <h1 id="hero-title">New session.<br>Same <span class="serif">momentum.</span></h1>
         <p class="lede">Your agent stopped halfway through. The next one should know what’s done, what’s left, and where to start.</p>
         <p class="hero-description">Handoff keeps that context in one file in your repository.<br class="desktop-break"> Let’s take a small task all the way to your first handoff.</p>
-        <div class="hero-actions"><a class="button primary" href="#install">Start the guide <span aria-hidden="true">↗</span></a><a class="text-link" href="#understand">Try the example <span aria-hidden="true">→</span></a></div>
+        <div class="hero-actions"><a class="button primary" href="#interactive-simulator">Launch Live Simulator 🚀</a><a class="text-link" href="#install">Field Guide &amp; Install →</a></div>
         <p class="meta-line">5 short lessons <span>·</span> Works with your coding agent <span>·</span> Stored locally</p>
       </div>
       <div class="hero-visual" aria-label="A handoff preserves completed work and tells the next session what remains">
@@ -35,6 +36,319 @@
         </div>
         <div class="session-thread"><span>Session A <span aria-hidden="true">↗</span></span><span class="thread-line" aria-hidden="true"></span><span><span aria-hidden="true">↗</span> Session B</span></div>
         <p class="visual-caption">The conversation ends. The record stays.</p>
+      </div>
+    </section>
+
+    <!-- INTERACTIVE MULTI-AGENT & TUI SIMULATOR -->
+    <section id="interactive-simulator" class="handoff-simulator-wrap" aria-label="Interactive Multi-Agent and Handoff TUI Simulator">
+      <!-- Mission Controller -->
+      <div class="sim-mission-bar">
+        <div class="sim-mission-nav">
+          <div class="sim-mission-tabs">
+            <button type="button" class="sim-mission-pill active" data-mission="0">01 / The Cliffhanger</button>
+            <button type="button" class="sim-mission-pill" data-mission="1">02 / The Cockpit</button>
+            <button type="button" class="sim-mission-pill" data-mission="2">03 / The Baton Pass</button>
+            <button type="button" class="sim-mission-pill" data-mission="3">04 / Peer Channel</button>
+            <button type="button" class="sim-mission-pill freeplay" data-mission="4">05 / Free Play</button>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <button type="button" id="sim-start-tour-btn" class="sim-tour-btn">▶ Guided Walkthrough</button>
+            <button type="button" id="sim-hud-trigger" class="sim-hud-trigger" title="Press shortcut anywhere in simulator">
+              <kbd>⌥⌘H</kbd> / <kbd>Ctrl+Alt+H</kbd> <span>Open handoff-tui</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="sim-mission-card">
+          <div class="sim-mission-info">
+            <div class="sim-mission-header">
+              <span id="sim-mission-badge" class="sim-mission-badge">MISSION 01</span>
+              <h3 id="sim-mission-title" class="sim-mission-title">The Sudden Stop (Cliffhanger Recovery)</h3>
+            </div>
+            <p id="sim-mission-desc" class="sim-mission-desc">Codex was diagnosing an issue when it abruptly hit its weekly rate limit and exited. See how the next agent resumes without starting from scratch.</p>
+            <div id="sim-mission-step" class="sim-mission-step">
+              <span><strong>Step 1:</strong> Select the Codex CLI tab (⌘3) to see where Codex stopped mid-stream.</span>
+            </div>
+          </div>
+          <div id="sim-mission-action" class="sim-mission-action"></div>
+        </div>
+      </div>
+
+      <!-- Window Chrome with Harness Switcher -->
+      <div class="sim-window-chrome">
+        <div class="sim-traffic-lights">
+          <span class="light-red"></span>
+          <span class="light-yellow"></span>
+          <span class="light-green"></span>
+        </div>
+
+        <div class="sim-harness-tabs" role="tablist">
+          <button type="button" class="sim-tab-btn active" data-harness="cursor" role="tab">
+            <span class="sim-tab-icon">⚡</span> Cursor Agent <span class="sim-tab-hotkey">⌘1</span>
+          </button>
+          <button type="button" class="sim-tab-btn" data-harness="claude" role="tab">
+            <span class="sim-tab-icon">●</span> Claude Code <span class="sim-tab-hotkey">⌘2</span>
+          </button>
+          <button type="button" class="sim-tab-btn" data-harness="codex" role="tab">
+            <span class="sim-tab-icon">❯</span> Codex CLI (tmux) <span class="sim-tab-hotkey">⌘3</span>
+          </button>
+          <button type="button" class="sim-tab-btn" data-harness="grok" role="tab">
+            <span class="sim-tab-icon">✧</span> Grok Agent <span class="sim-tab-hotkey">⌘4</span>
+          </button>
+          <button type="button" class="sim-tab-btn" data-harness="tui" role="tab">
+            <span class="sim-tab-icon">▦</span> handoff-tui <span class="sim-tab-hotkey">⌘5</span>
+          </button>
+        </div>
+
+        <div class="sim-window-actions">
+          <div class="sim-status-indicator">
+            <span class="sim-pulse-dot"></span>
+            <span>HANDOFF.md synced</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Simulator Stage -->
+      <div class="sim-stage">
+        <!-- 1. CURSOR AGENT SCREEN -->
+        <div id="sim-screen-cursor" class="sim-screen active">
+          <div class="sim-cursor-layout">
+            <div class="sim-cursor-sidebar">
+              <span class="sim-cursor-sidebar-title">Workspace Explorer</span>
+              <div class="sim-file-tree-item"><span>📄</span> PROJECT_MAP.md</div>
+              <div class="sim-file-tree-item active"><span>📄</span> HANDOFF.md</div>
+              <div class="sim-file-tree-item"><span>📁</span> scripts/</div>
+              <div class="sim-file-tree-item" style="padding-left: 18px;"><span>🐍</span> handoff_keys.py</div>
+              <div class="sim-file-tree-item" style="padding-left: 18px;"><span>🐍</span> handoff_tui.py</div>
+            </div>
+
+            <div class="sim-cursor-editor">
+              <div class="sim-editor-tabs">
+                <div class="sim-editor-tab"><span>📄</span> HANDOFF.md <span>×</span></div>
+              </div>
+              <div class="sim-editor-content">
+                <div style="color: #6a95a8;"># Live Repository Ledger (HANDOFF.md)</div>
+                <div style="color: #888;">Lead: Bastet; policy=coordinate</div>
+                <br>
+                <div><strong>## 2026-09-11 - Diagnose handoff-tui --with codex ending with [server exited]</strong></div>
+                <div style="color: #aaa;">(owner: Kubera 2) (harness: Claude Code)</div>
+                <br>
+                <div class="sim-diff-add">+ - [ ] Identify which viewer copy and codex executable the wrapper runs</div>
+                <div class="sim-diff-add">+ - [ ] Reproduce without executing flagged quarantine binary</div>
+                <div class="sim-diff-add">+ - [ ] Report cause and fix or next action to user</div>
+                <br>
+                <div style="color: #888;">Status: In progress. Investigation only so far; no files changed.</div>
+              </div>
+            </div>
+
+            <div class="sim-cursor-composer">
+              <div class="sim-composer-header">
+                <span>Composer · Viracocha</span>
+                <span style="font-size: 10px; color: #48e596;">● Idle</span>
+              </div>
+              <div id="sim-cursor-composer-body" style="display: flex; flex-direction: column; gap: 10px;">
+                <div class="sim-composer-msg">
+                  <strong>Pele 3 (Cursor):</strong><br>
+                  Release 1.25.0 complete and verified. Handed off to Viracocha for repository monitoring.
+                </div>
+                <div class="sim-composer-msg agent">
+                  <strong>Viracocha (Cursor):</strong><br>
+                  Standing by. Listening for task assignments or channel broadcasts...
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Bottom tmux status bar -->
+          <div class="sim-tmux-agent-bar"></div>
+        </div>
+
+        <!-- 2. CLAUDE CODE SCREEN -->
+        <div id="sim-screen-claude" class="sim-screen">
+          <div class="sim-claude-layout">
+            <div class="sim-claude-cost-bar">
+              <span>Claude 3.7 Sonnet</span>
+              <span>Tokens: <strong>28,419</strong></span>
+              <span>Cost: <strong>$0.18</strong></span>
+              <span>Session Owner: <strong style="color: #48e596;">Kubera 2</strong></span>
+            </div>
+
+            <div id="sim-claude-stream">
+              <div class="sim-claude-stream-item">
+                <div style="color: #ff9857;"><strong>● User:</strong> figure out what went wrong with the codex launch</div>
+                <div class="sim-claude-tool-call">
+                  <div class="sim-claude-tool-title">● Read(HANDOFF.md)</div>
+                  <div style="color: #88bbcc; font-size: 11.5px;">Read 2,121 lines · Version: 5fee1543326f</div>
+                </div>
+                <div>Auditing existing ledger. Codex previously started diagnosing <code>[server exited]</code> before halting.</div>
+              </div>
+            </div>
+
+            <div class="sim-claude-prompt-input-box">
+              <input type="text" id="sim-claude-input" class="sim-claude-input" placeholder="Type '/handoff:continue' or press Enter..." value="/handoff:continue">
+              <button type="button" id="sim-claude-run-btn" class="sim-action-btn">Send Prompt</button>
+            </div>
+          </div>
+
+          <!-- Bottom tmux status bar -->
+          <div class="sim-tmux-agent-bar"></div>
+        </div>
+
+        <!-- 3. CODEX CLI SCREEN -->
+        <div id="sim-screen-codex" class="sim-screen">
+          <div class="sim-codex-layout">
+            <div class="sim-codex-cogitate">* Cogitated for 18s · done 11:34</div>
+            <div class="sim-codex-command">
+              <span style="color: #00f0ff;">&gt;</span> /Users/divij/.local/bin/handoff-tui --root /Users/divij/code/handoff-skill --session-seed 4616d841b771dde1f2d61a8f60fd4464 --with codex<br>
+              <span style="color: #ff6b6b;">[server exited]</span><br>
+              figure out what went wrong here
+            </div>
+
+            <div style="color: #aaa; margin: 10px 0;">
+              * That [server exited] line is tmux's message: the wrapper's private tmux session ended right away. That usually means Codex exited or never started inside it.<br><br>
+              Private list of what I need:<br>
+              1. Which viewer copy ran and what version it is.<br>
+              2. Where plain codex resolves, and whether it starts.<br>
+              3. Which PATH the wrapper builds for Codex.<br>
+              4. Bragi 3's ledger entry on the Codex launch issue.<br>
+              5. A ledger entry for this investigation, recorded before I dig in.
+            </div>
+
+            <div style="margin: 12px 0;">
+              Ran 3 shell commands<br>
+              <div class="sim-codex-error-badge">
+                L You've hit your weekly limit · resets 3:30pm (Asia/Calcutta)<br>
+                /upgrade to increase your usage limit.
+              </div>
+            </div>
+
+            <div class="sim-codex-cogitate">* Worked for 38s · process halted</div>
+          </div>
+
+          <!-- Bottom tmux status bar -->
+          <div class="sim-tmux-agent-bar"></div>
+        </div>
+
+        <!-- 4. GROK AGENT SCREEN -->
+        <div id="sim-screen-grok" class="sim-screen">
+          <div class="sim-grok-layout">
+            <div class="sim-grok-thought-accordion">
+              💭 Reasoning (xAI Grok): Inspecting workspace status and verifying handoff ledger compliance...
+            </div>
+            <div style="color: #f5f5f7;">
+              <strong>Grok Agent (Lamassu):</strong><br>
+              Verified <code>[ui.status_line] type = "command"</code> configuration hook.<br>
+              Handoff bar cached row returns instantaneous exit status 0 without spawning heavy subprocesses.
+            </div>
+            <div style="margin-top: 14px; background: #161a20; padding: 12px; border-radius: 6px; font-family: var(--tui-font); font-size: 12px;">
+              <span style="color: #48e596;">✓</span> Read .handoff/channel.sqlite3 (12 sessions, 0 unacknowledged errors)<br>
+              <span style="color: #48e596;">✓</span> Atomic lock check passed via <code>fcntl.flock</code>
+            </div>
+          </div>
+
+          <!-- Bottom tmux status bar -->
+          <div class="sim-tmux-agent-bar"></div>
+        </div>
+
+        <!-- 5. STANDALONE HANDOFF-TUI SCREEN -->
+        <div id="sim-screen-tui" class="sim-screen">
+          <div class="sim-tui-screen">
+            <div class="tui-header-line-1">
+              <span>HANDOFF  /  Recorded progress</span>
+              <span style="font-size: 11px; font-weight: normal; color: var(--tui-dim);">Live Curses Emulator</span>
+            </div>
+            <div class="tui-header-path">/Users/divij/code/handoff-skill/HANDOFF.md</div>
+            <div class="tui-header-lead">LEAD  Bastet expired 2026-09-11T08:16:58Z</div>
+            <div class="tui-stat-line sim-dyn-task-bar"></div>
+            <div class="tui-stat-line sim-dyn-step-bar"></div>
+            <div class="tui-excluded-line">Excluded from totals: 0 invalid / 0 legacy entries</div>
+
+            <div class="tui-nav-bar sim-dyn-tui-nav"></div>
+
+            <div class="tui-table-body sim-dyn-tui-body"></div>
+
+            <div class="sim-dyn-tui-banner tui-banner"></div>
+
+            <div class="tui-meta-footer">
+              <span>Read 16:24:38 | revision 5fee1543326f | automatic refresh</span>
+              <span>Checkbox counts only; owner labels do not prove authorship</span>
+            </div>
+
+            <div class="tui-keys-footer">
+              <span class="tui-key-pill">q</span> quit |
+              <span class="tui-key-pill">a/t/c</span> views |
+              <span class="tui-key-pill">j/k</span> move |
+              <span class="tui-key-pill">Enter</span> open |
+              <span class="tui-key-pill">b</span> back |
+              <span class="tui-key-pill">x</span> cut |
+              <span class="tui-key-pill">p</span> give |
+              <span class="tui-key-pill">d</span> mark step |
+              <span class="tui-key-pill">D</span> mark task
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- MODAL POPUP HUD FOR Ctrl+Alt+H -->
+      <div id="sim-tui-modal" class="sim-tui-modal-overlay">
+        <div class="sim-tui-modal-window">
+          <div class="sim-tui-modal-header">
+            <span style="font-size: 12px; font-weight: bold; color: var(--tui-cyan);">handoff-tui (Summoned via Ctrl+Alt+H)</span>
+            <button type="button" id="sim-tui-modal-close" class="sim-tui-modal-close">[q] Close</button>
+          </div>
+          <div class="sim-tui-screen" style="flex: 1;">
+            <div class="tui-header-line-1">
+              <span>HANDOFF  /  Recorded progress</span>
+              <span style="font-size: 11px; font-weight: normal; color: var(--tui-dim);">Live Terminal HUD</span>
+            </div>
+            <div class="tui-header-path">/Users/divij/code/handoff-skill/HANDOFF.md</div>
+            <div class="tui-header-lead">LEAD  Bastet expired 2026-09-11T08:16:58Z</div>
+            <div class="tui-stat-line sim-dyn-task-bar"></div>
+            <div class="tui-stat-line sim-dyn-step-bar"></div>
+            <div class="tui-excluded-line">Excluded from totals: 0 invalid / 0 legacy entries</div>
+
+            <div class="tui-nav-bar sim-dyn-tui-nav"></div>
+
+            <div class="tui-table-body sim-dyn-tui-body"></div>
+
+            <div class="sim-dyn-tui-banner tui-banner"></div>
+
+            <div class="tui-meta-footer">
+              <span>Read 16:24:38 | revision 5fee1543326f | automatic refresh</span>
+              <span>Live floating popup window</span>
+            </div>
+
+            <div class="tui-keys-footer">
+              <span class="tui-key-pill">q</span> close |
+              <span class="tui-key-pill">a/t/c</span> views |
+              <span class="tui-key-pill">j/k</span> move |
+              <span class="tui-key-pill">Enter</span> open |
+              <span class="tui-key-pill">b</span> back |
+              <span class="tui-key-pill">x</span> cut |
+              <span class="tui-key-pill">p</span> give
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- FLOATING GUIDED WALKTHROUGH CARD -->
+      <div id="sim-tour-card" class="sim-tour-card" role="dialog" aria-labelledby="sim-tour-title">
+        <div class="sim-tour-header">
+          <span id="sim-tour-badge" class="sim-tour-step-badge">STEP 1 OF 8</span>
+          <button type="button" id="sim-tour-close" class="sim-tour-close-btn" aria-label="Exit tour">×</button>
+        </div>
+        <h4 id="sim-tour-title" class="sim-tour-title">Meet Your Multi-Agent Team</h4>
+        <div id="sim-tour-body" class="sim-tour-body">
+          Welcome to the Handoff interactive simulator! In modern development, you bounce between tools like Cursor, Claude Code, and Codex. Handoff keeps them from repeating or overwriting each other's work.
+        </div>
+        <div class="sim-tour-footer">
+          <div id="sim-tour-dots" class="sim-tour-progress-dots"></div>
+          <div class="sim-tour-actions">
+            <button type="button" id="sim-tour-prev" class="sim-tour-prev-btn">← Back</button>
+            <button type="button" id="sim-tour-act" class="sim-tour-act-btn">Do Step</button>
+            <button type="button" id="sim-tour-next" class="sim-tour-next-btn">Next →</button>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -155,6 +469,8 @@
   <footer class="site-footer wrap"><a class="brand" href="#">handoff<span class="brand-dot">.</span></a><p>A little structure. A lot less starting over.</p><a href="https://github.com/divijshrivastava/handoff-skill#keyboard-shortcuts">All keyboard shortcuts <span aria-hidden="true">↗</span></a></footer>
   <div id="copy-status" class="sr-only" role="status"></div>
   <noscript><p class="noscript-note">The full guide is readable without JavaScript. Agent selection, command personalization, and the interactive example need JavaScript. Copy visible commands manually and replace the example project path.</p></noscript>
+  <script src="scenarios.js"></script>
+  <script src="simulator.js"></script>
   <script src="tutorial.js"></script>
 </body>
 </html>
