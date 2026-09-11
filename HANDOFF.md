@@ -1,5 +1,78 @@
 # Handoff
 
+Lead: owner=Bastet; expires=2026-09-11T08:16:58Z; policy=coordinate; succession=none
+
+## 2026-09-11 - Document the viewer's repo scope rule in README and ship (owner: Kubera 2) (harness: Claude Code)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Document in README.md that repo scope lists only claims naming this ledger, and that a claim without a ledger path appears only in machine scope.
+- [x] Add a Keyboard shortcuts section to README.md covering every key the viewer, the agent wrapper and the installed terminal shortcut respond to (user request mid-task).
+- [x] Run the CI command set, commit README.md and HANDOFF.md, and push main.
+
+Status: Completed. The repo-scope fix itself already shipped in c88d7bf, tagged v1.24.0 with its GitHub release published, so this is a documentation-only commit with no version bump: README.md and HANDOFF.md only, nothing under skills/handoff/ changed. README "Views" now states the scope rule. "### Controls" is replaced by "### Keyboard shortcuts", grouped by context (anywhere, Agents and agent picker, Tasks and details, Channel, text prompts, outside the viewer), with every key checked against Dashboard.handle_key, handle_prompt, handle_move_key and handle_complete_key in handoff_tui.py and against handoff_keys.py. Previously undocumented keys added: c, s, n/N nudge, d, D, lowercase l, Q, the agent picker's Enter and back keys, and the prompt keys; read-only behaviour stated from the code (N still opens the agent CLI but writes no intake entry). No inbound links used the old #controls anchor. Checks: skills/handoff/tests OK on Python 3.9 and 3.12; root tests OK on a clean export of HEAD plus these two files; check_versions, sync_manifests --check, validate, package_skill and git diff --check pass. The Validate workflow's Windows jobs already failed on the 1.23.0 and 1.24.0 commits (test_manifests path separators and a channel test) while both Ubuntu jobs passed; that is pre-existing and not addressed here. Viracocha's in-progress entry is left as recorded.
+## 2026-09-11 - Keep other repositories' agents out of the viewer's repo scope (owner: Kubera 2) (harness: Claude Code)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Reproduce: a name claim with no ledger path (written by the released 1.23.0 helper in another repository) shows as a waiting agent in this repository's viewer.
+- [x] Make repo-scoped agent rows and recent labels require an explicit ledger path (claim_is_for_ledger), leaving path-less claims to machine scope; add a regression test.
+- [x] Run the CI command set and record the handoff.
+
+Status: Completed. Cause: released 1.23.0 claim_name writes "name\nharness\n" with no ledger path (ledger recording exists only as uncommitted work in this checkout, not at HEAD), and claim_matches_ledger counted a path-less claim as belonging to every ledger. Reproduced with handoff_tui.py --once: Barong 2 (recent) listed in this repository. Fix: removed claim_matches_ledger; recent_claims_for_ledger (and so held_sessions_for_ledger and agent_rows) now uses claim_is_for_ledger, so a claim without a ledger path belongs to no repository and appears only in machine scope with repository "?". After the fix --once lists no Barong 2 in repo scope and machine scope still lists it. Tests: test_repo_scope_excludes_a_claim_that_names_no_ledger (tui) and a legacy record in test_recent_claims_for_ledger_ignore_other_repositories (guard). skills/handoff/tests: 518 OK on Python 3.9 and 3.12; check_versions, validate, package_skill, git diff --check pass. Root tests/ has 3 errors, all from untracked stray root copies (tests/test_handoff_keys.py, tests/test_handoff_tui.py importing scripts/handoff_tui.py and scripts/handoff_keys.py), independent of this change and absent from a clean checkout; left untouched. Consequence: sessions still running a released helper show no waiting row in repo scope until they run a helper that records the ledger path. Nothing committed.
+## 2026-09-11 - Open agents in iTerm tabs and require ledger before code (owner: Viracocha) (harness: Cursor)
+
+State:
+
+- [x] In progress
+- [ ] Completed
+
+Steps:
+
+- [ ] Fix iTerm tab spawn so the agent command runs in the new tab, not the previous one.
+- [ ] Print a ledger-before-code banner when --with wraps an agent; document the rule in SKILL.md.
+- [ ] Verify skills/handoff/tests pass for the changed helpers.
+
+Status: In progress. iTerm tab spawn and ledger-before-code startup banner.
+
+## 2026-09-11 - Stop tmux integration tests leaking servers (owner: Ilmarinen)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Capture evidence on the leftover hc-test tmux servers, then kill only those test servers.
+- [x] Identify why the tests did not stop their private servers.
+- [x] Fix the cause in the tests or helper and add regression coverage that fails on a leaked server (skills/handoff/tests/test_handoff_codex.py, possibly skills/handoff/scripts/handoff_codex.py).
+- [x] Run the full CI set on Python 3.9 and 3.12, confirm a test run leaves no server behind, and record the handoff.
+
+Status: In progress. The user asked to kill the leftover tmux test servers, find why they were not closed, and fix it for future runs. 141 tmux servers on private hc-test-*/s sockets under TMPDIR were counted earlier today, some two days old. Capturing evidence before killing them, because killing destroys it.
+Reassigned 2026-09-11: moved from Rangi to Ilmarinen in the handoff viewer at
+the user's direction. In progress was checked so the assignment shows under
+WIP; steps were not changed. The entry keeps its place in ledger order.
+Execution request: Ilmarinen must finish its current task, then audit and
+complete this task, including verification, without waiting for another user
+prompt. If idle, start after the audit. Preserve prior work; record any
+concrete blocker and next action.
+Marked complete by user override in the handoff viewer on 2026-09-11: Capture evidence on the leftover hc-test tmux servers, then kill only those test servers.
+Marked complete by user override in the handoff viewer on 2026-09-11: Identify why the tests did not stop their private servers.
+Marked complete by user override in the handoff viewer on 2026-09-11: Fix the cause in the tests or helper and add regression coverage that fails on a leaked server (skills/handoff/tests/test_handoff_codex.py, possibly skills/handoff/scripts/handoff_codex.py).
+Marked complete by user override in the handoff viewer on 2026-09-11: Run the full CI set on Python 3.9 and 3.12, confirm a test run leaves no server behind, and record the handoff.
+Marked complete by user override in the handoff viewer on 2026-09-11.
+
 ## 2026-09-11 - Commit and push the step-move viewer work (owner: Rangi) (harness: Claude Code)
 
 State:
@@ -16,6 +89,8 @@ Steps:
 Status: In progress. The user asked to commit and push the finished step-move and tmux work. After git fetch, local main is one commit ahead of origin/main f9b0ad6 and none behind; that commit is Ilmarinen's c54fac9 (the leader coordinator, recorded complete), so this push publishes it too. Untracked cloud-sync-architecture.md, notes/ and requirements.md are not part of this work and stay out of the commit.
 
 Complete 2026-09-11. Committed as 1cb7b84 and pushed: origin/main fast-forwarded f9b0ad6..1cb7b84 without force, confirmed with git ls-remote, which also published Ilmarinen's c54fac9. Verified on the staged tree exported with git checkout-index: 470 helper tests and 54 root tests on Python 3.9.10 and 3.12.7, check_versions (1.22.0 across 6 manifests), sync_manifests --check, validate, package_skill, and git diff --cached --check. The first verification run hung rather than failed: a test starts handoff_tui.py --bar without redirecting stdin, and this harness supplied an open socket, so the bar waited for status-line input. That run was stopped, and the rerun with stdin from /dev/null passed. 141 leftover tmux probe servers from earlier test runs (hc-test-*/s sockets under the user's TMPDIR, up to two days old) are still running on this machine; the probe that ran before this fix never registered cleanup. They were not killed. GitHub Actions Validate run 34547930326 for 1cb7b84 was in progress when this was recorded. This ledger record is committed separately.
+
+CI result recorded 2026-09-11: Validate run 34547930326 for 1cb7b84 concluded failure. Both ubuntu-latest jobs passed. windows-latest 3.9 passed the helper suite, including this commit's tests, then failed the root suite in test_manifests (two DiscoveryTests and one GeneratorTests: manifest keys come back with backslash separators such as '.brand-new-plugin\plugin.json'). windows-latest 3.12 failed three test_handoff_channel tests with WinError 32 while TemporaryDirectory removed a still-open .handoff/channel.sqlite3. The same six tests failed the same two jobs in run 34542161306 for f9b0ad6 before this push, and every Validate run on main back to 4750547 concluded failure, so this commit did not introduce them; it changed none of the failing tests or the modules they exercise. Not fixed here, and no task or owner is recorded for them yet. Record commit 141d979 also carries Ilmarinen's ledger completion of 'Open the note with SmallDocs, verify the result, and record the handoff.' and 'Speed up preflight and release 1.22.0': Ilmarinen wrote HANDOFF.md between this session's locked apply and git add, so the staged ledger hashed d2866c27 rather than the applied 5f5963a0. Only HANDOFF.md was staged, and no code from another owner entered either commit. This note is not committed.
 
 ## 2026-09-11 - Update the global npx skills copy of handoff (owner: Rangi) (harness: Claude Code)
 

@@ -254,28 +254,74 @@ Run this from a checkout of this repository, or use the script's path inside you
 
 ### Views
 
-- **Agents** — Groups totals by the exact owner label in each heading. Shows completed/total tasks, in-progress tasks, pending tasks, step progress, and (when recorded) the harness each owner used. Owners appear in ledger order (newest first), not alphabetically. A `(recent)` suffix marks sessions that claimed a name on this machine in the last 15 minutes — that is a recent claim, not proof the agent is running.
+- **Agents** — Groups totals by the exact owner label in each heading. Shows completed/total tasks, in-progress tasks, pending tasks, step progress, and (when recorded) the harness each owner used. Owners appear in ledger order (newest first), not alphabetically. A `(recent)` suffix marks sessions that claimed a name on this machine in the last 15 minutes — that is a recent claim, not proof the agent is running. This repository's scope lists only claims that name this repository's `HANDOFF.md`; a claim that records no ledger path, as helpers before 1.24.0 write, belongs to no repository and appears only in machine scope (`m`), with its repository shown as `?`.
 - **Tasks** — Lists every entry in ledger order with state, step counts, and owner. Press Enter to inspect steps and full status text.
 
-### Controls
+### Keyboard shortcuts
+
+Every key the viewer, the agent wrapper, and the installed terminal shortcut respond to. Under `--read-only`, the ledger-writing keys (`x`, `X`, `p`, `P`, `d`, `D`, `L`) and the nudge (`n`) do nothing, and `N` still opens an agent CLI but writes no intake entry.
+
+**Anywhere in the viewer**
 
 | Key | Action |
 | --- | --- |
-| Tab, a, t | Switch views, or open Agents / Tasks directly |
-| m (Agents) | Toggle between this repository's agents and every recent claim on this machine |
-| L (Agents) | Designate the selected agent as leader for four hours; press again on the current leader to resign |
-| N (Agents) | Open an agent CLI in a new terminal under the handoff bar and write one in-progress **Session work** intake entry |
-| Up/Down, k/j | Select a row or scroll task details |
-| Page Up/Page Down, Home/End | Move through long lists or details |
-| gg, G | Jump to the first or last line |
-| Enter | Open the selected owner's tasks or task details |
-| b, Escape, Backspace | Close details, then return to Agents with the owner still selected |
+| Tab | Toggle between Agents and Tasks |
+| a, t, c | Open Agents, Tasks, or the agent Channel |
+| Up/Down, k/j | Select a row; in task details, select a step |
+| Page Up/Page Down | Move a page through a list or details |
+| gg, Home | Jump to the first line |
+| G, End | Jump to the last line |
+| Enter | Open the selected owner's tasks, a task's details, a channel session, or a message |
+| b, Escape, Backspace | Close a message or details, leave a session filter, then return to Agents with the owner still selected |
 | r | Refresh immediately |
-| x | Cut the selected task or step, or put a held item back |
-| X | Cut the whole task from task details |
-| p | Give the held task or step to the selected agent or task's owner |
+| q, Q, Ctrl-C | Quit and restore the terminal |
+
+**Agents view**
+
+| Key | Action |
+| --- | --- |
+| m | Toggle between this repository's agents and every recent name claim on this machine |
+| L, l | Designate the selected agent as leader for four hours; press again on the current leader to resign |
+| N | Pick an agent CLI on PATH, optionally type a task, and open it in a new terminal under the handoff bar; the viewer writes one in-progress intake entry for it |
+| Enter (agent picker) | Choose the highlighted agent CLI, then type an optional task |
+| b, Escape, Backspace (agent picker) | Return to Agents without opening anything |
+
+**Tasks view and task details**
+
+| Key | Action |
+| --- | --- |
+| x | Cut the selected task, or in details the selected step; press again on the same item to put it back |
+| X | Cut the whole task, including from details |
+| p | Give the held task or step to the selected agent or the selected task's owner |
 | P | Give the held task or step to an owner name you type |
-| q, Ctrl-C | Quit and restore the terminal |
+| d (details) | Mark the selected step complete at your direction |
+| D | Mark the selected task complete at your direction |
+
+**Channel view**
+
+| Key | Action |
+| --- | --- |
+| s | Toggle between messages and registered sessions |
+| n, N | Nudge the selected session to answer; a message, not a takeover |
+
+**While typing a name (`P`) or a task (`N`)**
+
+| Key | Action |
+| --- | --- |
+| Enter | Submit; a blank task opens the agent with a **Session work** placeholder, a blank name moves nothing |
+| Escape, Ctrl-C | Cancel; a cut task stays held until you press `x` |
+| Backspace | Delete the last character |
+
+**Outside the viewer**
+
+| Where | Key | Action |
+| --- | --- | --- |
+| `handoff-tui --with AGENT` or `--codex` | Ctrl-G | Open the live viewer in a popup over the agent; `q` returns to the prompt |
+| iTerm2, after `handoff-tui --install-viewer-key` | Ctrl+G | Open the viewer for that repository in a new window |
+| Cursor integrated terminal, after `--install-viewer-key --emulator cursor` | Ctrl+G | Run the `Handoff viewer` task |
+| Claude Code, after the Claude-only install | Ctrl-E | Claude's external editor, moved off Ctrl-G |
+
+`HANDOFF_VIEWER_KEY` changes the Ctrl-G key everywhere it is installed (for example `C-M-h` for Ctrl+Alt+H), or turns it off with `none`. kitty and wezterm receive configuration snippets for the same key. See [Agent bar wrapper](#agent-bar-wrapper-codex-and-any-cli) and [Installing the viewer key](#installing-the-viewer-key).
 
 Live mode needs at least 64 columns and 14 rows. Pass `--read-only` for a terminal that must never write.
 
@@ -412,7 +458,7 @@ handoff-tui --root /path/to/your/repo --with grok -p "what is left?"
 
 `--codex` is simply `--with codex`. Each invocation owns a private tmux socket, ignores `~/.tmux.conf`, and removes its server when the agent exits. Prefix shortcuts are disabled so keys reach the agent, with one exception: the viewer key opens the live dashboard in a popup.
 
-Press `Ctrl-G` to open the live viewer in a popup over the agent, hand a task to another agent with `x` and `p`, then `q` to drop back to the prompt. The row ends with `^G open` while that key is bound; `$HANDOFF_VIEWER_KEY` moves it to another tmux key or turns it off with `none`, and `--read-only` opens a viewer that cannot write.
+Press `Ctrl-G` to open the live viewer in a popup over the agent, hand a task to another agent with `x` and `p`, then `q` to drop back to the prompt. The row ends with `^G open` while that key is bound; `$HANDOFF_VIEWER_KEY` moves it to another tmux key or turns it off with `none`, and `--read-only` opens a viewer that cannot write. Every shortcut is listed in [Keyboard shortcuts](#keyboard-shortcuts).
 
 No harness can bind a key to an arbitrary command of its own — Claude Code's `keybindings.json` accepts only its own fixed actions — so the key is bound in tmux's root table, which resolves it before the agent sees it. In an *unwrapped* session, both Codex and Claude Code use `Ctrl-G` for their external editor. Installing the skill does not intercept it.
 
