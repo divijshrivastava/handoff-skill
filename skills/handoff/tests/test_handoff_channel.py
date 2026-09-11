@@ -18,6 +18,19 @@ import handoff_guard as guard
 from handoff_channel import SCHEMA, Channel
 
 
+def _release_sqlite_under(root: Path) -> None:
+    """Windows keeps SQLite files locked until every handle drops."""
+    if os.name != "nt":
+        return
+    import gc
+    gc.collect()
+    for path in root.rglob("channel.sqlite3*"):
+        try:
+            path.unlink()
+        except OSError:
+            pass
+
+
 class ChannelTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -28,6 +41,7 @@ class ChannelTests(unittest.TestCase):
         self.cache = patch.dict(os.environ, {"HANDOFF_NAME_CACHE": str(self.root / "names")})
         self.cache.start()
         self.addCleanup(self.cache.stop)
+        self.addCleanup(_release_sqlite_under, self.root)
         self.channel = Channel(self.root)
 
     def actors(self):
@@ -394,6 +408,7 @@ class ChallengeTests(unittest.TestCase):
         self.cache = patch.dict(os.environ, {"HANDOFF_NAME_CACHE": str(self.root / "names")})
         self.cache.start()
         self.addCleanup(self.cache.stop)
+        self.addCleanup(_release_sqlite_under, self.root)
         self.channel = Channel(self.root)
         self.a = self.channel.join("Alpha", "Claude Code")["session"]
         self.b = self.channel.join("Beta", "Kimi Code")["session"]
@@ -495,9 +510,10 @@ class ChallengeTests(unittest.TestCase):
             # The schema as it shipped before challenges existed: everything but
             # that one table. A channel already on disk must carry forward.
             connection.executescript(before + after.split(");", 1)[1])
-        self.assertEqual(
-            [row[0] for row in sqlite3.connect(str(legacy.path))
-             .execute("SELECT name FROM sqlite_master WHERE name='challenges'")], [])
+        with sqlite3.connect(str(legacy.path)) as connection:
+            tables = [row[0] for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE name='challenges'")]
+        self.assertEqual(tables, [])
         one = legacy.join("Delta", "Grok")["session"]
         two = legacy.join("Epsilon", "Cursor")["session"]
         self.assertTrue(legacy.challenge(one, two)["issued"])
@@ -522,6 +538,7 @@ class NudgeTests(unittest.TestCase):
         self.cache = patch.dict(os.environ, {"HANDOFF_NAME_CACHE": str(self.root / "names")})
         self.cache.start()
         self.addCleanup(self.cache.stop)
+        self.addCleanup(_release_sqlite_under, self.root)
         self.channel = Channel(self.root)
         self.a = self.channel.join("Alpha", "Claude Code")["session"]
         self.b = self.channel.join("Beta", "Kimi Code")["session"]
@@ -722,6 +739,7 @@ class AssignmentNoticeTests(unittest.TestCase):
         self.cache = patch.dict(os.environ, {"HANDOFF_NAME_CACHE": str(self.root / "names")})
         self.cache.start()
         self.addCleanup(self.cache.stop)
+        self.addCleanup(_release_sqlite_under, self.root)
         self.channel = Channel(self.root)
         self.session = self.channel.join("Beta", "Claude Code", "native-beta")["session"]
 

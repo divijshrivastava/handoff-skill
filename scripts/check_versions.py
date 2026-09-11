@@ -63,7 +63,7 @@ def collect_versions(root: Path) -> Dict[str, str]:
             if not manifest.exists():
                 continue
             found.append(filename)
-            versions[str(manifest.relative_to(root))] = read(manifest)
+            versions[manifest.relative_to(root).as_posix()] = read(manifest)
         if not found:
             raise SystemExit(
                 f"{directory.relative_to(root)}/ holds no plugin.json or marketplace.json"
