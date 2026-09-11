@@ -1,5 +1,97 @@
 # Handoff
 
+## 2026-09-11 - Update the installed handoff plugin to the released version (owner: Rangi) (harness: Claude Code)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Refresh the divij-skills marketplace and update handoff@divij-skills from 1.20.0 to the published 1.22.0.
+- [x] Verify the installed version and cached skill files match the v1.22.0 release, then record the handoff.
+
+Status: Complete. The user asked to update the handoff skill; the user-scope install was handoff@divij-skills 1.20.0 while v1.22.0 was tagged on origin at f9b0ad6 and published as a GitHub release on 2026-09-10. Ran claude plugin marketplace update divij-skills, then claude plugin update handoff@divij-skills, which reported 1.20.0 -> 1.22.0. Verified 2026-09-11: ~/.claude/plugins/installed_plugins.json records version 1.22.0, installPath .../handoff/1.22.0 and gitCommitSha f9b0ad6; diff -r of the cached skills/handoff against git archive v1.22.0 skills/handoff is identical. Claude Code must be restarted for sessions to load 1.22.0. Only the installed copy changed: no repository source, commit, or release, and Orpheus's and Ilmarinen's uncommitted changes were left untouched. Audit note for Ilmarinen's open release entry: its remaining step (tag v1.22.0 and push) is evidenced as done by refs/tags/v1.22.0 on origin and the published release; that entry was not edited here.
+
+## 2026-09-11 - Diagnose and fix the tmux integration test failures (owner: Orpheus) (harness: Codex)
+
+State:
+
+- [x] In progress
+- [ ] Completed
+
+Steps:
+
+- [ ] Capture the failing tmux commands and identify why the private test sessions fail.
+- [ ] Fix the confirmed cause and add focused regression coverage where behavior changes.
+- [ ] Run the affected tests and repository checks, then record verification and resolve the earlier viewer verification entry.
+
+Status: In progress. The viewer implementation passes its own tests, but two tmux integration cases fail against both the working tree and unmodified HEAD. Capturing stderr and private-session startup behavior before choosing a fix. The user has since moved the SmallDocs opening step to Ilmarinen; that assignment and the prior viewer changes are preserved.
+
+## 2026-09-11 - Add an optional leader coordinator (owner: Ilmarinen) (harness: Claude Code)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Add handoff_lead.py: Lead/Task/Assigned parsing, in-lock authority, assign/accept/decline/reclaim, roster, status.
+- [x] Cover it with regression tests, including stale-leader, reservation, dependency, and no-leader-unchanged cases.
+- [x] Document the contract in references/leader.md and wire it into SKILL.md and packaging.
+- [x] Run both suites and repository checks, then record the handoff.
+
+Status: In progress. The user asked for the meta-harness coordinator from notes/leader-coordinator-plan-v2.md, after Orpheus's review. Implementing it as a separate handoff_lead.py that imports swap_ledger rather than writing beside it. Verified first that a Task: id line survives every existing owner mutator and that an Assigned: record whose to= no longer matches the heading owner self-invalidates, so no change to handoff_guard.py's mutators is required; that also avoids Orpheus's uncommitted transfer_step work in that file, which is left untouched. Complete. scripts/handoff_lead.py adds claim/renew/resign, assign/accept/decline, reclaim, and read-only roster/status, importing swap_ledger so the single compare-and-swap is preserved. Authority is re-checked against the clock inside the lock, because a mandate expires without any write and CAS alone would let an expired leader assign. Acceptance is the assignee's own write and records a lease, because assigning is what sets In progress and a box the assigner ticks evidences nothing about the assignee. Reservations end with ownership, never with silence. Dependencies reference an immutable Task: id because headings repeat and get rewritten. Verified 2026-09-11: 470 helper tests (40 new) and 54 root tests pass; check_versions, sync_manifests --check, validate, package_skill (19 entries, both new files present), and git diff --check pass. Found but did not fix a pre-existing defect unrelated to leadership: reassign_task does not clear the prior owner's lease, so a viewer move of a leased task leaves 'lease owner does not match the heading owner'. Reproducible with no leader involved, in handoff_guard.py and handoff_tui.py which Orpheus holds uncommitted; reported rather than edited.
+
+## 2026-09-11 - Open the note with SmallDocs, verify the result, and record the handoff. (owner: Ilmarinen)
+
+State:
+
+- [x] In progress
+- [ ] Completed
+
+Steps:
+
+- [ ] Open the note with SmallDocs, verify the result, and record the handoff.
+
+Status: Assigned. Step transferred 2026-09-11 from Orpheus in the handoff viewer at the user's direction. Source task: 2026-09-11 - Open the leader coordinator review in SmallDocs (owner: Orpheus) (harness: Codex). Only the selected step moved; its checkbox was preserved. Audit the source context before working; moving does not verify work. Execution request: Ilmarinen must finish its current task, then audit and complete this task, including verification, without waiting for another user prompt. Preserve prior work; record any concrete blocker and next action.
+
+Source status at transfer:
+> Status: Blocked on browser opening. Saved notes/leader-coordinator-review.md with the five reviewed findings and verification limits. sdoc generated a local viewing URL, but the default browser launcher failed with kLSExecutableIncorrectFormat. Opening the generated URL through the browser tool was then rejected because the user declined permission; no workaround was attempted. The user can open the saved note manually. Ledger structure and whitespace checks pass. No runtime changes, commit, cloud upload, or publication. The earlier release remains with Ilmarinen; its local tag exists and publication remains unverified here.
+
+## 2026-09-11 - Move individual task steps between agents in the viewer (owner: Orpheus) (harness: Codex)
+
+State:
+
+- [x] In progress
+- [ ] Completed
+
+Steps:
+
+- [x] Select individual steps in task details and cut/paste them into another agent's task list.
+- [x] Preserve source history, completion state, and concurrent-write protection when moving a step.
+- [ ] Add regression coverage, document the controls, run repository checks, and record the handoff.
+
+Status: Implementation complete; full verification remains blocked by the local tmux environment. Details now select individual steps with arrows/j/k; x holds that step, a opens Agents, and p transfers into the receiving owner's task list. X still cuts the whole task. transfer_step builds a new task under swap_ledger, preserving the selected checkbox, continuations, prior status, and a quoted source history; a sole remaining step moves its original task and clears the prior owner's lease. Parent completion is never inferred. Automatic refresh invalidates a stale cut instead of rebasing it. Added 15 regression tests and updated SKILL.md and progress-viewer.md. All 126 viewer tests pass on Python 3.9 and 3.12; 54 root tests pass. The full helper run before the last three added tests ran 420 tests with 418 passing and two tmux integration failures: test_real_pane_input_arguments_format_escaping_and_exit and test_the_viewer_key_binds_in_the_root_table_and_a_bad_key_is_reported. Both reproduce against unmodified HEAD f9b0ad6 in a temporary copy; logs are /tmp/handoff-step-helper-tests.log and /tmp/handoff-step-baseline-tmux.log. Version checks and generated manifests agree at 1.22.0, packaging succeeds, and whitespace and ledger structure checks pass. Computer-use policy blocked live iTerm2 inspection. Next action: run those two tmux tests in a working terminal environment and verify the live key sequence with the source viewer: python3 skills/handoff/scripts/handoff_tui.py --root . . No commit, release, installed-copy change, or model evaluation was requested or performed. The SmallDocs opening and Ilmarinen's release remain separately tracked.
+
+## 2026-09-11 - Open the leader coordinator review in SmallDocs (owner: Orpheus) (harness: Codex)
+
+State:
+
+- [x] In progress
+- [ ] Completed
+
+Steps:
+
+- [x] Save the reviewed findings in notes/leader-coordinator-review.md.
+Status: Blocked on browser opening. Saved notes/leader-coordinator-review.md with the five reviewed findings and verification limits. sdoc generated a local viewing URL, but the default browser launcher failed with kLSExecutableIncorrectFormat. Opening the generated URL through the browser tool was then rejected because the user declined permission; no workaround was attempted. The user can open the saved note manually. Ledger structure and whitespace checks pass. No runtime changes, commit, cloud upload, or publication. The earlier release remains with Ilmarinen; its local tag exists and publication remains unverified here.
+Step transferred 2026-09-11 to Ilmarinen in the handoff viewer at the user's direction: "Open the note with SmallDocs, verify the result, and record the handoff.". Destination task: 2026-09-11 - Open the note with SmallDocs, verify the result, and record the handoff. (owner: Ilmarinen). The remaining steps stay here; this transfer does not mark them complete.
+
+Transferred step (historical record):
+> - [ ] Open the note with SmallDocs, verify the result, and record the handoff.
+
 ## 2026-09-11 - Speed up preflight and release 1.22.0 (owner: Ilmarinen) (harness: Claude Code)
 
 State:

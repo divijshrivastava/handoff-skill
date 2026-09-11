@@ -276,6 +276,28 @@ blocked. A later user stop, cancellation, or explicit ordering takes precedence.
 The viewer persists the request; it cannot wake a stopped model. An agent that
 resumes must discover and act on its assignments at its next preflight.
 
+### Optional leadership
+
+A user may designate one agent to divide work and assign it to the others. This
+is off unless a `Lead:` line exists, and a repository without one behaves
+exactly as it always has. When leadership is in play, read
+`references/leader.md` before writing anything through
+`scripts/handoff_lead.py`.
+
+A leader assigns by writing the ledger, never by sending a message: a peer
+message cannot override ownership, so an assignment carried by one would be a
+peer doing exactly that. Losing a notification therefore costs latency, not
+correctness. A leader may assign unowned or its own work, and may reclaim only
+an offer nobody accepted before its deadline or an entry whose owner let its
+own lease expire. It may never take a live owner's work, override a user's
+assignment, decide that an agent is exhausted, or delegate the mandate onward.
+The user outranks the leader at all times.
+
+Assigned work arrives `offered` and not in progress; the assignee records its
+own acceptance, which also records a lease. Treat an assignment as an execution
+request, exactly as a viewer assignment: finish and verify your current task,
+audit the assigned entry, then accept it or decline with a reason.
+
 ### Communication and unavailable agents
 
 When coordinating with a peer or investigating a stalled owner, read
@@ -435,6 +457,13 @@ If the task pauses, another agent must be able to continue from the ledger and
 repository alone, without this conversation.
 
 ## Optional live progress viewer
+
+In task details, users can select a step with Up/Down or `j`/`k`, cut it with
+`x`, and paste it to another agent with `p`. The moved step becomes an assigned
+task with source context; its original entry retains the other steps and a
+transfer record. Audit and execute it under the same assignment rules as a
+whole task. `X` in details still moves the whole task. See
+`references/progress-viewer.md` for the history and completion rules.
 
 Users can run `python3 "$SKILL_DIR/scripts/handoff_tui.py" --root /absolute/repo/path`
 in a separate terminal to watch recorded task and per-owner progress. It
