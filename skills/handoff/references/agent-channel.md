@@ -82,6 +82,9 @@ follow from that:
 3. **Host adapters** accelerate. Where a harness reports failures without a
    model, they write those records earlier. They never decide.
 
+This `nudge` messages another agent. Reading the ledger's own assignments to
+the session running it, which sends nobody anything, is `/handoff:queue`.
+
 A nudge sits below all three. It asks a peer to answer and produces no evidence
 of anything, which is exactly why it is safe to send while the question of
 capability is still open.

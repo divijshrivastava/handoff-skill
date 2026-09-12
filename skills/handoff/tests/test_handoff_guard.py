@@ -1595,3 +1595,128 @@ class PreflightTests(unittest.TestCase):
         before = self.ledger.read_bytes()
         self.run_preflight("--seed", "session-one")
         self.assertEqual(self.ledger.read_bytes(), before)
+
+
+class AssignmentsTests(unittest.TestCase):
+    """The pull side of a viewer assignment: nothing pushes into a running CLI."""
+
+    def setUp(self) -> None:
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.root = Path(self.directory.name)
+        self.ledger = self.root / "HANDOFF.md"
+        self.cache = self.root / "names"
+
+    def entry(self, title: str, owner: str, state: str = "pending",
+              note: str | None = None, step_done: bool = False) -> str:
+        progress = " " if state == "pending" else "x"
+        block = (f"## 2026-09-07 - {title} (owner: {owner})\n\n"
+                 f"State:\n\n- [{progress}] In progress\n- [ ] Completed\n\n"
+                 f"Steps:\n\n- [{'x' if step_done else ' '}] Do the work.\n\n"
+                 f"Status: Recorded.\n")
+        return block + (f"\n{note}\n" if note else "")
+
+    def write(self, *entries: str) -> None:
+        self.ledger.write_text("# Handoff\n\n" + "\n".join(entries), encoding="utf-8")
+
+    def run_cli(self, *args: str, seed: str = "session-one") -> tuple[dict, int]:
+        environment = dict(os.environ)
+        environment["HANDOFF_NAME_CACHE"] = str(self.cache)
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "assignments", "--root", str(self.root),
+             "--seed", seed, *args],
+            capture_output=True, text=True, encoding="utf-8", check=False, env=environment,
+        )
+        return json.loads(result.stdout), result.returncode
+
+    def test_finds_a_move_note_the_viewer_wrapped_across_lines(self) -> None:
+        """The viewer wraps its note to 79 columns, so no single line holds it."""
+        note = ("Reassigned 2026-09-07: moved from Ungnyeo to Kanaloa in the\n"
+                "handoff viewer at the user's direction. In progress was checked so the\n"
+                "assignment shows under WIP; steps were not changed.")
+        self.write(self.entry("Moved work", "Kanaloa", "in_progress", note))
+        task = handoff_guard.parse_tasks(self.ledger.read_text(encoding="utf-8"))[0]
+        moves = handoff_guard.viewer_moves(self.ledger.read_text(encoding="utf-8"), task)
+        self.assertEqual(moves, [{"when": "2026-09-07", "from": "Ungnyeo", "to": "Kanaloa"}])
+
+    def test_reports_no_move_for_work_an_agent_claimed_itself(self) -> None:
+        """An agent's own entry must not read as something a person handed over."""
+        self.write(self.entry("Self-claimed", "Kanaloa", "in_progress"))
+        text = self.ledger.read_text(encoding="utf-8")
+        task = handoff_guard.parse_tasks(text)[0]
+        self.assertEqual(handoff_guard.viewer_moves(text, task), [])
+
+    def test_keeps_repeated_moves_in_ledger_order(self) -> None:
+        note = ("Reassigned 2026-09-07: moved from Epona to Garuda in the handoff viewer\n"
+                "at the user's direction. No state or step boxes were changed.\n\n"
+                "Reassigned 2026-09-08: moved from Garuda to Kanaloa in the handoff\n"
+                "viewer at the user's direction. No state or step boxes were changed.")
+        self.write(self.entry("Twice moved", "Kanaloa", "in_progress", note))
+        text = self.ledger.read_text(encoding="utf-8")
+        task = handoff_guard.parse_tasks(text)[0]
+        self.assertEqual([move["when"] for move in handoff_guard.viewer_moves(text, task)],
+                         ["2026-09-07", "2026-09-08"])
+
+    def test_a_move_note_stops_at_its_own_entry(self) -> None:
+        """A neighbour's move must not be reported against the entry above it."""
+        moved = self.entry("Moved work", "Kanaloa", "in_progress",
+                           "Reassigned 2026-09-07: moved from Epona to Kanaloa in the "
+                           "handoff viewer at the user's direction.")
+        self.write(self.entry("Untouched", "Kanaloa", "in_progress"), moved)
+        text = self.ledger.read_text(encoding="utf-8")
+        first, second = handoff_guard.parse_tasks(text)
+        self.assertEqual(handoff_guard.viewer_moves(text, first), [])
+        self.assertEqual(len(handoff_guard.viewer_moves(text, second)), 1)
+
+    def test_reports_the_queue_of_the_name_this_session_claimed(self) -> None:
+        self.write(self.entry("Mine", "Kanaloa"), self.entry("Theirs", "Epona"))
+        subprocess.run(
+            [sys.executable, str(SCRIPT), "name", "--root", str(self.root), "--seed", "session-one"],
+            capture_output=True, text=True, check=True,
+            env={**os.environ, "HANDOFF_NAME_CACHE": str(self.cache)},
+        )
+        result, code = self.run_cli()
+        self.assertEqual(code, 0)
+        self.assertEqual(list(result["owners"]), [result["session_owner"]])
+        self.assertEqual(result["total"], len(result["owners"][result["session_owner"]]))
+
+    def test_an_unnamed_session_claims_no_name_to_report(self) -> None:
+        """A report is not the session asking for a name; naming here would take one."""
+        self.write(self.entry("Mine", "Kanaloa"))
+        result, code = self.run_cli(seed="never-claimed")
+        self.assertEqual(code, 0)
+        self.assertIsNone(result["session_owner"])
+        self.assertEqual(result["owners"], {})
+        self.assertIn("has not claimed a name", result["errors"][0])
+        self.assertFalse(self.cache.exists() and any(self.cache.iterdir()))
+
+    def test_all_drops_empty_owners_but_a_named_owner_keeps_its_empty_queue(self) -> None:
+        self.write(self.entry("Started", "Epona", "in_progress", step_done=True),
+                   self.entry("Waiting", "Kanaloa"))
+        every, _ = self.run_cli("--all")
+        self.assertEqual(list(every["owners"]), ["Kanaloa"])
+        named, _ = self.run_cli("--owner", "Epona")
+        self.assertEqual(named["owners"], {"Epona": []})
+        self.assertEqual(named["total"], 0)
+
+    def test_an_entry_stays_listed_until_a_step_is_checked(self) -> None:
+        """Checking In progress alone is how a viewer assignment starts, not progress."""
+        self.write(self.entry("Assigned", "Kanaloa", "in_progress"))
+        listed, _ = self.run_cli("--owner", "Kanaloa")
+        self.assertEqual(len(listed["owners"]["Kanaloa"]), 1)
+        self.write(self.entry("Assigned", "Kanaloa", "in_progress", step_done=True))
+        cleared, _ = self.run_cli("--owner", "Kanaloa")
+        self.assertEqual(cleared["owners"]["Kanaloa"], [])
+
+    def test_reporting_never_writes_the_ledger(self) -> None:
+        self.write(self.entry("Mine", "Kanaloa"))
+        before = self.ledger.read_bytes()
+        self.run_cli("--all")
+        self.run_cli("--owner", "Kanaloa")
+        self.assertEqual(self.ledger.read_bytes(), before)
+
+    def test_a_missing_ledger_is_reported_and_never_created(self) -> None:
+        result, code = self.run_cli("--all")
+        self.assertEqual(code, 1)
+        self.assertEqual(result["errors"], ["HANDOFF.md not found"])
+        self.assertFalse(self.ledger.exists())

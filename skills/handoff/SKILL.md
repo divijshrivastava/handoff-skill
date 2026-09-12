@@ -1,6 +1,6 @@
 ---
 name: handoff
-description: "Coordinate progressive repository work across agents with a shared HANDOFF.md ledger. Use in repositories with a ledger, or on explicit handoff requests: /handoff:init, 'initialise the handoff', /handoff:continue, /handoff:status, /handoff:view, /handoff:purge, or 'use handoff'. After activation: handoff_guard.py name --root <repo> claims the session name; handoff_guard.py read --root <repo> returns ledger text and version in one snapshot. Audit later entries and code before treating unchecked boxes as unfinished. For ledger writes: handoff_guard.py apply --root <repo> --expect-version V with --entry FILE or --content FILE. On exit 3, re-read and re-audit; never retry the stale write. A user viewer assignment is required queued work: finish your current task, then audit and complete it without another prompt. Track investigations before research, even without code edits; a name claim is not a task."
+description: "Coordinate progressive repository work across agents with a shared HANDOFF.md ledger. Use in repositories with a ledger, or on explicit handoff requests: /handoff:init, 'initialise the handoff', /handoff:continue, /handoff:status, /handoff:view, /handoff:queue, /handoff:purge, or 'use handoff'. After activation: handoff_guard.py name --root <repo> claims the session name; handoff_guard.py read --root <repo> returns ledger text and version in one snapshot. Audit later entries and code before treating unchecked boxes as unfinished. For ledger writes: handoff_guard.py apply --root <repo> --expect-version V with --entry FILE or --content FILE. On exit 3, re-read and re-audit; never retry the stale write. A user viewer assignment is required queued work: finish your current task, then audit and complete it without another prompt. Track investigations before research, even without code edits; a name claim is not a task."
 license: MIT
 metadata:
   version: "1.25.0"
@@ -29,9 +29,9 @@ only when the user asks for it. The triggers are:
 - the `/handoff:init` command, or the phrase "initialise the handoff" in a
   host without slash commands (Codex's default prompt supplies it);
 - another explicit handoff request: `/handoff:continue`, `/handoff:status`,
-  `/handoff:view`, `/handoff:purge`, or a direct instruction such as "use
-  handoff", "record this in the ledger", "purge the handoff", or "take over
-  <owner>'s tasks".
+  `/handoff:view`, `/handoff:queue`, `/handoff:purge`, or a direct instruction
+  such as "use handoff", "record this in the ledger", "purge the handoff", or
+  "take over <owner>'s tasks".
 
 In a repository with no ledger and no such request, do none of this skill's
 work: no session name, no preflight, no ledger creation, no task entry.
@@ -83,9 +83,10 @@ its deliverable is an answer and no source file changes. After the preflight
 and ownership audit, record its scope and verification before task-specific
 research; check steps as evidence is gathered, and record completion before
 the final answer. An explicit instruction to make no writes takes precedence.
-Simply displaying existing status (`/handoff:status` or `/handoff:view`) and
-answering a follow-up from evidence already gathered do not create another
-task. If that follow-up requires new investigation, record the new scope.
+Simply displaying existing status (`/handoff:status`, `/handoff:view`, or
+`/handoff:queue`) and answering a follow-up from evidence already gathered do
+not create another task. If that follow-up requires new investigation, record
+the new scope.
 
 ## Step 0: Preflight before task work
 
@@ -523,6 +524,23 @@ workspace task rather than typing into the agent. Use
 merges into existing config rather than replacing it, is idempotent, and refuses
 to rewrite files that do not parse. Do not edit a user's keybindings any other
 way, and do not run it unasked.
+
+## Pulling an assignment the session was never sent
+
+The viewer's task move writes `HANDOFF.md` and nothing else. No signal reaches a
+CLI that is already running: a Claude Code hook carries the notice on that
+session's next event, and a harness without such a hook never delivers it.
+`handoff_guard.py assignments --root <repo>` is the pull side, and
+`/handoff:queue` is its command. It reports entries recorded to a name with no
+step checked yet, and names the viewer move behind each one, so work a user
+handed over is distinguishable from work an agent claimed for itself.
+
+It reads one snapshot and writes nothing, including no name claim. What it
+returns is recorded, never evidence that a move was read or that an owner is
+active, so audit before acting and resume through this skill rather than from
+that list. Messaging a *peer* is a different act entirely,
+`handoff_channel.py nudge`, a rate-limited request that decides nothing; see
+`references/agent-channel.md`.
 
 ## Named failure modes
 

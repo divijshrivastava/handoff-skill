@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 import json
 import os
 from pathlib import Path
@@ -1795,3 +1796,28 @@ class SearchTests(unittest.TestCase):
         screen = Screen(width=160)
         d.draw(screen, FakeCurses)
         self.assertIn("/ search", screen.lines[screen.height - 1])
+class MoveNoteIsReadableByTheGuardTests(unittest.TestCase):
+    """The viewer's note is the only record that a person moved the work.
+
+    `handoff_guard assignments` reads it back so a session can pull assignments
+    it was never pushed. Nothing but this test binds the two ends together, so
+    rewording `move_note` without it would empty that report in silence.
+    """
+
+    def moved_ledger(self, target="Agent B", state="in_progress"):
+        text = entry(state=state, steps=(False, False))
+        task = tui.parse_tasks(text)[0]
+        return guard.reassign_task(text, task.line, task.heading, target,
+                                   tui.move_note(task, target, when=datetime(2026, 9, 7)))
+
+    def test_the_guard_reads_back_a_move_the_viewer_wrote(self):
+        text = self.moved_ledger()
+        task = guard.parse_tasks(text)[0]
+        self.assertEqual(guard.viewer_moves(text, task),
+                         [{"when": "2026-09-07", "from": "Agent A", "to": "Agent B"}])
+
+    def test_a_release_reads_back_as_a_move_to_unassigned(self):
+        text = self.moved_ledger(target=tui.UNASSIGNED)
+        task = guard.parse_tasks(text)[0]
+        self.assertEqual([move["to"] for move in guard.viewer_moves(text, task)],
+                         [tui.UNASSIGNED])

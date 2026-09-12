@@ -123,6 +123,7 @@ Handoff work begins when one of these arrives:
 | Continue command | `/handoff:continue` |
 | Status command | `/handoff:status` |
 | View command | `/handoff:view` |
+| Queue command | `/handoff:queue` |
 | Purge command | `/handoff:purge` |
 | Direct instruction | "use handoff", "record this in the ledger", "purge the handoff", "take over Amaterasu's tasks" |
 
@@ -393,7 +394,7 @@ When several agents share one repository, a user may designate one session as a 
 
 ## Slash commands
 
-Installed as a Claude Code plugin, the skill adds five commands:
+Installed as a Claude Code plugin, the skill adds six commands:
 
 | Command | Purpose |
 | --- | --- |
@@ -401,6 +402,7 @@ Installed as a Claude Code plugin, the skill adds five commands:
 | `/handoff:view` | Open the live progress viewer in a separate terminal |
 | `/handoff:status` | Turn on a live progress bar in the status line, and report progress |
 | `/handoff:continue` | Audit the ledger and resume what is actually unfinished |
+| `/handoff:queue` | Report assignments this session has not picked up yet |
 | `/handoff:purge` | Archive the ledger and replace it with an empty valid one |
 
 `/handoff:init` is how a repository without a ledger becomes one that tracks work this way (or the phrase "initialise the handoff" in Codex, whose default prompt runs it). Where a `HANDOFF.md` already exists it only reports the recorded state. Either way it establishes tracking without starting any task.
@@ -424,6 +426,14 @@ handoff █████████░ 17/18 tasks · 70/73 steps · Codex
 ```
 
 It configures Claude Code's [status line](https://code.claude.com/docs/en/statusline) to run `handoff-bar`, which prints one row and exits. With a refresh interval set, the bar keeps updating while the session is idle, so progress moves as other agents write the ledger. `/handoff:status off` removes it. The bar prints nothing in a repository without a ledger, so it stays empty rather than erroring.
+
+`/handoff:queue` closes the other half of that gap. Moving a task to an agent in the viewer writes `HANDOFF.md` and nothing else — no signal reaches a CLI that is already running. Claude Code carries the notice on that session's *next* event, so an agent mid-turn sees it late, and a harness with no such hook never delivers it at all. Restarting the chat to pick the work up throws the session away, so the session pulls instead:
+
+```bash
+python3 skills/handoff/scripts/handoff_guard.py assignments --root /path/to/your/repo
+```
+
+It reports what the ledger records to your session's name and has no step checked yet, naming who moved each task and when, so work a person handed over reads differently from work an agent claimed for itself. `--all` covers every owner and `--owner <name>` covers one. It writes nothing — not even a session name — and reporting is where it stops: `/handoff:continue` is what audits and resumes the queue. Notifying another *agent* is a different thing entirely, `handoff_channel.py nudge`, which sends that peer a rate-limited message and decides nothing.
 
 The command also reports the totals and per-owner table the bar has no room for. Both show *recorded* progress; `/handoff:continue` is the one that runs the progressive audit. For the full dashboard with drilldown, run `handoff-tui` in your own terminal — Claude Code owns the one it is running in.
 

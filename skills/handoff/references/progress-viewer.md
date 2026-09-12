@@ -367,6 +367,13 @@ session answering `ctrl+g` with its own editor action, run
 In Claude Code, `/handoff:view` opens the viewer in a separate terminal because
 the harness has no controlling terminal for curses.
 
+Moving a task to an agent here writes the ledger and nothing else, so an agent
+whose CLI is already running is not told. A Claude Code hook carries the notice
+on that session's next event; a harness without one never delivers it. The
+assignee pulls it instead, with `handoff_guard.py assignments --root <repo>`
+(`/handoff:queue` in Claude Code), which reads back the move note this viewer
+wrote and names who moved the task and when.
+
 The row ends with `^G open` while the key is bound. `Ctrl-G` is the only key
 this mode keeps for itself - the private session has no tmux prefix, so every
 other key still reaches the agent. Set `$HANDOFF_VIEWER_KEY` to any tmux key

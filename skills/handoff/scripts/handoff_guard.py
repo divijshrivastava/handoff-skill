@@ -338,6 +338,30 @@ def assigned_unstarted(tasks: list["Task"], owner: str | None) -> list["Task"]:
     return waiting
 
 
+# The viewer stamps every task move with this sentence before wrapping it to 79
+# columns, so a report can tell work a user handed over from work an agent
+# claimed for itself. Matching the entry's normalised text rather than one line
+# keeps that wrap width free to change without silently emptying the report.
+MOVE_NOTE = re.compile(
+    r"Reassigned (?P<when>\d{4}-\d{2}-\d{2}): moved from (?P<source>.+?) to "
+    r"(?P<target>.+?) in the handoff viewer at the user's direction\."
+)
+
+
+def viewer_moves(text: str, task: "Task") -> list[dict]:
+    """Every viewer reassignment recorded in one entry, oldest first.
+
+    The viewer writes the ledger and nothing else, so these notes are the only
+    record that a person moved the work rather than an agent claiming it. They
+    describe the move alone: a move verifies no step, and a note is not evidence
+    that the target ever read it.
+    """
+    lines = text.splitlines()
+    block = " ".join(lines[task.line - 1:task_block_end(lines, task.line)])
+    return [{"when": found["when"], "from": found["source"], "to": found["target"]}
+            for found in MOVE_NOTE.finditer(" ".join(block.split()))]
+
+
 def structure_findings(text: str) -> list[tuple[str, str, str]]:
     """Return (heading, error, formatted message) for every structural problem.
 
@@ -2048,6 +2072,73 @@ def template_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def assignments_command(args: argparse.Namespace) -> int:
+    """Report work the ledger records to an owner that nobody has started.
+
+    The viewer's task move writes HANDOFF.md and nothing else. No signal reaches
+    a CLI that is already running, and a host hook only carries the notice on
+    that session's next event, so a session mid-turn learns of an assignment
+    late or, on a harness with no such hook, not at all. This is the pull side
+    of that gap: the session asks, instead of being restarted.
+
+    It reads one snapshot and writes nothing, including no name claim - a report
+    is not the session asking for a name. What it returns is recorded, never
+    evidence that an owner is active, that a move was read, or that a task is
+    finished; deciding those is the reader's job.
+    """
+    repo = find_repo_root(Path(args.root))
+    ledger = repo / "HANDOFF.md"
+    if not ledger.exists():
+        print(json.dumps({"root": str(repo), "ledger": None, "version": None,
+                          "errors": ["HANDOFF.md not found"]}, indent=2))
+        return 1
+
+    text = ledger.read_text(encoding="utf-8")
+    tasks = parse_tasks(text)
+    session = None if args.all or args.owner else recall_name(session_seed(args.seed), ledger)
+    if args.all:
+        owners = sorted({task.owner for task in tasks if task.owner})
+    elif args.owner:
+        owners = [args.owner]
+    else:
+        # An unnamed session has claimed nothing, so it has no queue to report.
+        # Say that rather than allocating a name it did not ask for.
+        owners = [session] if session else []
+
+    queues = {}
+    for owner in owners:
+        queue = [{"heading": task.heading, "line": task.line, "state": task.state,
+                  "harness": task.harness, "status": task.status,
+                  "viewer_moves": viewer_moves(text, task)}
+                 for task in assigned_unstarted(tasks, owner)]
+        # Under --all an owner with an empty queue is noise; asked for by name,
+        # an empty queue is the answer.
+        if queue or not args.all:
+            queues[owner] = queue
+
+    result = {
+        "root": str(repo),
+        "ledger": str(ledger),
+        "version": ledger_version(text),
+        "session_owner": session,
+        "owners": queues,
+        "total": sum(len(queue) for queue in queues.values()),
+        "note": (
+            "Recorded assignments from one snapshot, not a work order and not "
+            "proof of anything. An entry appears here while it is pending, or "
+            "in progress with no step checked yet, so it stays listed until a "
+            "step is. A viewer_moves entry records that a person moved the task "
+            "in the viewer; audit the entry, later entries, and current source "
+            "before acting, and resume through the skill rather than from this "
+            "list alone."
+        ),
+    }
+    if not args.all and not args.owner and not session:
+        result["errors"] = ["This session has not claimed a name in this repository"]
+    print(json.dumps(result, indent=2))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
@@ -2107,6 +2198,22 @@ def build_parser() -> argparse.ArgumentParser:
         "--out", help="Write the ledger text to this file instead of returning it inline"
     )
     read_parser.set_defaults(handler=read_command)
+
+    assignments = subparsers.add_parser(
+        "assignments",
+        help="Report unstarted work recorded to an owner, including viewer moves",
+    )
+    assignments.add_argument("--root", default=".", help="Repository path or child path")
+    assignments.add_argument(
+        "--owner", help="Report this owner instead of the name this session claimed"
+    )
+    assignments.add_argument(
+        "--all", action="store_true", help="Report every owner that has unstarted work"
+    )
+    assignments.add_argument(
+        "--seed", help="Identify the session explicitly instead of using the host's session id"
+    )
+    assignments.set_defaults(handler=assignments_command)
 
     apply_parser = subparsers.add_parser("apply")
     apply_parser.add_argument("--root", default=".", help="Repository path or child path")

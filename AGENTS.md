@@ -10,7 +10,9 @@ Helper tests live in `skills/handoff/tests/`; repository packaging and evaluatio
 summary tests live in `tests/`. Root `scripts/` contains release utilities and
 `scripts/demo/` contains recording assets. `.claude-plugin/` defines distribution
 manifests; `.github/workflows/` defines CI and releases. Generated archives go
-in ignored `dist/`.
+in ignored `dist/`. Root `commands/` holds one Markdown file per slash
+command; manifests point at the directory, so adding a command needs no
+manifest edit.
 
 ## Build, Test, and Development Commands
 

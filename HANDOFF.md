@@ -2,6 +2,47 @@
 
 Lead: owner=Bastet; expires=2026-09-11T08:16:58Z; policy=coordinate; succession=none
 
+## 2026-09-12 - Add /handoff:nudge to sync viewer assignments into a running session (owner: Kanaloa) (harness: Claude Code)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Add a read-only assignments view to handoff_guard.py
+- [x] Add commands/nudge.md
+- [x] Add regression tests
+- [x] Document it in SKILL.md, README, and references
+- [x] Run the full CI command set
+
+Status: Completed 2026-09-12. `handoff_guard.py assignments` is a new read-only subcommand reporting entries recorded to an owner with no step checked yet; `viewer_moves` reads back the note the viewer wrote, so a user's handover is distinguishable from an agent's own claim. It resolves the session name with recall_name, never claim_name, and writes nothing. commands/nudge.md adds /handoff:nudge, which reports and stops: resuming stays with /handoff:continue. Verified: 12 new tests (10 in test_handoff_guard.AssignmentsTests, 2 binding the viewer's note format to the guard's parser in test_handoff_tui), the latter mutation-checked by rewording move_note and confirming they fail. Full suites: 579 pass in skills/handoff/tests; tests/ has 92 with 3 errors that also fail at HEAD in a clean worktree (root scripts/handoff_tui.py imports handoff_lead, which root scripts/ does not carry) - pre-existing and untouched here. check_versions, sync_manifests --check, validate --root ., git diff --check all pass. Nothing committed. The user chose the rename: the command ships as /handoff:queue, so the collision with the channel's peer-to-peer nudge is gone. This entry's heading keeps its original title as the record of when the work was raised. The guard subcommand stays 'assignments', which never collided.
+
+## 2026-09-12 - Coordinate with Nanook and verify follow-up fixes (owner: Kanaloa)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Contact Nanook for fix status and identify the current feature commit.
+- [x] Diagnose why Nanook in OpenCode has no channel registration; verify the registration path for other harnesses.
+- [x] Verify the three remaining review findings against current code and regression checks.
+- [x] Share the verified outcome with Nanook and the user; record evidence and check assignments.
+
+Status: Completed 2026-09-12. Current feature commit is aa18ec8 on feat/herdr-handoff-features, committed 17:41 and therefore after Ungnyeo's 17:31 review of f3f80a1; it is the fix for that review's three P2 findings. All three verified fixed by re-running Ungnyeo's own reproduction probes against an archive of aa18ec8, with the source unedited. (1) Lock order: peers() under another writer's transaction now succeeds in 0.0s, was OperationalError: database is locked at 10.25s; the assign/yield interleaving now completes at 0.01s each with assign applied, was 10.23s with assign falsely rejecting a registered channel peer. The yield's version conflict is correct CAS behaviour, not the stall. (2) Quoted TOML headers ["status_line"] and ['status_line'] now refuse safely, leave the file byte-identical and valid; both previously appended a duplicate table and broke parsing with Cannot declare ('status_line',) twice. The review permitted refusal as an acceptable remedy. (3) Leader reclaim now carries the native resume reference into both ledger and output; both were false before. Regression: 754 helper tests pass on Python 3.12 for aa18ec8; tests/ shows the same 3 baseline errors as main; check_versions, sync_manifests --check and packaging all pass. Nanook was NOT reached: Nanook has no channel session, so nudge returns 'Unknown session'. That is this task's own finding, not silence - and per SKILL.md it is not evidence about Nanook's availability. Root cause of the registration gap: hooks/hooks.json auto-registers Claude Code only, via claude-hook; every other harness must run handoff_channel.py join by hand, and join is documented solely in references/agent-channel.md, which SKILL.md never points to for registration. detect_harness() also returns None for opencode, Grok and Kimi. Measured effect: 16 channel peers, 13 of them Claude Code, while Nanook (opencode, 9 ledger tasks), Haetae (Grok, 8) and Enkidu (Kimi Code, 3) are absent; Fenrir (Codex) and Zorya (Cursor) appear only because those sessions joined manually. Next action, for the user to decide: name join in SKILL.md's preflight so registration stops depending on a conditional reference, and teach detect_harness() opencode/Grok/Kimi. Both change the entry-point contract for every agent, so neither was done here. Outcome broadcast to registered peers; Nanook can only be reached through this ledger or the user.
+
+Reassigned 2026-09-12: moved from Ungnyeo to Kanaloa in the handoff viewer at
+the user's direction. In progress was checked so the assignment shows under
+WIP; steps were not changed. The entry keeps its place in ledger order.
+Execution request: Kanaloa must finish its current task, then audit and
+complete this task, including verification, without waiting for another user
+prompt. If idle, start after the audit. Preserve prior work; record any
+concrete blocker and next action.
+
 ## 2026-09-11 - Diagnose handoff-tui --with codex ending with [server exited] (owner: Kubera 2) (harness: Claude Code)
 
 State:
