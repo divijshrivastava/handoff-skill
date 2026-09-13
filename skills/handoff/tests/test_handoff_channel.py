@@ -827,3 +827,230 @@ class AssignmentNoticeTests(unittest.TestCase):
         context = self.context()
         self.assertIn("5 task(s)", context)
         self.assertIn("and 2 more", context)
+
+
+import handoff_channel  # noqa: E402
+import handoff_guard  # noqa: E402  (the tests add scripts/ to sys.path above)
+
+
+class TaskMessageTests(unittest.TestCase):
+    """A leader's task message, and the follower's obligation to record it first.
+
+    The protocol's load-bearing claim is that a task message assigns nothing on
+    its own: ownership starts when the follower writes the ledger. These tests
+    exist because a message that could grant ownership would be the one path
+    around HANDOFF.md.
+    """
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name).resolve()
+        self.ledger = self.root / "HANDOFF.md"
+        self.ledger.write_text("# Handoff\n\n", encoding="utf-8")
+        self.cache = patch.dict(os.environ, {"HANDOFF_NAME_CACHE": str(self.root / "names")})
+        self.cache.start()
+        self.addCleanup(self.cache.stop)
+        self.addCleanup(_release_sqlite_under, self.root)
+        self.channel = Channel(self.root)
+        self.leader = self.channel.join("Epona", "Claude Code")["session"]
+        self.follower = self.channel.join("Fenrir", "Codex")["session"]
+
+    def version(self):
+        return handoff_guard.ledger_version(self.ledger.read_text(encoding="utf-8"))
+
+    def assign(self, title="Fix the lock order", steps=("Reproduce", "Land the fix"), **kw):
+        return self.channel.assign_task(self.leader, self.follower, title, list(steps), **kw)
+
+    def test_a_normal_message_is_not_a_task(self) -> None:
+        """Status chatter must not appear as work the follower owes an entry for."""
+        self.channel.send(self.leader, self.follower, "How is it going?")
+        self.assertEqual(self.channel.open_tasks(self.follower)["count"], 0)
+
+    def test_a_task_message_alone_writes_nothing_to_the_ledger(self) -> None:
+        before = self.ledger.read_bytes()
+        self.assign()
+        self.assertEqual(self.ledger.read_bytes(), before)
+        self.assertEqual(handoff_guard.parse_tasks(before.decode()), [])
+
+    def test_recording_puts_the_task_in_the_ledger_under_the_follower(self) -> None:
+        sent = self.assign()
+        result = self.channel.record_task(self.follower, sent["id"], self.version())
+        self.assertEqual(result["status"], "applied")
+        task = handoff_guard.parse_tasks(self.ledger.read_text(encoding="utf-8"))[0]
+        self.assertEqual(task.owner, "Fenrir")
+        self.assertIn("Fix the lock order", task.heading)
+        self.assertEqual([step for _, step in task.steps], ["Reproduce", "Land the fix"])
+
+    def test_a_busy_follower_records_pending_so_the_work_queues(self) -> None:
+        """The mid-task rule: record it, keep working, take it from the ledger later."""
+        sent = self.assign()
+        self.channel.record_task(self.follower, sent["id"], self.version(), start=False)
+        text = self.ledger.read_text(encoding="utf-8")
+        task = handoff_guard.parse_tasks(text)[0]
+        self.assertEqual(task.state, "pending")
+        queued = handoff_guard.assigned_unstarted(handoff_guard.parse_tasks(text), "Fenrir")
+        self.assertEqual([entry.heading for entry in queued], [task.heading])
+
+    def test_a_free_follower_starts_it_at_once_with_start(self) -> None:
+        sent = self.assign()
+        self.channel.record_task(self.follower, sent["id"], self.version(), start=True)
+        task = handoff_guard.parse_tasks(self.ledger.read_text(encoding="utf-8"))[0]
+        self.assertEqual(task.state, "in_progress")
+
+    def test_recording_twice_returns_the_first_entry_rather_than_duplicating(self) -> None:
+        sent = self.assign()
+        first = self.channel.record_task(self.follower, sent["id"], self.version())
+        again = self.channel.record_task(self.follower, sent["id"], self.version())
+        self.assertEqual(again["status"], "already-recorded")
+        self.assertEqual(again["heading"], first["heading"])
+        self.assertEqual(len(handoff_guard.parse_tasks(self.ledger.read_text(encoding="utf-8"))), 1)
+
+    def test_the_recorded_heading_is_this_entry_not_a_peers(self) -> None:
+        """Reading the heading back after the lock would take whoever wrote last.
+
+        insert_entry puts new entries first, so any peer applying between the
+        swap and a read-back owns position 0. The heading is already determined
+        by the entry this session built, so it is taken from there.
+        """
+        sent = self.assign()
+        real = handoff_channel.swap_ledger
+
+        def racing(ledger, expect_version, build, **kwargs):
+            result = real(ledger, expect_version, build, **kwargs)
+            peer = handoff_guard.make_template(
+                "2026-01-01", "Peer work", "Garuda", ["Step"], "Codex")
+            ledger.write_text(
+                handoff_guard.insert_entry(ledger.read_text(encoding="utf-8"), peer),
+                encoding="utf-8")
+            return result
+
+        with patch.object(handoff_channel, "swap_ledger", racing):
+            recorded = self.channel.record_task(self.follower, sent["id"], self.version())
+        self.assertEqual(recorded["status"], "applied")
+        self.assertIn("Fix the lock order", recorded["heading"])
+        self.assertNotIn("Peer work", recorded["heading"])
+        replies = [json.loads(m["body"]) for m in self.channel.inbox(self.leader)
+                   if m["reply_to"] == sent["id"]]
+        self.assertEqual([reply["recorded"] for reply in replies], [recorded["heading"]])
+        again = self.channel.record_task(self.follower, sent["id"], self.version())
+        self.assertEqual(again["heading"], recorded["heading"])
+
+    def test_a_record_whose_channel_row_was_lost_does_not_duplicate_the_entry(self) -> None:
+        """The ledger write and the assignments row are two steps, not one.
+
+        A session that dies between them leaves the entry recorded and the
+        channel unaware, and the skill promises a retried record is safe.
+        """
+        sent = self.assign()
+        first = self.channel.record_task(self.follower, sent["id"], self.version())
+        connection = sqlite3.connect(self.root / ".handoff" / "channel.sqlite3")
+        with connection:
+            connection.execute("DELETE FROM assignments WHERE message=?", (sent["id"],))
+        connection.close()
+        self.assertEqual(self.channel.open_tasks(self.follower)["count"], 1)
+
+        again = self.channel.record_task(self.follower, sent["id"], self.version())
+        self.assertEqual(again["status"], "already-recorded")
+        self.assertEqual(again["heading"], first["heading"])
+        self.assertEqual(len(handoff_guard.parse_tasks(self.ledger.read_text(encoding="utf-8"))), 1)
+        # The row is written back, so the retry also repairs what the crash lost.
+        self.assertEqual(self.channel.open_tasks(self.follower)["count"], 0)
+
+    def test_a_recorded_task_leaves_the_unrecorded_list(self) -> None:
+        sent = self.assign()
+        self.assertEqual(self.channel.open_tasks(self.follower)["count"], 1)
+        self.channel.record_task(self.follower, sent["id"], self.version())
+        self.assertEqual(self.channel.open_tasks(self.follower)["count"], 0)
+
+    def test_the_heading_records_the_followers_own_harness_not_the_callers(self) -> None:
+        """The label belongs to the agent doing the work, whoever ran the command."""
+        sent = self.assign()
+        with patch.dict(os.environ, {"HANDOFF_HARNESS": "Something Else"}):
+            self.channel.record_task(self.follower, sent["id"], self.version())
+        task = handoff_guard.parse_tasks(self.ledger.read_text(encoding="utf-8"))[0]
+        self.assertEqual(task.harness, "Codex")
+
+    def test_the_sender_is_told_which_heading_was_written(self) -> None:
+        sent = self.assign()
+        recorded = self.channel.record_task(self.follower, sent["id"], self.version())
+        replies = [json.loads(m["body"]) for m in self.channel.inbox(self.leader)
+                   if m["reply_to"] == sent["id"]]
+        self.assertEqual(replies, [{"recorded": recorded["heading"], "started": False}])
+
+    def test_a_task_cannot_be_broadcast(self) -> None:
+        """An assignment needs exactly one owner, so '*' has no meaning here."""
+        with self.assertRaises(ValueError) as caught:
+            self.channel.assign_task(self.leader, "*", "Work", ["Step"])
+        self.assertIn("cannot be broadcast", str(caught.exception))
+
+    def test_a_task_needs_a_title_and_at_least_one_step(self) -> None:
+        with self.assertRaises(ValueError):
+            self.channel.assign_task(self.leader, self.follower, "   ", ["Step"])
+        with self.assertRaises(ValueError):
+            self.channel.assign_task(self.leader, self.follower, "Work", ["  "])
+
+    def test_a_normal_message_cannot_be_recorded_as_a_task(self) -> None:
+        plain = self.channel.send(self.leader, self.follower, "Just checking in")
+        with self.assertRaises(ValueError) as caught:
+            self.channel.record_task(self.follower, plain["id"], self.version())
+        self.assertIn("not a task", str(caught.exception))
+
+    def test_a_third_party_cannot_record_someone_elses_task(self) -> None:
+        other = self.channel.join("Garuda", "Claude Code")["session"]
+        sent = self.assign()
+        with self.assertRaises(ValueError) as caught:
+            self.channel.record_task(other, sent["id"], self.version())
+        self.assertIn("addressed to another session", str(caught.exception))
+
+    def test_a_stale_version_is_refused_and_records_nothing(self) -> None:
+        """Recording is a real ledger write, so it obeys the same compare-and-swap."""
+        sent = self.assign()
+        stale = self.version()
+        self.ledger.write_text(self.ledger.read_text(encoding="utf-8") + "\nPeer edit.\n",
+                               encoding="utf-8")
+        result = self.channel.record_task(self.follower, sent["id"], stale)
+        self.assertEqual(result["status"], "conflict")
+        self.assertEqual(self.channel.open_tasks(self.follower)["count"], 1)
+
+
+class TaskTableMigrationTests(unittest.TestCase):
+    """A channel created before task messages existed must grow the new table.
+
+    NEWEST_TABLE gates the cheap migration check on connect, so it has to name
+    the table added last. Leaving it on the previous one is silent: new channels
+    work and every existing one fails on the first `record`.
+    """
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name).resolve()
+        (self.root / "HANDOFF.md").write_text("# Handoff\n\n", encoding="utf-8")
+        self.cache = patch.dict(os.environ, {"HANDOFF_NAME_CACHE": str(self.root / "names")})
+        self.cache.start()
+        self.addCleanup(self.cache.stop)
+        self.addCleanup(_release_sqlite_under, self.root)
+
+    def test_newest_table_names_the_table_added_last(self) -> None:
+        created = [line.split()[-2] for line in SCHEMA.splitlines()
+                   if line.startswith("CREATE TABLE IF NOT EXISTS")]
+        self.assertEqual(handoff_channel.NEWEST_TABLE, created[-1])
+
+    def test_an_older_channel_gains_the_assignments_table(self) -> None:
+        channel = Channel(self.root)
+        older = SCHEMA[:SCHEMA.index("CREATE TABLE IF NOT EXISTS assignments")]
+        self.assertNotIn("assignments", older)
+        channel.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        with sqlite3.connect(str(channel.path)) as seed:
+            seed.executescript(older)
+        with sqlite3.connect(str(channel.path)) as check:
+            present = check.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='assignments'").fetchone()
+        self.assertIsNone(present, "the seeded database must start without the table")
+
+        leader = channel.join("Epona", "Claude Code")["session"]
+        follower = channel.join("Fenrir", "Codex")["session"]
+        sent = channel.assign_task(leader, follower, "Work", ["Step"])
+        version = handoff_guard.ledger_version((self.root / "HANDOFF.md").read_text())
+        self.assertEqual(channel.record_task(follower, sent["id"], version)["status"], "applied")

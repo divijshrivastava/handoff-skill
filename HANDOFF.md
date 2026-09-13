@@ -2,6 +2,22 @@
 
 Lead: owner=Bastet; expires=2026-09-11T08:16:58Z; policy=coordinate; succession=none
 
+## 2026-09-13 - Fix record_task heading capture and atomicity, and remove stale root script forks (owner: Hyperion) (harness: Claude Code)
+
+State:
+
+- [x] In progress
+- [x] Completed
+
+Steps:
+
+- [x] Derive the recorded heading from the entry text instead of re-reading the ledger after the lock.
+- [x] Make a retried record safe: guard the ledger against a duplicate entry and handle the assignments PRIMARY KEY collision.
+- [x] Remove the stale scripts/ and tests/ forks of the shipped helper so the root suite tests release tooling only.
+- [x] Run the full CI command set and record the result.
+
+Status: Complete in source, nothing committed. (1) handoff_channel.record_task now takes the heading from `parse_tasks(entry)[0].heading`, the entry it built, instead of re-reading the ledger after swap_ledger released the lock; insert_entry puts new entries first, so that read returned whichever peer applied in the window, and the wrong heading was stored in assignments, replied to the sender, and returned by every later retry. (2) The ledger write and the assignments row are still two steps, so `build` now raises AlreadyInLedger under the lock when the entry's heading is already present, and the caller returns already-recorded and writes the missing row via the new Channel.remember_assignment; the assignments INSERT became INSERT OR IGNORE so a row that beat it cannot raise after the ledger already changed. This makes the "recording twice is refused rather than duplicated" promise in SKILL.md and agent-channel.md true across a crash between the two steps, not only within one process. (3) git rm of six stale forks committed in d5d6aa3: scripts/handoff_guard.py, scripts/handoff_keys.py, scripts/handoff_tui.py, scripts/handoff_codex.py, tests/test_handoff_keys.py, tests/test_handoff_tui.py. All four scripts had drifted from skills/handoff/scripts (handoff_tui 1409 vs 1797 lines) and scripts/handoff_tui.py imported handoff_lead, a module absent from root scripts/, so `unittest discover -s tests` - a required CI step - failed with 3 errors on this branch. Nothing in RUNTIME_FILES, package_skill.py, run_evals.py or ci.yml referenced them; RUNTIME_FILES paths resolve under skills/handoff. Verification: tests reproduce both defects first (patching swap_ledger to let a peer apply in the window yields 'Peer work' as the recorded heading on the old code; deleting the assignments row and retrying applies a second identical entry). Full CI set green on Python 3.9: 622 shipped helper tests, 56 root tests (was 92 with 3 errors), check_versions 1.26.0 across 6 manifests, sync_manifests --check, validate --root ., package_skill, git diff --check. Root tests and the new channel tests also pass on 3.12. Docs: CLAUDE.md records both invariants. New regression guard tests/test_package.py::RepositoryLayoutTests fails on any scripts/handoff* and on a root test importing handoff_*. No version bump - nothing here reaches an installed copy until a release. Next action: none for me; the changes are uncommitted alongside other owners' work.
+
 ## 2026-09-12 - Add /handoff:nudge to sync viewer assignments into a running session (owner: Kanaloa) (harness: Claude Code)
 
 State:

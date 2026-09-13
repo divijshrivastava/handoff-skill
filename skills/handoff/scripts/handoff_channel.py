@@ -19,13 +19,21 @@ import time
 import uuid
 
 from handoff_guard import (
-    APPLY_EXIT, assigned_unstarted, claim_name, find_repo_root, ledger_version,
+    APPLY_EXIT, assigned_unstarted, claim_name, find_repo_root,
+    insert_entry, ledger_version, make_template, mark_task_in_progress,
     owner_label_error, parse_tasks, reassign_task, swap_ledger, taken_names,
     version_matches,
 )
 
 
 STATES = ("working", "waiting", "unavailable")
+# Two kinds carry a leader's words to a follower. A normal message asks or
+# tells; a task message assigns work, and obliges the follower to record it
+# in the ledger before doing any of it. The kind is what separates "how is
+# it going" from "here is your next job", which prose alone cannot.
+NORMAL_KIND = "message"
+TASK_KIND = "task"
+MAX_STEPS = 20
 MAX_BODY = 16000
 # A challenge costs its recipient a model turn, drawn from the very budget the
 # challenger is asking about, so probing is deliberately expensive to repeat and
@@ -80,16 +88,38 @@ CREATE TABLE IF NOT EXISTS bindings (
     session TEXT NOT NULL REFERENCES sessions(id),
     PRIMARY KEY (harness, host_session)
 );
+CREATE TABLE IF NOT EXISTS assignments (
+    message TEXT PRIMARY KEY REFERENCES messages(id),
+    session TEXT NOT NULL REFERENCES sessions(id),
+    heading TEXT NOT NULL,
+    recorded REAL NOT NULL
+);
 """
 # The table added most recently. Its absence is what marks a channel file as
 # predating this version, so keep it pointing at the newest table in SCHEMA.
-NEWEST_TABLE = "challenges"
+# The newest table gates the cheap migration check on connect, so it has to
+# name the table added last or an older channel never grows it.
+NEWEST_TABLE = "assignments"
 
 
 def bounded(value: str, label: str, maximum: int = MAX_BODY) -> str:
     if not value.strip() or len(value) > maximum:
         raise ValueError(f"{label} must contain 1 to {maximum} characters")
     return value
+
+
+class AlreadyInLedger(Exception):
+    """Raised inside a swap when the entry being written is already there.
+
+    The ledger write and the assignments row are two steps, so a session that
+    dies between them leaves the entry recorded and the channel unaware of it.
+    Raising out of `build` aborts the swap while the lock still guarantees the
+    text was read and judged in one piece.
+    """
+
+    def __init__(self, heading: str):
+        super().__init__(heading)
+        self.heading = heading
 
 
 class Channel:
@@ -216,6 +246,174 @@ class Channel:
             result = self.publish(connection, session, recipient, body,
                                   message_id=message_id, reply_to=reply_to)
         return result
+
+    def assign_task(self, session: str, recipient: str, title: str, steps: list[str],
+                    note: str | None = None, message_id: str | None = None) -> dict:
+        """Send work as a task message, distinct from a normal message.
+
+        A normal message asks or tells; this one assigns. It carries the title and
+        steps the recipient needs to write a well-formed entry, because a follower
+        that has to invent them records something other than what was asked.
+
+        It assigns nothing by itself. Ownership begins when the recipient runs
+        `record`, which writes the ledger - the same rule every other path obeys,
+        so a message that is missed, duplicated, or read by the wrong session can
+        never be the thing that decided who owns work.
+        """
+        if recipient == "*":
+            raise ValueError("A task cannot be broadcast; assign it to one agent")
+        title = " ".join(bounded(title, "task title", 200).split())
+        if not title:
+            raise ValueError("A task needs a title; the follower records it as the heading")
+        steps = [" ".join(bounded(step, "step", 200).split()) for step in steps]
+        steps = [step for step in steps if step]
+        if not steps:
+            raise ValueError("A task needs at least one step; a step is what gets checked off")
+        if len(steps) > MAX_STEPS:
+            raise ValueError(f"A task carries at most {MAX_STEPS} steps")
+        body = json.dumps({"title": title, "steps": steps,
+                           "note": " ".join((note or "").split()) or None})
+        with self.connect() as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            if session == recipient:
+                raise ValueError("A session cannot assign a task to itself")
+            result = self.publish(connection, session, recipient, body,
+                                  kind=TASK_KIND, message_id=message_id)
+        return {**result, "kind": TASK_KIND, "title": title, "steps": steps,
+                "note": ("Sent. This assigns nothing until the recipient records it in "
+                         "HANDOFF.md; read `tasks` there and `record` to write the entry.")}
+
+    def open_tasks(self, session: str, limit: int = 50) -> dict:
+        """Task messages addressed to this session that it has not recorded yet.
+
+        Read-only, and separate from the ledger view: `assignments` on the guard
+        reports what the ledger already holds, while this reports what a leader
+        asked for that has not reached the ledger at all. An entry appearing in
+        both is the normal state between recording and finishing.
+        """
+        with self.connect() as connection:
+            self.session(connection, session)
+            rows = connection.execute("""
+                SELECT m.id, m.body, m.created, s.owner AS sender_owner
+                FROM messages m JOIN sessions s ON s.id=m.sender
+                LEFT JOIN assignments a ON a.message=m.id
+                WHERE m.recipient=? AND m.kind=? AND a.message IS NULL
+                ORDER BY m.seq LIMIT ?
+            """, (session, TASK_KIND, limit)).fetchall()
+        tasks = []
+        for row in rows:
+            try:
+                payload = json.loads(row["body"])
+            except ValueError:
+                payload = {"title": None, "steps": [], "note": row["body"]}
+            tasks.append({"id": row["id"], "from": row["sender_owner"],
+                          "title": payload.get("title"), "steps": payload.get("steps", []),
+                          "note": payload.get("note"), "created": row["created"]})
+        return {"tasks": tasks, "count": len(tasks),
+                "note": ("Unrecorded task messages. Record each one in HANDOFF.md before "
+                         "working on it. If you are mid-task, record it without --start so "
+                         "it queues, finish what you are doing, then take it from the ledger.")}
+
+    def remember_assignment(self, message_id: str, session: str, heading: str) -> None:
+        """Note in the channel that this message's entry is in the ledger.
+
+        Only ever catches the channel up to a ledger that already carries the
+        entry, so an existing row wins: it is the one the sender was told about.
+        """
+        with self.connect() as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute("INSERT OR IGNORE INTO assignments VALUES (?, ?, ?, ?)",
+                               (message_id, session, heading, time.time()))
+
+    def record_task(self, session: str, message_id: str, expect_version: str,
+                    start: bool = False) -> dict:
+        """Write a received task message into the ledger, owned by this session.
+
+        This is the ledger-first step: the follower records before it works, so the
+        viewer and every peer can see the assignment even if this session dies in the
+        next second. Recording does not mean starting. A session already mid-task
+        records the entry pending, keeps doing what it was doing, and picks this up
+        from the ledger afterwards; `--start` is for a session that is free now and
+        begins immediately.
+        """
+        with self.connect() as connection:
+            registered = self.session(connection, session)
+            owner, harness = registered["owner"], registered["harness"]
+            row = connection.execute(
+                "SELECT m.*, s.owner AS sender_owner FROM messages m "
+                "JOIN sessions s ON s.id=m.sender WHERE m.id=?", (message_id,)).fetchone()
+            if row is None:
+                raise ValueError("Unknown message ID")
+            if row["kind"] != TASK_KIND:
+                raise ValueError("That is a normal message, not a task; only a task is recorded")
+            if row["recipient"] != session:
+                raise ValueError("That task was addressed to another session")
+            existing = connection.execute(
+                "SELECT heading FROM assignments WHERE message=?", (message_id,)).fetchone()
+        if existing:
+            # Recording twice would duplicate the entry, so report the first one.
+            return {"status": "already-recorded", "heading": existing["heading"],
+                    "note": "This task is already in the ledger; work from that entry."}
+
+        payload = json.loads(row["body"])
+        # The harness comes from this session's own registration, not from the
+        # environment: the label belongs to the agent that will do the work.
+        entry = make_template(date.today().isoformat(), payload["title"], owner,
+                              payload["steps"], harness or None)
+        sender = row["sender_owner"]
+        status = (f"Status: Pending. Assigned by {sender} as a task message on the agent "
+                  f"channel and recorded here before any work began.")
+        if payload.get("note"):
+            status += f" {sender} added: {payload['note']}"
+        if start:
+            status = status.replace("Status: Pending.", "Status: In progress.", 1)
+        entry = entry.replace("Status: Pending. No work has started.", status, 1)
+        # The heading is fully determined by the entry just built. Reading it back
+        # from the ledger after the swap released the lock would take whatever is
+        # newest at read time, and insert_entry puts new entries first: a peer that
+        # applies in that window hands this session its heading.
+        heading = parse_tasks(entry)[0].heading
+
+        def build(current: str) -> str:
+            # Still under the lock. A previous record whose assignments row never
+            # landed already wrote this entry, and inserting again would duplicate
+            # it, which is exactly what the channel promises never to do.
+            if any(task.heading == heading for task in parse_tasks(current)):
+                raise AlreadyInLedger(heading)
+            text = insert_entry(current, entry)
+            if start:
+                task = parse_tasks(text)[0]
+                return mark_task_in_progress(text, task.line, task.heading)
+            return text
+
+        try:
+            result = swap_ledger(self.ledger, expect_version, build)
+        except AlreadyInLedger:
+            # The ledger is right and only the channel's record of it is missing,
+            # so write that row now rather than leaving the next retry to rescan.
+            self.remember_assignment(message_id, session, heading)
+            return {"status": "already-recorded", "heading": heading,
+                    "note": ("That entry is already in the ledger from an earlier "
+                             "record; work from it rather than recording again.")}
+        if result["status"] != "applied":
+            return {**result, "note": "The ledger moved; re-read its version and record again."}
+
+        with self.connect() as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            # OR IGNORE, not a bare INSERT: the ledger entry exists by now, so a
+            # row a concurrent writer got in first must not raise here and leave
+            # the caller thinking the write failed.
+            connection.execute("INSERT OR IGNORE INTO assignments VALUES (?, ?, ?, ?)",
+                               (message_id, session, heading, time.time()))
+            connection.execute("INSERT OR IGNORE INTO receipts VALUES (?, ?)", (message_id, session))
+            self.publish(connection, session, row["sender"], json.dumps({
+                "recorded": heading, "started": bool(start),
+            }), kind=NORMAL_KIND, reply_to=message_id)
+        return {**result, "heading": heading, "started": bool(start),
+                "note": ("Recorded in HANDOFF.md and the sender told. "
+                         + ("Begin now." if start else
+                            "It is queued, not started: finish your current task, then take "
+                            "this one from the ledger."))}
 
     def inbox(self, session: str, include_read: bool = False, limit: int = 50) -> list[dict]:
         if not 1 <= limit <= 200:
@@ -678,7 +876,8 @@ def parser() -> argparse.ArgumentParser:
         "silence", help="Read unanswered messages and report age; never a capability verdict")
     silence.add_argument("--to", help="Session ID to report on; default is every peer")
     silence.add_argument("--fresh-for", type=float, default=120)
-    for name in ("report", "send", "inbox", "ack", "nudge", "challenge", "attest", "yield"):
+    for name in ("report", "send", "inbox", "ack", "nudge", "challenge", "attest", "yield",
+                 "assign-task", "tasks", "record"):
         command = commands.add_parser(name)
         command.add_argument("--session", required=True)
         if name == "report":
@@ -701,6 +900,24 @@ def parser() -> argparse.ArgumentParser:
             command.add_argument("--interval", type=float, default=NUDGE_INTERVAL,
                                  help="Seconds before this session may nudge that peer again")
             command.add_argument("--via", help="The surface that raised this nudge")
+        elif name == "assign-task":
+            command.add_argument("--to", required=True,
+                                 help="Session ID to assign; a task cannot be broadcast")
+            command.add_argument("--title", required=True,
+                                 help="Heading the follower records in the ledger")
+            command.add_argument("--step", action="append", required=True,
+                                 help="One checkable step; repeat for more")
+            command.add_argument("--note", help="Context for the follower, in your own words")
+            command.add_argument("--id", help="Reuse this ID when retrying a send")
+        elif name == "tasks":
+            command.add_argument("--limit", type=int, default=50)
+        elif name == "record":
+            command.add_argument("--id", required=True, help="Task message ID to record")
+            command.add_argument("--expect-version", required=True,
+                                 help="Ledger version from handoff_guard.py read")
+            command.add_argument("--start", action="store_true",
+                                 help="Check In progress because this session begins now; "
+                                      "omit it while you are mid-task so the entry queues")
         elif name == "challenge":
             command.add_argument("--to", required=True, help="Session ID to probe; broadcast is refused")
             command.add_argument("--ttl", type=float, default=CHALLENGE_TTL,
@@ -760,6 +977,13 @@ def main(argv: list[str] | None = None) -> int:
             result = {"messages": messages}
         elif args.command == "ack":
             result = channel.acknowledge(args.session, args.id)
+        elif args.command == "assign-task":
+            result = channel.assign_task(args.session, args.to, args.title, args.step,
+                                         args.note, args.id)
+        elif args.command == "tasks":
+            result = channel.open_tasks(args.session, args.limit)
+        elif args.command == "record":
+            result = channel.record_task(args.session, args.id, args.expect_version, args.start)
         elif args.command == "nudge":
             result = channel.nudge(args.session, args.to, args.note, args.interval, args.via)
         elif args.command == "challenge":
