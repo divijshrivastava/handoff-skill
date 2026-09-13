@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 The source repository for one agent skill. It is not a Python distribution, library, or service: nothing is installed, and no setup command runs when it is packaged. The shipped artifact is the `skills/handoff/` directory, published as a Claude Code plugin (via `.claude-plugin/`) and as ZIP/`.skill` archives on GitHub releases.
 
-Everything outside `skills/handoff/` is build, test, and release machinery for that one directory. `scripts/` (root) is release tooling; `tests/` (root) tests that tooling; `skills/handoff/tests/` tests the shipped helper.
+Everything outside `skills/handoff/` is build, test, and release machinery for that one directory. `scripts/` (root) is release tooling; `tests/` (root) tests that tooling; `skills/handoff/tests/` tests the shipped helper. A copy of a shipped helper under root `scripts/` is a fork rather than a second entry point: it drifts, the root suite then exercises the fork, and a green root run says nothing about what ships. `tests/test_package.py` fails on any `scripts/handoff*` and on a root test that imports `handoff_*`.
 
 ## Commands
 

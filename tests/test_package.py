@@ -177,5 +177,26 @@ class PackageTests(unittest.TestCase):
             self.assertFalse((base / "output").exists())
 
 
+class RepositoryLayoutTests(unittest.TestCase):
+    """Root `scripts/` is release tooling; the shipped helper lives in the skill.
+
+    A copy of a helper under root `scripts/` is not a second entry point, it is a
+    fork: it drifts, root `tests/` then exercises the fork, and a green root suite
+    says nothing about the code that actually ships. Six such files were committed
+    once and left the suite red on an import of a module that never existed.
+    """
+
+    def test_no_helper_fork_lives_beside_the_release_tooling(self):
+        forks = sorted(path.name for path in (ROOT / "scripts").glob("handoff*"))
+        self.assertEqual(forks, [], "helpers belong in skills/handoff/scripts only")
+
+    def test_the_root_suite_does_not_import_the_shipped_helper(self):
+        """Importing handoff_* here can only reach a fork; those tests live in the skill."""
+        for path in sorted((ROOT / "tests").glob("test_*.py")):
+            self.assertNotRegex(
+                path.read_text(encoding="utf-8"), r"(?m)^\s*(?:import|from)\s+handoff_",
+                f"{path.name} imports a helper; that suite is skills/handoff/tests")
+
+
 if __name__ == "__main__":
     unittest.main()
