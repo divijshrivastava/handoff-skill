@@ -50,7 +50,7 @@ Exit codes: `0` applied, `3` version conflict (the audit behind the edit is stal
 
 `check_versions.py` discovers manifests by globbing `*-plugin/` rather than naming them, and fails on any drift or on a release tag that is not `v<version>`. It named four paths until a fifth host, `.kimi-plugin/`, sat five releases behind with CI green; discovery means a host directory is covered the moment it exists. A version that does not change is never offered as an update to installed copies.
 
-A host directory present on disk but absent from the generator's `HOSTS` table is checked and reported, never written: the generator has no verified shape for it, and inventing one ships a broken manifest. An absent host directory is never created, because whether a host is supported is a decision. `.kimi-plugin/` is deliberately untracked, so CI never sees it and a local copy stays consistent.
+A host directory present on disk but absent from the generator's `HOSTS` table is checked and reported, never written: the generator has no verified shape for it, and inventing one ships a broken manifest. An absent host directory is never created, because whether a host is supported is a decision. `.kimi-plugin/` is tracked, despite an earlier note here claiming otherwise, so CI does check it and a version left behind there fails the build like any other manifest.
 
 **Packaging allowlist.** `RUNTIME_FILES` in `scripts/package_skill.py` explicitly lists what ships. Adding a runtime resource to the skill means adding it there and to `tests/test_package.py`, or it silently will not reach users. Archives are byte-reproducible (`ZIP_STORED`, fixed timestamps, fixed modes); do not introduce nondeterminism.
 
