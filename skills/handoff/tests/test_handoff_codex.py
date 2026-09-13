@@ -230,6 +230,30 @@ class SessionTests(unittest.TestCase):
         call.assert_called_once_with("kill-server", check=False)
         self.assertNotIn(session, codex._open_sessions)
 
+    def test_a_session_without_tmux_closes_without_running_anything(self):
+        """shutil.which returns None where tmux is absent, as it is on Windows.
+
+        A session built from that has None at the head of its argument list, and
+        kill-server then raises TypeError out of list2cmdline - not an error
+        close() is written to swallow. There is no server to kill either way.
+        """
+        session = codex.AgentSession(None, Path("private"))
+        with patch.object(codex.subprocess, "run") as run:
+            session.close()
+        run.assert_not_called()
+        self.assertNotIn(session, codex._open_sessions)
+
+    def test_atexit_cleanup_survives_a_session_that_cannot_be_closed(self):
+        """It runs at interpreter shutdown, where a raise is noise, not a signal."""
+        broken = codex.AgentSession("tmux", Path("private"))
+        healthy = codex.AgentSession("tmux", Path("private"))
+        self.addCleanup(lambda: [codex._open_sessions.remove(s)
+                                 for s in (broken, healthy) if s in codex._open_sessions])
+        with patch.object(broken, "close", side_effect=TypeError("not a path")), \
+                patch.object(healthy, "close") as healthy_close:
+            codex._cleanup_open_sessions()
+        healthy_close.assert_called_once_with()
+
 
 class RunTests(unittest.TestCase):
     def context(self):

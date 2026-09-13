@@ -391,6 +391,18 @@ class AgentResolutionTests(unittest.TestCase):
         path.chmod(0o755)
         return path
 
+    def assertResolves(self, name: str, expected: Path) -> None:
+        """Compare the way the platform compares paths, not byte for byte.
+
+        shutil.which builds each Windows candidate by appending an entry from
+        PATHEXT, which is upper case there, and returns the name it built
+        rather than the one on disk: a fixture written as codex.exe comes back
+        as codex.EXE. Both name the same file and both run, so the assertion
+        normalises case instead of pinning a spelling the caller never relies on.
+        """
+        self.assertEqual(os.path.normcase(keys.resolve_agent(name) or ""),
+                         os.path.normcase(str(expected)))
+
     def test_discovery_preserves_the_users_configured_codex(self):
         with tempfile.TemporaryDirectory() as directory:
             home = Path(directory)
@@ -400,7 +412,7 @@ class AgentResolutionTests(unittest.TestCase):
                     patch.object(keys, "_PATH_ENRICHED", False), \
                     patch.dict(os.environ, {"PATH": str(expected.parent)}):
                 self.assertIn("codex", keys.available_agents())
-                self.assertEqual(keys.resolve_agent("codex"), str(expected))
+                self.assertResolves("codex", expected)
                 enriched = os.environ["PATH"]
                 keys.enrich_path()
                 self.assertEqual(os.environ["PATH"], enriched)
@@ -415,7 +427,7 @@ class AgentResolutionTests(unittest.TestCase):
             with patch.object(keys.Path, "home", return_value=home), \
                     patch.object(keys, "_PATH_ENRICHED", False), \
                     patch.dict(os.environ, {"PATH": ""}):
-                self.assertEqual(keys.resolve_agent("codex"), str(expected))
+                self.assertResolves("codex", expected)
 
     def test_nvm_fallback_finds_an_agent_missing_from_the_newest_node(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -426,7 +438,7 @@ class AgentResolutionTests(unittest.TestCase):
             with patch.object(keys.Path, "home", return_value=home), \
                     patch.object(keys, "_PATH_ENRICHED", False), \
                     patch.dict(os.environ, {"PATH": ""}):
-                self.assertEqual(keys.resolve_agent("codex"), str(expected))
+                self.assertResolves("codex", expected)
 
 
 class AgentLaunchCommandTests(unittest.TestCase):

@@ -37,10 +37,14 @@ _open_sessions: list[AgentSession] = []
 
 
 def _cleanup_open_sessions() -> None:
+    # Runs at interpreter shutdown, so it catches everything rather than the
+    # errors a live close() expects. One session that cannot be closed must not
+    # stop the others being closed, and a traceback raised out of atexit reaches
+    # the user as noise after the program has already finished its work.
     for session in list(_open_sessions):
         try:
             session.close()
-        except (OSError, subprocess.SubprocessError):
+        except Exception:  # noqa: BLE001 - last-resort net, see above
             pass
 
 
@@ -185,8 +189,13 @@ class AgentSession:
         except ValueError:
             pass
         try:
+            # No tmux path means no server was ever started, so there is
+            # nothing to kill. Running it anyway puts None at the head of the
+            # argument list, which raises TypeError out of list2cmdline rather
+            # than any error close() is written to swallow.
             try:
-                self.call("kill-server", check=False)
+                if self.command[0]:
+                    self.call("kill-server", check=False)
             except (OSError, subprocess.SubprocessError):
                 pass
         finally:

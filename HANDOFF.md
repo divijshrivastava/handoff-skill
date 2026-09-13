@@ -2,6 +2,22 @@
 
 Lead: owner=Bastet; expires=2026-09-11T08:16:58Z; policy=coordinate; succession=none
 
+## 2026-09-13 - Fix the Windows CI failures in handoff_keys and handoff_codex (taken over from Gilgamesh) (owner: Hyperion) (harness: Claude Code)
+
+State:
+
+- [x] In progress
+- [ ] Completed
+
+Steps:
+
+- [ ] Fix the three AgentResolutionTests casing assertions so a PATHEXT-cased suffix compares equal.
+- [ ] Stop the handoff_codex atexit cleanup raising on a session that never had a tmux executable.
+- [ ] Verify locally on 3.9 and 3.12, commit without disturbing Gilgamesh's other uncommitted work, and push.
+- [ ] Confirm the Validate run is green on all four matrix cells.
+
+Status: In progress. The user authorised taking this over from Gilgamesh after Validate 34760728562 came back green on Linux and red on both Windows cells. Gilgamesh holds uncommitted changes in all three files and is being told on the channel.
+
 ## 2026-09-13 - Fix record_task heading capture and atomicity, and remove stale root script forks (owner: Hyperion) (harness: Claude Code)
 
 State:
