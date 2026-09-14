@@ -280,6 +280,7 @@
               <span class="tui-key-pill">j/k</span> move |
               <span class="tui-key-pill">Enter</span> open |
               <span class="tui-key-pill">b</span> back |
+              <span class="tui-key-pill">N</span> new agent |
               <span class="tui-key-pill">x</span> cut |
               <span class="tui-key-pill">p</span> give |
               <span class="tui-key-pill">d</span> mark step |
@@ -324,6 +325,7 @@
               <span class="tui-key-pill">j/k</span> move |
               <span class="tui-key-pill">Enter</span> open |
               <span class="tui-key-pill">b</span> back |
+              <span class="tui-key-pill">N</span> new agent |
               <span class="tui-key-pill">x</span> cut |
               <span class="tui-key-pill">p</span> give
             </div>
@@ -427,7 +429,7 @@
           <h3 class="substep"><span>B</span> Open it once before binding a key</h3>
           <div class="field"><label for="repo-path">Absolute path to your project</label><input id="repo-path" type="text" placeholder="/Users/you/code/your-project" spellcheck="false" autocomplete="off" aria-describedby="path-help path-error"><p id="path-help" class="small-note">Run <code>pwd</code> in your project’s terminal, then paste the result. For WSL, use its Linux path. Paths with spaces are supported.</p><p id="path-error" class="field-error" role="status"></p></div>
           <div class="command-box"><div class="command-heading"><span>IN YOUR TERMINAL</span><button type="button" class="copy" data-copy="viewer-command" aria-label="Copy viewer command" disabled>Enter a path first</button></div><pre><code id="viewer-command">handoff-tui --root '/absolute/path/to/your-project'</code></pre></div>
-          <div class="checkpoint"><span class="check-label">YOU SHOULD SEE</span><p>An <strong>Agents</strong> view with the owner from your ledger. Select that owner and press <kbd>Enter</kbd> for tasks, then <kbd>Enter</kbd> again for steps and status. Press <kbd>q</kbd> to close the viewer.</p></div>
+          <div class="checkpoint"><span class="check-label">YOU SHOULD SEE</span><p>An <strong>Agents</strong> view with the owner from your ledger. Select that owner and press <kbd>Enter</kbd> for tasks, then <kbd>Enter</kbd> again for steps and status. In Agents, press <kbd>Shift</kbd> + <kbd>N</kbd> to pick an agent CLI, then <kbd>Enter</kbd> to open it in a new terminal with the handoff bar. Press <kbd>q</kbd> to close the viewer.</p></div>
           <h3 class="substep"><span>C</span> Bind the shortcut for your terminal</h3>
           <fieldset class="selector"><legend>Where will you open the dashboard?</legend><div class="segmented">
             <label><input type="radio" name="terminal" value="iterm2" checked><span>iTerm2</span></label><label><input type="radio" name="terminal" value="cursor"><span>Cursor terminal</span></label><label><input type="radio" name="terminal" value="tmux"><span>tmux + agent CLI</span></label>
@@ -439,7 +441,7 @@
           <p class="small-note">The shortcut is tested in your terminal. A browser keypress cannot verify the installed binding.</p>
           <fieldset class="verify-choice"><legend>Did the dashboard open from the shortcut?</legend><label><input type="radio" name="verified" value="yes"> Yes, I saw this project’s tasks</label><label><input type="radio" name="verified" value="no"> Not yet</label></fieldset>
           <p id="verify-feedback" class="verify-feedback" role="status">Not verified yet. You can still use HANDOFF.md and continue the guide.</p>
-          <div class="key-reference"><h3>The four keys to learn first</h3><dl><div><dt><kbd>Enter</kbd></dt><dd>Open an owner or task</dd></div><div><dt><kbd>b</kbd></dt><dd>Go back one level</dd></div><div><dt><kbd>Tab</kbd></dt><dd>Switch Agents / Tasks</dd></div><div><dt><kbd>q</kbd></dt><dd>Close the dashboard</dd></div></dl></div>
+          <div class="key-reference"><h3>The keys to learn first</h3><dl><div><dt><kbd>Enter</kbd></dt><dd>Open an owner or task</dd></div><div><dt><kbd>b</kbd></dt><dd>Go back one level</dd></div><div><dt><kbd>Tab</kbd></dt><dd>Switch Agents / Tasks</dd></div><div><dt><kbd>Shift</kbd> + <kbd>N</kbd></dt><dd>Spawn a new agent from Agents, then <kbd>Enter</kbd> to open it</dd></div><div><dt><kbd>q</kbd></dt><dd>Close the dashboard</dd></div></dl><p class="small-note">Uppercase <kbd>N</kbd> spawns a new agent. Lowercase <kbd>n</kbd> in the Channel view nudges a peer instead.</p></div>
         </section>
 
         <section class="lesson" id="handoff" aria-labelledby="handoff-title">

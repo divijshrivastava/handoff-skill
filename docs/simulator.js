@@ -24,7 +24,13 @@
     bannerType: "normal",    // "normal" | "held" | "success" | "alert"
     channelMode: "messages", // "messages" | "sessions"
     channelToggled: false,
+    cockpitTasksSeen: false,
+    cockpitDetailSeen: false,
     nudgedSession: false,
+    spawnAgents: ["claude", "codex", "cursor-agent", "gemini"],
+    spawnOpened: false,
+    spawnedAgent: false,
+    spawnedAgentName: null,
     handoffContinued: false,
     taskReassigned: false,
     mission1Complete: false,
@@ -130,6 +136,8 @@
       state.tuiOwner = owner;
       state.tuiSelected = 0;
       state.tuiStepSelected = 0;
+      if (view === "tasks") state.cockpitTasksSeen = true;
+      if (view === "detail") state.cockpitDetailSeen = true;
       checkMissionProgress();
       renderTUI();
     },
@@ -151,6 +159,30 @@
       }
       state.nudgedSession = true;
       state.bannerMessage = `Nudged ${targetName}. Offline ping recorded in .handoff/channel.sqlite3.`;
+      state.bannerType = "success";
+      checkMissionProgress();
+      renderTUI();
+    },
+
+    beginSpawn() {
+      if (state.tuiView !== "agents") return;
+      state.tuiView = "spawn";
+      state.tuiSelected = 0;
+      state.spawnOpened = true;
+      state.bannerMessage = "Pick an agent CLI, then press Enter to open it in a new terminal with the handoff bar.";
+      state.bannerType = "normal";
+      checkMissionProgress();
+      renderTUI();
+    },
+
+    launchSpawnedAgent() {
+      if (state.tuiView !== "spawn") return;
+      const agent = state.spawnAgents[state.tuiSelected] || state.spawnAgents[0];
+      state.spawnedAgent = true;
+      state.spawnedAgentName = agent;
+      state.tuiView = "agents";
+      state.tuiSelected = 0;
+      state.bannerMessage = `Opened ${agent} with the handoff bar. Session intake recorded in HANDOFF.md.`;
       state.bannerType = "success";
       checkMissionProgress();
       renderTUI();
@@ -329,6 +361,10 @@
 
     // Modal or tab is active
     if (key === "Escape" || key === "q") {
+      if (key === "Escape" && state.tuiView === "spawn") {
+        engine.setTUIView("agents");
+        return;
+      }
       if (state.tuiOpen) {
         engine.toggleTUI(false);
       } else if (state.tuiView !== "agents") {
@@ -357,8 +393,10 @@
       engine.setTUIView("channel");
     } else if (key === "s" && state.tuiView === "channel") {
       engine.toggleChannelMode();
-    } else if (key === "n" && state.tuiView === "channel") {
+    } else if ((key === "n" || key === "N") && state.tuiView === "channel") {
       engine.nudgeSelected();
+    } else if (key === "N" && state.tuiView === "agents") {
+      engine.beginSpawn();
     } else if (key === "x") {
       if (state.heldTask) {
         state.heldTask = null;
@@ -384,6 +422,9 @@
     } else if (state.tuiView === "tasks") {
       const len = getVisibleTasks().length;
       if (len > 0) state.tuiSelected = (state.tuiSelected + delta + len) % len;
+    } else if (state.tuiView === "spawn") {
+      const len = state.spawnAgents.length;
+      if (len > 0) state.tuiSelected = (state.tuiSelected + delta + len) % len;
     } else if (state.tuiView === "channel") {
       const list = state.channelMode === "messages" ? state.ledger.channel.messages : state.ledger.channel.sessions;
       const len = list.length;
@@ -396,12 +437,17 @@
   }
 
   function handleEnterKey() {
+    if (state.tuiView === "spawn") {
+      engine.launchSpawnedAgent();
+      return;
+    }
     if (state.tuiView === "agents") {
       const agent = state.ledger.agents[state.tuiSelected];
       if (agent) {
         state.tuiOwner = agent.name;
         state.tuiView = "tasks";
         state.tuiSelected = 0;
+        state.cockpitTasksSeen = true;
       }
     } else if (state.tuiView === "tasks") {
       const task = getVisibleTasks()[state.tuiSelected];
@@ -409,6 +455,7 @@
         state.detailTask = task;
         state.tuiView = "detail";
         state.tuiStepSelected = 0;
+        state.cockpitDetailSeen = true;
       }
     }
     checkMissionProgress();
@@ -416,7 +463,10 @@
   }
 
   function handleBackKey() {
-    if (state.tuiView === "detail") {
+    if (state.tuiView === "spawn") {
+      state.tuiView = "agents";
+      state.tuiSelected = 0;
+    } else if (state.tuiView === "detail") {
       state.tuiView = "tasks";
     } else if (state.tuiView === "tasks") {
       state.tuiView = "agents";
@@ -553,11 +603,17 @@
     // Update navigation tabs
     if (el.tuiNavTabs) {
       el.tuiNavTabs.forEach(nav => {
-        const activeLabel = state.tuiView === "agents" ? `[Agents | repo]&nbsp;&nbsp;Tasks&nbsp;&nbsp;c: Channel`
+        const activeLabel = state.tuiView === "agents" ? `[Agents | repo]&nbsp;&nbsp;Tasks&nbsp;&nbsp;c: Channel&nbsp;&nbsp;N: new agent`
           : state.tuiView === "tasks" ? `Agents&nbsp;&nbsp;[Tasks: ${state.tuiOwner || "all"}]&nbsp;&nbsp;c: Channel`
           : state.tuiView === "channel" ? `Agents&nbsp;&nbsp;Tasks&nbsp;&nbsp;[Channel: ${state.channelMode}]`
+          : state.tuiView === "spawn" ? `[Agents]&nbsp;&nbsp;Tasks&nbsp;&nbsp;c: Channel&nbsp;&nbsp;N: pick agent CLI&nbsp;&nbsp;Enter: open in terminal`
           : `[Task Details]&nbsp;&nbsp;b: back`;
-        nav.innerHTML = `<span>${activeLabel}</span><span class="tui-nav-hint">Enter: select · j/k: move · x: cut · p: give · q: close</span>`;
+        const navHint = state.tuiView === "spawn"
+          ? `Enter: open · j/k: move · b: back`
+          : state.tuiView === "agents"
+            ? `N: new agent · Enter: select · j/k: move · x: cut · p: give · q: close`
+            : `Enter: select · j/k: move · x: cut · p: give · q: close`;
+        nav.innerHTML = `<span>${activeLabel}</span><span class="tui-nav-hint">${navHint}</span>`;
       });
     }
 
@@ -575,6 +631,8 @@
         body.innerHTML = "";
         if (state.tuiView === "agents") {
           renderTUIAgentsTable(body);
+        } else if (state.tuiView === "spawn") {
+          renderTUISpawnTable(body);
         } else if (state.tuiView === "tasks") {
           renderTUITasksTable(body);
         } else if (state.tuiView === "channel") {
@@ -641,6 +699,32 @@
       };
       container.appendChild(row);
     });
+  }
+
+  function renderTUISpawnTable(container) {
+    const header = document.createElement("div");
+    header.className = "tui-table-header";
+    header.textContent = "AGENT CLI ON PATH | Enter: open with handoff bar";
+    container.appendChild(header);
+
+    state.spawnAgents.forEach((agent, idx) => {
+      const row = document.createElement("div");
+      row.className = `tui-row ${idx === state.tuiSelected ? "selected" : ""}`;
+      const prefix = idx === state.tuiSelected ? ">" : " ";
+      row.textContent = `${prefix} ${agent}`;
+      row.onclick = () => {
+        state.tuiSelected = idx;
+        engine.launchSpawnedAgent();
+      };
+      container.appendChild(row);
+    });
+
+    const hint = document.createElement("div");
+    hint.style.padding = "10px 16px";
+    hint.style.color = "var(--tui-dim)";
+    hint.style.fontSize = "11px";
+    hint.textContent = "Opens the selected CLI in a new terminal with the handoff bar. Press 'b' to go back.";
+    container.appendChild(hint);
   }
 
   function renderTUITasksTable(container) {
@@ -845,7 +929,7 @@
       {
         badge: "STEP 5 OF 8",
         title: "Full Cockpit: handoff-tui",
-        body: "Press <code>Ctrl+Alt+H</code> (or <code>h</code>) anytime to summon the curses cockpit! Here you see all 14 active and waiting agents, their WIP, and assigned tasks. Press <code>j/k</code> to move down/up and <code>Enter</code> to inspect.",
+        body: "Press <code>Ctrl+Alt+H</code> (or <code>h</code>) anytime to summon the curses cockpit! Here you see all 14 active and waiting agents, their WIP, and assigned tasks. Press <code>j/k</code> to move down/up and <code>Enter</code> to inspect. In Agents, press <code>Shift+N</code> to spawn a new agent, then <code>Enter</code> to open it with the handoff bar.",
         target: "#sim-tui-modal .sim-tui-modal-window",
         setup: () => {
           engine.toggleTUI(true);

@@ -902,18 +902,31 @@ window.HandoffScenarios = (function () {
         },
         {
           instruction: "Use 'j' / 'k' or arrow keys to highlight Kubera 2, then press Enter to inspect tasks.",
-          check: (state) => state.tuiView === "tasks" && (state.tuiOwner === "Kubera 2" || state.tuiSelected >= 0)
+          check: (state) => state.cockpitTasksSeen === true
         },
         {
           instruction: "Press Enter again on the diagnosis task to view its checklist, blockers, and recorded evidence.",
-          check: (state) => state.tuiView === "detail"
+          check: (state) => state.cockpitDetailSeen === true
         },
         {
           instruction: "Press 'b' to go back, then 'a' to return to the Agents overview.",
-          check: (state) => state.tuiView === "agents"
+          check: (state) => (state.tuiView === "agents" && state.cockpitDetailSeen === true)
+            || state.spawnOpened === true || state.spawnedAgent === true
+        },
+        {
+          instruction: "In Agents, press Shift+N (uppercase N) to open the spawn picker for a new agent.",
+          actionLabel: "Press Shift+N",
+          action: (engine) => engine.beginSpawn(),
+          check: (state) => state.spawnOpened === true
+        },
+        {
+          instruction: "Press Enter to open the selected agent CLI with the handoff bar (or 'b' to go back).",
+          actionLabel: "Press Enter to launch",
+          action: (engine) => engine.launchSpawnedAgent(),
+          check: (state) => state.spawnedAgent === true
         }
       ],
-      takeaway: "The dashboard is a live HUD. It gives you complete visibility across all sessions without disturbing running models."
+      takeaway: "The dashboard is a live HUD. It gives you complete visibility across all sessions without disturbing running models. Shift+N spawns a new agent right from Agents."
     },
     {
       id: "mission-3",
@@ -971,7 +984,7 @@ window.HandoffScenarios = (function () {
       id: "mission-5",
       badge: "FREE PLAY",
       title: "Free Play Sandbox",
-      description: "Switch harnesses at will, toggle step checkboxes ('d' / 'D'), cut and paste tasks, and see the live bottom bar react in real time.",
+      description: "Switch harnesses at will, toggle step checkboxes ('d' / 'D'), cut and paste tasks, spawn a new agent with Shift+N in Agents, and see the live bottom bar react in real time.",
       steps: [
         {
           instruction: "Explore all 4 harnesses (Cursor, Claude Code, Codex, Grok) and the TUI freely.",
