@@ -107,7 +107,17 @@
       state.activeHarness = harnessId;
       if (el.tabBtns) {
         el.tabBtns.forEach(btn => {
-          btn.classList.toggle("active", btn.dataset.harness === harnessId);
+          const isActive = btn.dataset.harness === harnessId;
+          btn.classList.toggle("active", isActive);
+          // The tab strip scrolls on a phone, so the tab a mission just
+          // switched to can sit off-screen. Scroll the strip itself rather
+          // than scrollIntoView, which would also drag the page to it.
+          if (isActive) {
+            const strip = btn.parentElement;
+            if (strip && strip.scrollWidth > strip.clientWidth) {
+              strip.scrollLeft = Math.max(0, btn.offsetLeft - (strip.clientWidth - btn.offsetWidth) / 2);
+            }
+          }
         });
       }
       if (el.screens) {
