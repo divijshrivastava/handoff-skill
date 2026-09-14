@@ -2,6 +2,21 @@
 
 Lead: owner=Bastet; expires=2026-09-11T08:16:58Z; policy=coordinate; succession=none
 
+## 2026-09-14 - Close the tmux-less session leak at its source in TmuxProbeTests (owner: Hyperion) (harness: Claude Code)
+
+State:
+
+- [x] In progress
+- [ ] Completed
+
+Steps:
+
+- [ ] Stop TmuxProbeTests.probe building a session from shutil.which('tmux') when tmux is absent.
+- [ ] Narrow the atexit catch back now that the cause is known, so the next leak is loud.
+- [ ] Verify the leak is gone by reproduction, run the suites, commit and push.
+
+Status: In progress. Found the site the previous entry could not: TmuxProbeTests.probe hand-instantiates TmuxIntegrationTests and calls its server() helper, which bypasses that class skipIf and builds AgentSession(shutil.which("tmux")) - None on Windows.
+
 ## 2026-09-13 - Fix the Windows CI failures in handoff_keys and handoff_codex (taken over from Gilgamesh) (owner: Hyperion) (harness: Claude Code)
 
 State:

@@ -243,17 +243,6 @@ class SessionTests(unittest.TestCase):
         run.assert_not_called()
         self.assertNotIn(session, codex._open_sessions)
 
-    def test_atexit_cleanup_survives_a_session_that_cannot_be_closed(self):
-        """It runs at interpreter shutdown, where a raise is noise, not a signal."""
-        broken = codex.AgentSession("tmux", Path("private"))
-        healthy = codex.AgentSession("tmux", Path("private"))
-        self.addCleanup(lambda: [codex._open_sessions.remove(s)
-                                 for s in (broken, healthy) if s in codex._open_sessions])
-        with patch.object(broken, "close", side_effect=TypeError("not a path")), \
-                patch.object(healthy, "close") as healthy_close:
-            codex._cleanup_open_sessions()
-        healthy_close.assert_called_once_with()
-
 
 class RunTests(unittest.TestCase):
     def context(self):
@@ -417,13 +406,35 @@ class TmuxProbeTests(unittest.TestCase):
     def probe(self, results):
         case = TmuxIntegrationTests("test_the_viewer_key_binds_in_the_root_table_and_a_bad_key_is_reported")
         self.addCleanup(case.doCleanups)
-        with patch.object(codex.AgentSession, "close"), patch.object(
+        # server() builds its session from shutil.which("tmux"), and calling it
+        # on a hand-built case bypasses the skipIf that keeps TmuxIntegrationTests
+        # off Windows. Without a path here the session holds None where its
+        # executable belongs, which subprocess only rejects once something runs
+        # it - at interpreter exit, long after this class has passed. These
+        # tests assert on mocked results and never reach a real tmux, so the
+        # path only has to exist.
+        with patch.object(shutil, "which", return_value="/usr/bin/tmux"), \
+                patch.object(codex.AgentSession, "close"), patch.object(
                 subprocess, "run", side_effect=results) as run:
             case.server(Path("private"))
             return run
 
     def result(self, code=0, stderr=""):
         return subprocess.CompletedProcess(["tmux"], code, "", stderr)
+
+    def test_the_probe_registers_no_session_without_an_executable(self):
+        """A tmux-less session only fails once atexit runs it, far from the cause.
+
+        probe() reaches TmuxIntegrationTests.server on a hand-built case, which
+        skips past that class's skipIf, and server resolves tmux through
+        shutil.which - None wherever tmux is absent, as on Windows. Nothing
+        notices until the interpreter exits, so this asserts on the registry
+        rather than waiting for a shutdown traceback on a platform CI runs and
+        this machine does not.
+        """
+        self.probe([self.result(), self.result()])
+        stranded = [str(s.directory) for s in codex._open_sessions if not s.command[0]]
+        self.assertEqual(stranded, [])
 
     def test_socket_denial_skips_even_when_startup_returns_zero(self):
         for code in (0, 1):

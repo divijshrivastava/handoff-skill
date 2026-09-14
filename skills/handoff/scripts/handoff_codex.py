@@ -37,14 +37,15 @@ _open_sessions: list[AgentSession] = []
 
 
 def _cleanup_open_sessions() -> None:
-    # Runs at interpreter shutdown, so it catches everything rather than the
-    # errors a live close() expects. One session that cannot be closed must not
-    # stop the others being closed, and a traceback raised out of atexit reaches
-    # the user as noise after the program has already finished its work.
+    # Deliberately narrow. A session that reaches here in a state close() cannot
+    # handle is a leak somewhere else, and the traceback out of atexit is the
+    # only thing that reports it: a tmux-less session registered by a test
+    # helper was found exactly that way, and a blanket except would have hidden
+    # it for as long as it kept being created.
     for session in list(_open_sessions):
         try:
             session.close()
-        except Exception:  # noqa: BLE001 - last-resort net, see above
+        except (OSError, subprocess.SubprocessError):
             pass
 
 
