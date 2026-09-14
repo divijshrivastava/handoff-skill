@@ -3,7 +3,7 @@ name: handoff
 description: "Coordinate progressive repository work across agents with a shared HANDOFF.md ledger. Use in repositories with a ledger, or on explicit handoff requests: /handoff:init, 'initialise the handoff', /handoff:continue, /handoff:status, /handoff:view, /handoff:queue, /handoff:purge, or 'use handoff'. After activation: handoff_guard.py name --root <repo> claims the session name; handoff_guard.py read --root <repo> returns ledger text and version in one snapshot. Audit later entries and code before treating unchecked boxes as unfinished. For ledger writes: handoff_guard.py apply --root <repo> --expect-version V with --entry FILE or --content FILE. On exit 3, re-read and re-audit; never retry the stale write. A user viewer assignment is required queued work: finish your current task, then audit and complete it without another prompt. Track investigations before research, even without code edits; a name claim is not a task."
 license: MIT
 metadata:
-  version: "1.26.0"
+  version: "1.27.0"
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
 ---
 
@@ -83,10 +83,19 @@ its deliverable is an answer and no source file changes. After the preflight
 and ownership audit, record its scope and verification before task-specific
 research; check steps as evidence is gathered, and record completion before
 the final answer. An explicit instruction to make no writes takes precedence.
-Simply displaying existing status (`/handoff:status`, `/handoff:view`, or
-`/handoff:queue`) and answering a follow-up from evidence already gathered do
-not create another task. If that follow-up requires new investigation, record
-the new scope.
+**Every task the user gives gets its own entry, and the number of times they
+have asked never changes that.** A repeat of an earlier request, a request you
+believe you already satisfied, a correction, a narrowing, a "do it again" - each
+is a task in its own right and is recorded before the work resumes. Do not
+reason that an existing entry already covers it: if the user had to ask again,
+the ledger is not showing what they think they asked for, and a second entry is
+how that becomes visible. Writing the entry is the first action, ahead of
+answering, investigating, or editing.
+
+Only two things are not tasks and so create no entry: displaying existing status
+(`/handoff:status`, `/handoff:view`, or `/handoff:queue`), and answering a
+question from evidence already gathered. If either turns into work - the answer
+requires new investigation, or the user asks for a change - record it first.
 
 ## Step 0: Preflight before task work
 
@@ -184,6 +193,8 @@ Use task states literally:
 
 Record every new task in the ledger at intake—before task-specific research
 or implementation—so the viewer shows who holds what and under which state.
+This holds however many times the same thing is asked: a repeated request is a
+new entry, never a reason to skip one.
 If local instructions require a user choice before mutation, propose the entry
 and write it only after that choice. Otherwise apply a pending entry while the
 task waits behind other work, or check `In progress` in that same write when
@@ -541,6 +552,42 @@ active, so audit before acting and resume through this skill rather than from
 that list. Messaging a *peer* is a different act entirely,
 `handoff_channel.py nudge`, a rate-limited request that decides nothing; see
 `references/agent-channel.md`.
+
+## Leader and follower messages
+
+The channel carries two kinds of message, and the kind decides what the
+recipient owes in return.
+
+A **normal message** (`send`) asks or tells: a leader checking status, an answer
+about work in flight, ordinary conversation. It obliges nothing beyond reading
+and acknowledging it.
+
+A **task message** (`assign-task --to <session> --title T --step S`) assigns
+work. It carries the title and steps so the follower records what was actually
+asked rather than its own paraphrase, and it cannot be broadcast, because an
+assignment needs exactly one owner.
+
+A task message assigns nothing by itself. It becomes real only when the follower
+writes it into the ledger, which is the same rule everything else here obeys: a
+message can be missed, duplicated, or read by a session that no longer exists,
+so a message must never be the thing that decided who owns work.
+
+On receiving a task message the follower, before doing any of the work:
+
+1. reads it with `tasks`, which lists task messages it has not yet recorded;
+2. records it with `record --id <message> --expect-version V`, which writes the
+   entry through the one compare-and-swap and tells the sender the heading.
+
+Then, and only then, the work. `record` defaults to a **pending** entry, which is
+the mid-task case: a follower already working records the new task so it is
+visible to everyone, returns to what it was doing, and picks the new entry up
+from the ledger when it is free — `/handoff:queue` lists exactly that. Pass
+`--start` only when this session is free and begins immediately. Recording twice
+is refused rather than duplicated, so a retried `record` is safe.
+
+Never skip the recording step because the work looks quick. The entry is what
+survives this session; an unrecorded task that dies with its agent is
+indistinguishable from one that was never sent.
 
 ## Named failure modes
 

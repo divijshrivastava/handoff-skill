@@ -82,6 +82,44 @@ follow from that:
 3. **Host adapters** accelerate. Where a harness reports failures without a
    model, they write those records earlier. They never decide.
 
+## Normal messages and task messages
+
+`send` carries a normal message: a status check, an answer, ordinary
+conversation. `assign-task` carries an assignment, and the separate kind is the
+point — prose alone cannot tell "how is it going" from "here is your next job",
+and the follower's obligation differs.
+
+```sh
+# Leader: assign work. One recipient; a task cannot be broadcast.
+python3 "$SKILL_DIR/scripts/handoff_channel.py" --root /path/to/repo assign-task \
+  --session '<your session ID>' --to '<follower session ID>' \
+  --title 'Fix the lock order' --step 'Reproduce the stall' --step 'Land the fix' \
+  --note 'P2 from the review'
+
+# Follower: what was I assigned that is not in the ledger yet?
+python3 "$SKILL_DIR/scripts/handoff_channel.py" --root /path/to/repo tasks \
+  --session '<your session ID>'
+
+# Follower: record it BEFORE working. Omit --start while you are mid-task.
+python3 "$SKILL_DIR/scripts/handoff_channel.py" --root /path/to/repo record \
+  --session '<your session ID>' --id '<task message ID>' --expect-version V
+```
+
+`record` writes the entry through `swap_ledger`, acknowledges the message, and
+replies to the sender with the heading it wrote. The owner is the recording
+session's own name and the harness label comes from its registration, not from
+the environment of whatever process ran the command. Recording the same task
+twice returns the first heading instead of adding a second entry.
+
+Pending versus started is the whole of the mid-task rule. A follower that is busy
+records the task pending, goes back to its current work, and takes the new entry
+from the ledger afterwards; `assignments` on the guard (`/handoff:queue`) is what
+lists it. `--start` checks `In progress` and is for a follower that is free now.
+
+A task message still grants no ownership. Until `record` writes the ledger, the
+assignment exists only as a message, and every rule about ownership in
+`SKILL.md` reads the ledger rather than this database.
+
 This `nudge` messages another agent. Reading the ledger's own assignments to
 the session running it, which sends nobody anything, is `/handoff:queue`.
 

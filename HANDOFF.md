@@ -2,6 +2,22 @@
 
 Lead: owner=Bastet; expires=2026-09-11T08:16:58Z; policy=coordinate; succession=none
 
+## 2026-09-14 - Release 1.27.0 with the task-message protocol and its documentation (owner: Hyperion) (harness: Claude Code)
+
+State:
+
+- [x] In progress
+- [ ] Completed
+
+Steps:
+
+- [ ] Bump metadata.version to 1.27.0 and regenerate every manifest with sync_manifests.py.
+- [ ] Commit Kanaloa's SKILL.md and agent-channel.md docs so the archive documents the code it ships.
+- [ ] Run the full check set and inspect the archive built from a clean worktree of the release commit.
+- [ ] Tag v1.27.0, push, and confirm the Release and Validate workflows.
+
+Status: In progress. The user asked for the release and chose to include the docs. package_skill.py reads the working tree, which holds other owners uncommitted work, so the archive will be inspected from a clean detached worktree of the release commit rather than from this tree.
+
 ## 2026-09-14 - Close the tmux-less session leak at its source in TmuxProbeTests (owner: Hyperion) (harness: Claude Code)
 
 State:
