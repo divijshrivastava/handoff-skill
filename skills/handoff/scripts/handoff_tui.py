@@ -34,6 +34,7 @@ from handoff_guard import (
     apply_session_intake,
     assigned_unstarted,
     find_repo_root,
+    latest_claimed_ledger,
     harness_for_agent,
     held_sessions,
     held_sessions_for_ledger,
@@ -1622,6 +1623,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--once", action="store_true", help="Print a snapshot and exit")
     parser.add_argument("--agents", choices=("repo", "machine"), default="repo",
                         help="Agents section scope for --once: this repository or this machine")
+    parser.add_argument("--recent-repo-fallback", action="store_true",
+                        help="When the working directory holds no ledger, open the most "
+                             "recently claimed one on this machine instead. Installed key "
+                             "bindings pass this because an emulator can hand the viewer a "
+                             "directory the user never chose; it is off by default so a "
+                             "hand-run viewer still reports a missing ledger honestly.")
     parser.add_argument("--read-only", action="store_true",
                         help="Disable the cut and paste keys in the live view, including the "
                              "one Codex mode opens, so it never writes")
@@ -1687,6 +1694,11 @@ def main(argv: list[str] | None = None) -> int:
             if reported is not None and args.root == Path("."):
                 root = reported
     path = args.file.resolve() if args.file else find_repo_root(root) / "HANDOFF.md"
+    # An explicit --file is the user naming a ledger; never second-guess it.
+    if args.recent_repo_fallback and args.file is None and not path.is_file():
+        remembered = latest_claimed_ledger()
+        if remembered is not None:
+            path = remembered
     watcher = Watcher(path)
     if wrapped is not None:
         from handoff_codex import DEFAULT_AGENT, run_agent

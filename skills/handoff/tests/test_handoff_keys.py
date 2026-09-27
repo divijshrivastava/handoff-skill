@@ -73,16 +73,24 @@ class HandoffKeysTests(unittest.TestCase):
             self.assertNotIn("/tmp/repo", text)
 
     def test_binding_command_never_names_a_repository(self) -> None:
-        """Whatever the launcher, an installed binding carries no --root."""
+        """Whatever the launcher, an installed binding carries no --root.
+
+        It does carry --recent-repo-fallback: an emulator that cannot report
+        the active window's directory hands the viewer the home directory, and
+        the last claimed ledger beats a repository the user never asked for.
+        """
         with patch.object(keys.shutil, "which", return_value="/tmp/bin/handoff-tui"):
             self.assertEqual(keys.shlex.split(keys.binding_command()),
-                             [sys.executable, "/tmp/bin/handoff-tui"])
+                             [sys.executable, "/tmp/bin/handoff-tui",
+                              "--recent-repo-fallback"])
             self.assertEqual(keys.shlex.split(keys.binding_command(read_only=True)),
-                             [sys.executable, "/tmp/bin/handoff-tui", "--read-only"])
+                             [sys.executable, "/tmp/bin/handoff-tui", "--read-only",
+                              "--recent-repo-fallback"])
         with patch.object(keys.shutil, "which", return_value=None):
             fallback = keys.shlex.split(keys.binding_command())
             self.assertTrue(fallback[1].endswith("handoff_tui.py"))
             self.assertNotIn("--root", fallback)
+            self.assertIn("--recent-repo-fallback", fallback)
 
     def test_stale_viewer_profiles_ignores_files_this_skill_did_not_write(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -164,6 +172,7 @@ class HandoffKeysTests(unittest.TestCase):
             self.assertEqual(profile["Custom Command"], "Yes")
             self.assertEqual(keys.shlex.split(profile["Command"]), [
                 sys.executable, "/tmp/bin with space/handoff-tui",
+                "--recent-repo-fallback",
             ])
             backup = Path(directory) / ".config/handoff/iterm2-before-viewer-key.plist"
             self.assertEqual(plistlib.loads(backup.read_bytes()), settings)

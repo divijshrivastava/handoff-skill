@@ -73,11 +73,14 @@ def binding_command(*, read_only: bool = False) -> str:
     not always have the launcher's shebang interpreter on its PATH.
     """
     launcher = shutil.which("handoff-tui")
-    if launcher is None:
-        return viewer_command(None, read_only=read_only)
-    parts = [sys.executable, launcher]
+    parts = ([sys.executable, launcher] if launcher is not None
+             else shlex.split(viewer_command(None)))
     if read_only:
         parts.append("--read-only")
+    # An emulator that cannot report the active window's directory hands the
+    # viewer the home directory instead. Falling back to the most recently
+    # claimed ledger beats opening a repository the user never asked for.
+    parts.append("--recent-repo-fallback")
     return " ".join(shlex.quote(part) for part in parts)
 
 

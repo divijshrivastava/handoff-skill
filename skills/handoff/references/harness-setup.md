@@ -152,6 +152,16 @@ wrote the install directory into the binding, which pinned the key to that one
 checkout - pressing it in another repository opened the first one's ledger, so
 its agents and tasks were what the viewer showed. Installing again replaces such
 a binding.
+
+Not every emulator can report that directory. iTerm2 reuses the previous
+session's directory only when it knows it, which without
+[Shell Integration](https://iterm2.com/documentation-shell-integration.html)
+it does not, so it opens the home directory instead. Bindings therefore also
+pass `--recent-repo-fallback`: when the directory the viewer is handed holds no
+ledger, it opens the most recently claimed one on this machine rather than
+reporting a ledger nobody asked about. The flag is off by default, so a
+hand-run `handoff-tui` in a directory with no ledger still says so. Installing
+iTerm2 Shell Integration makes the directory exact rather than remembered.
 Pass `--emulator` to choose explicitly. It merges rather
 than replaces where possible, running twice reports that the key is already
 released or installed, and a file that does not parse is left untouched rather

@@ -1821,3 +1821,75 @@ class MoveNoteIsReadableByTheGuardTests(unittest.TestCase):
         task = guard.parse_tasks(text)[0]
         self.assertEqual([move["to"] for move in guard.viewer_moves(text, task)],
                          [tui.UNASSIGNED])
+
+
+class RecentRepoFallbackTests(unittest.TestCase):
+    """What an installed key binding does when the emulator gives it no repo.
+
+    iTerm2 without Shell Integration launches the viewer in the home directory
+    rather than the one the key was pressed in, which showed a missing-ledger
+    read error instead of any repository at all.
+    """
+
+    def setUp(self) -> None:
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.root = Path(self.directory.name)
+        self.cache = self.root / "names"
+        self.cache.mkdir()
+        self.elsewhere = self.root / "elsewhere"
+        self.elsewhere.mkdir()
+
+    def repo(self, name: str) -> Path:
+        repo = self.root / name
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        ledger = repo / "HANDOFF.md"
+        ledger.write_text(entry(), encoding="utf-8")
+        return ledger
+
+    def claim(self, name: str, ledger: Path) -> None:
+        record = self.cache / name
+        record.write_text(f"{name}\nCodex\n{ledger}\n", encoding="utf-8")
+
+    def run_cli(self, *args, cwd=None):
+        environment = dict(os.environ, HANDOFF_NAME_CACHE=str(self.cache))
+        return subprocess.run([sys.executable, str(SCRIPTS / "handoff_tui.py"), *args],
+                              capture_output=True, text=True, encoding="utf-8",
+                              timeout=10, cwd=str(cwd or self.elsewhere), env=environment)
+
+    def test_a_directory_with_no_ledger_opens_the_last_claimed_one(self) -> None:
+        ledger = self.repo("worked-in")
+        self.claim("Alpha", ledger)
+        result = self.run_cli("--once", "--recent-repo-fallback")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(str(ledger.resolve()), result.stdout)
+        self.assertNotIn("READ ERROR", result.stdout)
+
+    def test_the_fallback_is_off_by_default(self) -> None:
+        """A hand-run viewer still reports a missing ledger honestly."""
+        self.claim("Alpha", self.repo("worked-in"))
+        result = self.run_cli("--once")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("READ ERROR", result.stdout)
+
+    def test_a_real_repository_is_never_overridden(self) -> None:
+        """The directory the key was pressed in wins whenever it has a ledger."""
+        here = self.repo("here")
+        self.claim("Alpha", self.repo("worked-in"))
+        result = self.run_cli("--once", "--recent-repo-fallback", cwd=here.parent)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(str(here.resolve()), result.stdout)
+
+    def test_an_explicit_file_is_never_second_guessed(self) -> None:
+        missing = self.root / "named" / "HANDOFF.md"
+        missing.parent.mkdir()
+        self.claim("Alpha", self.repo("worked-in"))
+        result = self.run_cli("--once", "--recent-repo-fallback", "--file", str(missing))
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("READ ERROR", result.stdout)
+
+    def test_nothing_claimed_still_reports_the_missing_ledger(self) -> None:
+        result = self.run_cli("--once", "--recent-repo-fallback")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("READ ERROR", result.stdout)

@@ -905,6 +905,40 @@ def held_sessions_for_ledger(ledger: Path,
             for claim in recent_claims_for_ledger(ledger, directory, max_age)}
 
 
+# Long enough to answer "which repository was I just working in" across a break,
+# where the 15 minutes that decide whether a session is *live* would say nothing.
+LAST_LEDGER_SECONDS = 24 * 60 * 60
+
+
+def latest_claimed_ledger(directory: Path | None = None,
+                          max_age: float = LAST_LEDGER_SECONDS) -> Path | None:
+    """The most recently claimed ledger on this machine that still exists.
+
+    A viewer opened by a terminal key binding gets whatever working directory
+    the emulator hands it, which on a host without iTerm2 Shell Integration is
+    the home directory rather than the repository the key was pressed in. The
+    name cache is the only record of where handoff sessions actually work, so
+    the newest claim naming a ledger still on disk is the best available answer.
+
+    Records naming a ledger that no longer exists are skipped rather than
+    reported: a claim outlives its repository, and test fixtures in temporary
+    directories leave exactly such records behind.
+    """
+    for claim in recent_claims(directory, max_age):
+        if not claim.ledger:
+            continue
+        candidate = Path(claim.ledger)
+        try:
+            if candidate.is_file():
+                # Records written by claim_name already hold a resolved path;
+                # resolving here keeps one written any other way consistent
+                # with the ledger path an explicit --file produces.
+                return candidate.resolve()
+        except OSError:
+            continue
+    return None
+
+
 def free_name(order: list[str], reserved: set[str]) -> str:
     """The first unused name, then numbered repeats once the roster runs out."""
     for name in order:
