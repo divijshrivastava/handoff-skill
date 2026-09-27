@@ -56,6 +56,31 @@ def viewer_command(root: Path | None = None, *, read_only: bool = False) -> str:
     return " ".join(shlex.quote(part) for part in parts)
 
 
+def binding_command(*, read_only: bool = False) -> str:
+    """The viewer command an installed key binding runs, with no repository in it.
+
+    A key binding outlives the directory it was installed from. Baking
+    ``--root`` into the emulator's configuration froze the viewer to that one
+    repository: pressing the key in any other checkout opened the first
+    repository's ledger, so its agents and its tasks were what the user saw, and
+    the agents view's repo scope was honestly reporting a repository they were
+    not in. The binding therefore names no repository at all, and each emulator
+    is asked to launch in the active window's directory instead; ``--root``
+    defaults to ``.``, so the repository is resolved when the key is pressed.
+
+    The launcher on PATH is preferred over this file so an opened viewer follows
+    skill upgrades, and the interpreter is explicit because a GUI emulator does
+    not always have the launcher's shebang interpreter on its PATH.
+    """
+    launcher = shutil.which("handoff-tui")
+    if launcher is None:
+        return viewer_command(None, read_only=read_only)
+    parts = [sys.executable, launcher]
+    if read_only:
+        parts.append("--read-only")
+    return " ".join(shlex.quote(part) for part in parts)
+
+
 def opener_seed() -> str | None:
     """The host identifier of the session asking for a viewer, if it has one.
 
@@ -249,7 +274,10 @@ def kitty_snippet(key: str, command: str) -> str:
     if mods is None:
         raise ValueError(f"Cannot express {key_label(key)} as a kitty binding.")
     mod, letter = mods
-    return (f"map {mod}+{letter} launch --type=overlay --hold "
+    # --cwd=current launches in the active window's directory rather than the
+    # one kitty itself started in, which is what lets a rootless command find
+    # the repository the user is actually looking at.
+    return (f"map {mod}+{letter} launch --type=overlay --hold --cwd=current "
             f"sh -c {shlex.quote(command)}")
 
 
@@ -260,6 +288,8 @@ def wezterm_snippet(key: str, command: str) -> str:
     mod, letter = mods
     parts = shlex.split(command)
     args = ", ".join(repr(part) for part in parts)
+    # SpawnCommand leaves cwd unset on purpose: wezterm then infers it from the
+    # active pane, so the window opens on the repository the key was pressed in.
     return (f"{{ key = '{letter}', mods = '{mod}', "
             f"action = wezterm.action.SpawnCommandInNewWindow {{ args = {{ {args} }} }} }},")
 
@@ -279,12 +309,66 @@ def iterm2_snippet(key: str, profile_guid: str) -> str:
     }, indent=2)
 
 
+VIEWER_PROFILE_NAME = "Handoff viewer"
+VIEWER_PROFILE_PREFIX = "handoff-viewer-"
+
+
+def viewer_profile_guid() -> str:
+    """The one dynamic-profile id the viewer key uses, for every repository.
+
+    Earlier releases derived this from the install directory, so each checkout
+    got its own profile and the global key map kept pointing at whichever one
+    was installed first; a second install then hit the "already binds another
+    action" refusal and could not take the key back. One repository-independent
+    profile removes both failures: re-installing rewrites the same id.
+    """
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, "handoff-tui:viewer"))
+
+
+def _iterm2_profile_dir() -> Path:
+    return Path.home() / "Library/Application Support/iTerm2/DynamicProfiles"
+
+
+def stale_viewer_profiles(profiles: Path, keep: str) -> dict[Path, str]:
+    """Per-directory viewer profiles from earlier installs, by file and guid.
+
+    Only files this skill wrote are considered, and only ones whose guid is not
+    the profile being installed, so an unrelated dynamic profile is never read
+    as ours and never removed.
+    """
+    found: dict[Path, str] = {}
+    try:
+        entries = sorted(profiles.glob(VIEWER_PROFILE_PREFIX + "*.json"))
+    except OSError:
+        return found
+    for entry in entries:
+        try:
+            document = json.loads(entry.read_text(encoding="utf-8"))
+            listed = document["Profiles"]
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+        if not isinstance(listed, list):
+            continue
+        for profile in listed:
+            guid = profile.get("Guid") if isinstance(profile, dict) else None
+            if isinstance(guid, str) and guid != keep:
+                found[entry] = guid
+    return found
+
+
 def install_iterm2_binding(key: str, root: Path | None = None) -> str:
-    """Install a dynamic viewer profile and merge one global shortcut on macOS."""
+    """Install a dynamic viewer profile and merge one global shortcut on macOS.
+
+    ``root`` no longer reaches the profile. The key opens the viewer for the
+    directory the window it was pressed in is sitting in, so one binding serves
+    every repository on the machine.
+    """
     if platform.system() != "Darwin":
         return "iTerm2 key installation requires macOS."
-    directory = (root or Path.cwd()).resolve()
-    guid = str(uuid.uuid5(uuid.NAMESPACE_URL, "handoff-tui:" + str(directory)))
+    guid = viewer_profile_guid()
+    profiles = _iterm2_profile_dir()
+    superseded = stale_viewer_profiles(profiles, guid)
+    ours = set(superseded.values()) | {guid}
     try:
         snippet = iterm2_snippet(key, guid)
     except ValueError as error:
@@ -312,7 +396,12 @@ def install_iterm2_binding(key: str, root: Path | None = None) -> str:
                             "Choose another HANDOFF_VIEWER_KEY or remove that mapping.")
         for bound, action in global_map.items():
             if bound == serialized or bound.startswith(serialized + "-"):
-                if action != mapping[serialized]:
+                # A mapping onto one of this skill's own viewer profiles is a
+                # previous install, not a user's shortcut. Refusing it is what
+                # left the key pinned to the first repository it was installed
+                # from, with no way to move it, so it is replaced instead.
+                if (action != mapping[serialized]
+                        and not (isinstance(action, dict) and action.get("Text") in ours)):
                     return (f"iTerm2 already binds {key_label(key)} to another action; "
                             "choose another HANDOFF_VIEWER_KEY or remove that mapping.")
     except (OSError, ValueError, plistlib.InvalidFileException,
@@ -320,18 +409,16 @@ def install_iterm2_binding(key: str, root: Path | None = None) -> str:
         return f"Leaving iTerm2 preferences alone; could not read them ({error})."
 
     config = Path.home() / ".config/handoff"
-    profiles = Path.home() / "Library/Application Support/iTerm2/DynamicProfiles"
-    target = profiles / f"handoff-viewer-{guid}.json"
-    # Explicit Python avoids relying on the GUI application's PATH for the
-    # launcher's /usr/bin/env shebang. The launcher still resolves skill upgrades.
-    launcher = shutil.which("handoff-tui")
-    command = (" ".join(shlex.quote(part) for part in
-                       [sys.executable, launcher, "--root", str(directory)])
-               if launcher else viewer_command(directory))
+    target = profiles / f"{VIEWER_PROFILE_PREFIX}{guid}.json"
+    command = binding_command()
     profile = {"Profiles": [{
-        "Name": "Handoff — " + directory.name, "Guid": guid,
+        "Name": VIEWER_PROFILE_NAME, "Guid": guid,
         "Custom Command": "Yes", "Command": command,
-        "Custom Directory": "Yes", "Working Directory": str(directory),
+        # "Recycle" is iTerm2's "Reuse previous session's directory": the window
+        # opens where the session that had focus was, which is how a rootless
+        # command reaches the repository the key was pressed in. A fixed
+        # Working Directory here is exactly what froze the key to one checkout.
+        "Custom Directory": "Recycle",
         "Close Sessions On End": True,
     }]}
     if target.exists():
@@ -353,6 +440,13 @@ def install_iterm2_binding(key: str, root: Path | None = None) -> str:
         preset.write_text(snippet + "\n", encoding="utf-8")
     except OSError as error:
         return f"Could not prepare the iTerm2 viewer files ({error}); key not installed."
+    # Leaving a per-directory profile from an earlier install in place would
+    # keep offering a viewer frozen to that checkout in iTerm2's profile list.
+    for path in superseded:
+        try:
+            path.unlink()
+        except OSError:
+            pass
     # -dict-add merges only these entries. If no custom map exists, retain the
     # shipped defaults that creating a GlobalKeyMap would otherwise hide.
     additions = {}
@@ -364,10 +458,12 @@ def install_iterm2_binding(key: str, root: Path | None = None) -> str:
             return f"Could not load iTerm2's default shortcuts ({error}); key not installed."
     additions.update(mapping)
     # Changing the shortcut must release the previous key (for example Ctrl+V
-    # for image paste). Only retire mappings to this repository's exact viewer
-    # action; another repository's profile and unrelated user shortcuts survive.
+    # for image paste), and so must a key still pointing at a per-directory
+    # profile this install just replaced. Unrelated user shortcuts survive.
     retired = [bound for bound, action in global_map.items()
-               if bound != serialized and action == mapping[serialized]]
+               if bound != serialized
+               and (action == mapping[serialized]
+                    or (isinstance(action, dict) and action.get("Text") in ours))]
     operation = "-dict-add"
     if retired:
         additions = {bound: action for bound, action in global_map.items()
@@ -382,8 +478,11 @@ def install_iterm2_binding(key: str, root: Path | None = None) -> str:
     except (OSError, subprocess.CalledProcessError) as error:
         return (f"Viewer profile prepared, but the shortcut could not be installed ({error}). "
                 f"Import {preset} in iTerm2 Settings → Keys → Key Mappings.")
-    return (f"Installed {key_label(key)} → Handoff in iTerm2 for {directory}. "
-            "The key opens a separate viewer window; q closes it. "
+    replaced = (" Replaced a viewer profile that was pinned to one repository."
+                if superseded else "")
+    return (f"Installed {key_label(key)} → Handoff in iTerm2. "
+            "The key opens a viewer for whichever repository the window it is "
+            f"pressed in is in; q closes it.{replaced} "
             "If an existing window keeps the old binding, restart iTerm2 when convenient. "
             f"Previous preferences: {backup}.")
 
@@ -585,7 +684,10 @@ def install_terminal_binding(emulator: str, key: str | None, root: Path | None =
     """Write a terminal binding that runs the viewer, or refuse honestly."""
     if key is None:
         return "No viewer key is bound, so no terminal override is needed."
-    command = viewer_command(root)
+    # `root` locates the files a binding is written into (Cursor's workspace
+    # tasks.json); it deliberately does not reach the command a key runs, which
+    # must resolve the repository when it is pressed rather than when installed.
+    command = binding_command()
     if emulator == "claude":
         return install_claude_release(key)
     if emulator == "iterm2":

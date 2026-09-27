@@ -143,6 +143,15 @@ shortcut using “New Window with Profile.” It merges the key into `GlobalKeyM
 backs up previous preferences, and also writes an importable `.itermkeymap`.
 It never sends a command into the running agent. Existing conflicting global
 or profile bindings are reported without overwriting them.
+
+No installed binding names a repository. The key opens the viewer for whichever
+repository the window it was pressed in is sitting in: kitty launches with
+`--cwd=current`, wezterm infers an unset `cwd` from the active pane, and the
+iTerm2 profile reuses the previous session's directory. An earlier release
+wrote the install directory into the binding, which pinned the key to that one
+checkout - pressing it in another repository opened the first one's ledger, so
+its agents and tasks were what the viewer showed. Installing again replaces such
+a binding.
 Pass `--emulator` to choose explicitly. It merges rather
 than replaces where possible, running twice reports that the key is already
 released or installed, and a file that does not parse is left untouched rather
@@ -154,14 +163,15 @@ Use **Ctrl+Alt+H** (**Control+Option+H** on macOS) in iTerm2, even in a plain
 Codex session. This leaves **Ctrl+V** available for pasting images into Codex:
 
 ```sh
-HANDOFF_VIEWER_KEY=C-M-h handoff-tui --install-viewer-key --emulator iterm2 --root /path/to/repo
+HANDOFF_VIEWER_KEY=C-M-h handoff-tui --install-viewer-key --emulator iterm2
 ```
 
-Changing the key removes previous shortcuts to the same repository's Handoff
-profile, including an earlier Ctrl+V binding. Other shortcuts and other
-repositories' viewer bindings are preserved. The
+Changing the key removes previous shortcuts to the Handoff profile, including an
+earlier Ctrl+V binding, and retires a per-repository profile left by an earlier
+release. Shortcuts belonging to anything else are preserved and still reported
+as conflicts rather than replaced. One
 [iTerm2 shortcut](https://iterm2.com/documentation-preferences-profiles-keys.html)
-is pinned to that repository. It opens a separate window;
+now serves every repository on the machine. It opens a separate window;
 `q` closes the viewer. If an existing window retains the previous binding,
 restart iTerm2 when convenient. This does not change `VISUAL` or `EDITOR`.
 **Cursor** (and any VS Code based editor with Cursor's configuration layout)
