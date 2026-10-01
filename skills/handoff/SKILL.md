@@ -1,6 +1,6 @@
 ---
 name: handoff
-description: "Coordinate progressive repository work across agents with a shared HANDOFF.md ledger. Use in repositories with a ledger, or on explicit handoff requests: /handoff:init, 'initialise the handoff', /handoff:continue, /handoff:status, /handoff:view, /handoff:queue, /handoff:purge, or 'use handoff'. After activation: handoff_guard.py name --root <repo> claims the session name; handoff_guard.py read --root <repo> returns ledger text and version in one snapshot. Audit later entries and code before treating unchecked boxes as unfinished. For ledger writes: handoff_guard.py apply --root <repo> --expect-version V with --entry FILE or --content FILE. On exit 3, re-read and re-audit; never retry the stale write. A user viewer assignment is required queued work: finish your current task, then audit and complete it without another prompt. Track investigations before research, even without code edits; a name claim is not a task."
+description: "Coordinate work recorded in HANDOFF.md. Use when a ledger exists or handoff is requested. Run handoff_guard.py name --root <repo>, then handoff_guard.py read --root <repo>; audit later evidence. Write via handoff_guard.py apply --root <repo> --expect-version V. Record tasks before research; complete viewer assignments."
 license: MIT
 metadata:
   version: "1.27.1"
