@@ -229,6 +229,50 @@ it chose; it says nothing about why that session went quiet, whether its model
 is exhausted, or whether its child writers stopped. Treat a swept entry the way
 you would any released work: preserve uncommitted changes, then audit it.
 
+## Writing when another agent may write too
+
+Editing the ledger directly is correct for sequential handoffs and for separate
+worktrees, where git surfaces any collision. When another agent may write the
+same working tree during this session, route ledger writes through the guard so
+a concurrent write cannot silently drop an entry:
+
+```bash
+python3 "$SKILL_DIR/scripts/handoff_guard.py" apply --root /absolute/repo/path \
+  --expect-version <version from the read> \
+  --entry /path/to/new-entry.md
+```
+
+Use `--entry` to insert one new task entry at the newest position, or
+`--content` to replace the whole ledger after editing existing entries; either
+accepts `-` for stdin. `apply` holds an exclusive lock across the re-read,
+version check, and replacement, so two writers cannot both pass the check
+against the same revision; the payload is read before the lock is taken, so
+blocking input cannot stall peers. The replacement is atomic and preserves the
+ledger's file mode, so no reader observes a partial ledger and collaborator
+access is not revoked.
+
+Editing `HANDOFF.md` directly is still a plain read-modify-write with no such
+protection. Under concurrency, route every write through `apply`; the guarantee
+belongs to the command, not to the file.
+
+`purge` is the other writing subcommand. It empties the ledger through the
+same compare-and-swap, archives the replaced bytes, and leaves `HANDOFF.md`
+in place as an empty valid ledger so the repository stays one that tracks
+work this way. It does not delete the file, create a parallel ledger, or
+start a task. `/handoff:purge` (or "purge the handoff") is the
+authorization; do not empty or delete the ledger any other way.
+
+Exit `3` means another writer changed the ledger first. The read that informed
+this edit is stale, so the audit behind it is stale too: re-read the ledger,
+redo the `SKILL.md` Step 2 progressive audit against the new entries, and apply again with
+the current version. Never retry with the old version or reconstruct the
+intended file from memory.
+
+Exit `4` means the write would introduce structural errors and nothing was
+written. Fix the entry rather than checking boxes the evidence does not support.
+`--allow-structure-errors` exists for repairing a ledger that is already
+malformed, not for pushing past a failed check.
+
 ## Formatting invariants
 
 - Keep `In progress` and `Completed` as separate task-level boxes.

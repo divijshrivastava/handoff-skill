@@ -19,6 +19,7 @@ RUNTIME_FILES = (
     "references/harness-setup.md",
     "references/progress-viewer.md",
     "references/leader.md",
+    "references/ownership.md",
     "references/vps-publish.md",
     "scripts/handoff-bar",
     "scripts/handoff-tui",

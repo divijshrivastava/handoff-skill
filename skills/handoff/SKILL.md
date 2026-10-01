@@ -3,7 +3,7 @@ name: handoff
 description: "Coordinate progressive repository work across agents with a shared HANDOFF.md ledger. Use in repositories with a ledger, or on explicit handoff requests: /handoff:init, 'initialise the handoff', /handoff:continue, /handoff:status, /handoff:view, /handoff:queue, /handoff:purge, or 'use handoff'. After activation: handoff_guard.py name --root <repo> claims the session name; handoff_guard.py read --root <repo> returns ledger text and version in one snapshot. Audit later entries and code before treating unchecked boxes as unfinished. For ledger writes: handoff_guard.py apply --root <repo> --expect-version V with --entry FILE or --content FILE. On exit 3, re-read and re-audit; never retry the stale write. A user viewer assignment is required queued work: finish your current task, then audit and complete it without another prompt. Track investigations before research, even without code edits; a name claim is not a task."
 license: MIT
 metadata:
-  version: "1.27.0"
+  version: "1.27.1"
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
 ---
 
@@ -107,22 +107,16 @@ requires new investigation, or the user asks for a change - record it first.
    python3 "$SKILL_DIR/scripts/handoff_guard.py" preflight --root /absolute/repo/path
    ```
 
-   `--root` accepts any path inside the repository; it resolves the repository
-   root for you, so this does not wait on resolving it yourself.
+   `--root` accepts any path inside the repository.
 
    It returns:
 
-   - `session.name`: the name you own every entry you write under. It is one of
-     a hundred mythological figures, never a name an owner in this ledger
-     already holds, and the same name every time this session asks. Use it
-     verbatim; do not invent a name, reuse another session's, or rename yourself
-     mid-task, because the label is how a later agent tells your work from a
-     peer's. Record the tool you run in alongside it, with `template
-     --harness auto` or a `(harness: ...)` field, so a reader can tell a Codex
-     session from a Claude Code one; `HANDOFF_HARNESS` names a tool the helper
-     cannot detect. If the Handoff SessionStart hook already supplied your
-     claimed name and channel session ID, keep those: the hook performed this
-     claim for you.
+   - `session.name`: the name you own every entry under. Use it verbatim; never
+     invent one, borrow a peer's, or rename yourself mid-task, because the
+     label is how a later agent tells your work from a peer's. Record your
+     harness beside it (`template --harness auto`; `HANDOFF_HARNESS` names a
+     tool the helper cannot detect). A name and channel session ID supplied by
+     the SessionStart hook are this claim already; keep them.
    - `version`: the ledger revision this snapshot describes. Pass it to `apply`.
    - `digest.open_tasks`: every unfinished or malformed entry, with its steps.
      This is the work; audit all of it.
@@ -279,33 +273,12 @@ active owner's task.
 
 A user assigning a task to you through `handoff-tui` (`x`/`p` or `P`) is an
 explicit instruction to finish it after your current task. It supplies both
-authorization and ordering; do not ask the pickup question above, wait for
-another prompt, or merely report the assignment as pending and stop. This
-obligation applies to every receiving agent, including the current session.
-
-Check your assigned bucket during preflight, at real work checkpoints, after
-finishing each task, and before stopping or reporting yourself waiting. Finish
-and verify your current task first; keep assignments queued while doing so.
-If idle, begin the assigned work immediately after its progressive audit.
-Unless the user gives another order, process your eligible assignments oldest
-first, ahead of optional or unassigned work.
-
-For each assignment, audit later entries, code, prior work, and active writers.
-The current heading and dated user reassignment override older "unclaimed" or
-"waiting for pickup" prose. Preserve attribution and uncommitted work, record
-your harness and takeover in the existing entry through `read`/`apply`, then
-implement the effective remainder through verification and the required
-handoff/commit. Do not duplicate entries, redo completed or superseded work,
-or reclaim tasks assigned away from you. User assignment authorizes ownership;
-it does not authorize overwriting a peer who is still writing the same files.
-
-If a concrete blocker prevents completion, record its evidence, next action,
-and required input or external change; continue other eligible assignments.
-Missing a second user prompt is never a blocker. Re-read and audit the queue
-after each completion until it is empty or every remainder is concretely
-blocked. A later user stop, cancellation, or explicit ordering takes precedence.
-The viewer persists the request; it cannot wake a stopped model. An agent that
-resumes must discover and act on its assignments at its next preflight.
+authorization and ordering: do not ask the pickup question, wait for another
+prompt, or report it as pending and stop. Check your assigned bucket at
+preflight, at checkpoints, and before stopping; finish and verify your current
+task, then work eligible assignments oldest first. Missing a second user prompt
+is never a blocker. Before acting on one, read `references/ownership.md` for
+the audit, attribution, and blocker rules.
 
 ### Optional leadership
 
@@ -329,72 +302,18 @@ own acceptance, which also records a lease. Treat an assignment as an execution
 request, exactly as a viewer assignment: finish and verify your current task,
 audit the assigned entry, then accept it or decline with a reason.
 
-### Communication and unavailable agents
+### Unavailable agents and authorized takeover
 
-When coordinating with a peer or investigating a stalled owner, read
-`references/agent-channel.md`. It documents the local inbox, reported capability,
-and failure hooks in `scripts/handoff_channel.py`. Register your claimed name
-once unless a hook already supplied a channel session ID; check messages before
-shared edits and at task boundaries. The Claude plugin reports host failures
-without needing another model turn. Other harnesses use the CLI unless an adapter
-has actually been configured.
-
-A process can remain open after token exhaustion. An explicit host error or user
-report of exhaustion is evidence of unavailable capability; an open PID is not
-contrary evidence. An unanswered ping or expired working report means unknown,
-not permission to take over. A failure hook does not prove child writers stopped.
-Preserve work and follow existing ownership authority before adopting it.
-
-An agent that can still act may save its state, stop its writers, and use channel
-`yield` to release its whole unfinished bucket through `swap_ledger`. Those
-entries become unassigned with dated attribution, so another agent may audit and
-claim them through guard `read`/`apply`. Check ownership again on returning;
-released work must not be silently reclaimed. Messages and acknowledgements do
-not establish task completion.
-
-No signal for an exhausted model exists on every harness, so nothing here is
-decided by detection. Declare your own contingent release instead: guard `lease`
-records a renewal deadline on your unfinished bucket, and any peer can `sweep`
-what expired, because expiry is arithmetic every harness computes alike. Renew
-it at real checkpoints and clear it when you finish. Channel `nudge` asks a
-silent peer to answer and is only a message: it decides nothing, changes no
-state, and cannot be broadcast or repeated inside its interval. Channel
-`challenge` and `attest` bind a proof of capability to a fresh nonce; read that
-proof in one direction only, as reason not to take a peer's work. Silence
-remains unknown.
-
-### Authorized takeover of another agent's bucket
-
-A takeover begins only when the user explicitly directs it and names the prior
-owner ("take over Codex's tasks"). That direction supplies the authority the
-rules above otherwise withhold; without it, this protocol does not apply.
-
-Taking over:
-
-1. Confirm the prior owner has stopped writing: either its process has exited,
-   or an explicit host/user report establishes it cannot continue and its child
-   writers have stopped. Watch its files and the ledger for concurrent changes.
-   A resident CLI alone does not veto a takeover of an exhausted agent. If it is
-   still writing, or the evidence is only silence, report that conflict.
-2. Preserve its uncommitted work before any edit: copy the changed and
-   untracked files to a recovery point outside the tree, so nothing it did can
-   be lost by your edits or its own return.
-3. Move the whole bucket, not a cherry-picked task: transfer every entry the
-   prior owner still owns that is not recorded complete. For each, rewrite the
-   `(owner: ...)` label to your name and append a dated status sentence naming
-   the prior owner, the user's direction, and the recovery point. Move the
-   bucket in one locked `apply --content` write so no reader ever sees it
-   half-moved; the viewer's `x`/`p` move and the helper's `reassign_task`
-   cover the single-task case.
-4. Audit each adopted entry under Step 2 before resuming it: a transferred
-   entry arrives assigned, not explained. The prior owner's preserved work is
-   now yours to review and build on, never to silently discard.
-
-Coming back: when your preflight or audit finds entries you owned now carrying
-another owner and a transfer note naming your session, the bucket has moved.
-Do not resume, re-edit, or take those entries back. Report the move and start
-only genuinely new work as a new task; if the transfer looks wrong, say so and
-let the user decide.
+Before coordinating with a peer, investigating a stalled owner, releasing or
+leasing your own bucket, or taking over another agent's work, read
+`references/ownership.md`; `references/agent-channel.md` documents the channel
+commands it uses. The binding rules: silence, an unanswered ping, an expired
+working report, or an open PID decides nothing; nobody's work moves by
+detection, only by the owner's own `yield`, an expired `lease` that a peer
+`sweep`s, or the user's explicit direction naming the prior owner. A takeover
+then needs stopped writers, preserved uncommitted work, and one locked write
+moving the whole bucket. When your own entries now carry another owner and a
+transfer note naming you, report the move and do not take them back.
 
 ## Step 4: Keep state recoverable while working
 
@@ -427,10 +346,8 @@ work stays pending.
 
 ### Writing when another agent may write too
 
-Editing the ledger directly is correct for sequential handoffs and for separate
-worktrees, where git surfaces any collision. When another agent may write the
-same working tree during this session, route ledger writes through the guard so
-a concurrent write cannot silently drop an entry:
+Direct edits suit sequential handoffs and separate worktrees. When another agent
+may write the same working tree, route every ledger write through the guard:
 
 ```bash
 python3 "$SKILL_DIR/scripts/handoff_guard.py" apply --root /absolute/repo/path \
@@ -438,36 +355,15 @@ python3 "$SKILL_DIR/scripts/handoff_guard.py" apply --root /absolute/repo/path \
   --entry /path/to/new-entry.md
 ```
 
-Use `--entry` to insert one new task entry at the newest position, or
-`--content` to replace the whole ledger after editing existing entries; either
-accepts `-` for stdin. `apply` holds an exclusive lock across the re-read,
-version check, and replacement, so two writers cannot both pass the check
-against the same revision; the payload is read before the lock is taken, so
-blocking input cannot stall peers. The replacement is atomic and preserves the
-ledger's file mode, so no reader observes a partial ledger and collaborator
-access is not revoked.
-
-Editing `HANDOFF.md` directly is still a plain read-modify-write with no such
-protection. Under concurrency, route every write through `apply`; the guarantee
-belongs to the command, not to the file.
-
-`purge` is the other writing subcommand. It empties the ledger through the
-same compare-and-swap, archives the replaced bytes, and leaves `HANDOFF.md`
-in place as an empty valid ledger so the repository stays one that tracks
-work this way. It does not delete the file, create a parallel ledger, or
-start a task. `/handoff:purge` (or "purge the handoff") is the
-authorization; do not empty or delete the ledger any other way.
-
-Exit `3` means another writer changed the ledger first. The read that informed
-this edit is stale, so the audit behind it is stale too: re-read the ledger,
-redo the Step 2 progressive audit against the new entries, and apply again with
-the current version. Never retry with the old version or reconstruct the
-intended file from memory.
-
-Exit `4` means the write would introduce structural errors and nothing was
-written. Fix the entry rather than checking boxes the evidence does not support.
-`--allow-structure-errors` exists for repairing a ledger that is already
-malformed, not for pushing past a failed check.
+`--entry` inserts one new entry at the newest position; `--content` replaces
+the whole ledger after editing existing entries. Exit `3` means another writer
+changed the ledger first, so the audit behind this edit is stale: re-read,
+redo the Step 2 audit, and apply with the current version, never retrying the
+old one or rebuilding the file from memory. Exit `4` means the write would add
+structural errors and nothing was written; fix the entry, not the evidence.
+Empty the ledger only with `purge`, and only on `/handoff:purge` or "purge the
+handoff". `references/ledger-contract.md` explains the lock, purge, and
+`--allow-structure-errors`.
 
 ## Step 5: Commit and stop safely
 
@@ -489,52 +385,20 @@ repository alone, without this conversation.
 
 ## Optional live progress viewer
 
-In task details, users can select a step with Up/Down or `j`/`k`, cut it with
-`x`, and paste it to another agent with `p`. The moved step becomes an assigned
-task with source context; its original entry retains the other steps and a
-transfer record. Audit and execute it under the same assignment rules as a
-whole task. `X` in details still moves the whole task. See
-`references/progress-viewer.md` for the history and completion rules.
+Users watch recorded progress with
+`python3 "$SKILL_DIR/scripts/handoff_tui.py" --root /absolute/repo/path`, or the
+`scripts/handoff-tui` launcher copied onto PATH; `/handoff:view` opens it where
+the harness has no terminal for curses. Its counts reflect checkboxes and
+heading owners, not live activity, and never replace the progressive audit. A
+user moving a task or a single step to you there (`x`/`p`, `X`) is a viewer
+assignment under Step 3. Read `references/progress-viewer.md` for controls and
+counting rules, and `references/harness-setup.md` for status lines,
+`--with <agent>`, and the viewer key.
 
-Users can run `python3 "$SKILL_DIR/scripts/handoff_tui.py" --root /absolute/repo/path`
-in a separate terminal to watch recorded task and per-owner progress. It
-refreshes as the ledger changes. Counts reflect checkboxes and heading owners;
-they do not replace the progressive audit or establish live activity or per-step
-authorship. The live view also lets the user hand one task to another agent
-(`x` to cut, `p` to give), which rewrites that heading's owner label and
-appends a dated note to its status through the same compare-and-swap as `apply`;
-`--read-only` disables it. The move is a user execution request: finish your
-current task, then audit and complete the assignment under Step 3 without
-another prompt. Because that install path is version-pinned,
-`scripts/handoff-tui` is a launcher users can copy onto PATH once; it resolves
-the viewer at run time and takes the same arguments. See
-`references/progress-viewer.md` for controls, snapshot mode, and counting rules,
-and `references/harness-setup.md` for wiring `scripts/handoff-bar` into a host
-status line, including which harnesses expose one.
-
-`--with <agent>` runs any agent CLI under a live bottom bar whose `Ctrl-G` opens
-that viewer in a popup; `--codex` is `--with codex`. When the user asks for the
-viewer key, or reports that `Ctrl-G` does something else in their harness, run:
-
-```bash
-python3 "$SKILL_DIR/scripts/handoff_tui.py" --install-viewer-key
-```
-
-It writes a binding that actually fires where the terminal emulator allows one,
-and releases the key in Claude Code's own keybindings where it cannot.
-Plain Codex also uses `Ctrl-G` for its external editor; installing the skill
-alone does not intercept it. Respect a user-requested shortcut through
-`HANDOFF_VIEWER_KEY`; suggest `C-M-h` (Ctrl+Alt+H) for iTerm2 so Ctrl+V stays
-available for Codex image paste. The iTerm2 installer creates a dynamic
-viewer profile and merges a global “New Window with Profile” binding for the
-selected root; it reports conflicts instead of replacing existing shortcuts and
-removes previous keys pointing to that same viewer when changing the key.
-`--emulator cursor` covers Cursor's integrated terminal, where the key runs a
-workspace task rather than typing into the agent. Use
-`/handoff:view` when the harness has no controlling terminal for curses. It
-merges into existing config rather than replacing it, is idempotent, and refuses
-to rewrite files that do not parse. Do not edit a user's keybindings any other
-way, and do not run it unasked.
+Run `handoff_tui.py --install-viewer-key` only when the user asks for the
+viewer key or reports `Ctrl-G` doing something else in their harness. Respect a
+shortcut they chose through `HANDOFF_VIEWER_KEY`, and never edit a user's
+keybindings any other way.
 
 ## Pulling an assignment the session was never sent
 
