@@ -48,12 +48,79 @@ class HandoffKeysTests(unittest.TestCase):
     def test_kitty_install_writes_a_firing_binding(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config = Path(directory) / "kitty.conf"
-            with patch.object(keys, "_config_candidates", return_value=[config]):
+            with patch.object(keys, "_config_candidates", return_value=[config]), \
+                    patch.object(keys.shutil, "which", return_value=None):
                 message = keys.install_terminal_binding("kitty", "C-g", Path("/tmp/repo"))
             self.assertIn(str(config), message)
             text = config.read_text(encoding="utf-8")
             self.assertIn("map ctrl+g launch", text)
             self.assertIn("handoff_tui.py", text)
+
+    def test_kitty_binding_opens_the_repository_the_key_is_pressed_in(self) -> None:
+        """A key installed from one checkout must not open that one everywhere.
+
+        The binding names no repository and asks kitty for the active window's
+        directory, so the viewer resolves the repository when the key fires.
+        """
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "kitty.conf"
+            with patch.object(keys, "_config_candidates", return_value=[config]), \
+                    patch.object(keys.shutil, "which", return_value=None):
+                keys.install_terminal_binding("kitty", "C-g", Path("/tmp/repo"))
+            text = config.read_text(encoding="utf-8")
+            self.assertIn("--cwd=current", text)
+            self.assertNotIn("--root", text)
+            self.assertNotIn("/tmp/repo", text)
+
+    def test_binding_command_never_names_a_repository(self) -> None:
+        """Whatever the launcher, an installed binding carries no --root.
+
+        It does carry --recent-repo-fallback: an emulator that cannot report
+        the active window's directory hands the viewer the home directory, and
+        the last claimed ledger beats a repository the user never asked for.
+        """
+        with patch.object(keys.shutil, "which", return_value="/tmp/bin/handoff-tui"):
+            self.assertEqual(keys.shlex.split(keys.binding_command()),
+                             [sys.executable, "/tmp/bin/handoff-tui",
+                              "--recent-repo-fallback"])
+            self.assertEqual(keys.shlex.split(keys.binding_command(read_only=True)),
+                             [sys.executable, "/tmp/bin/handoff-tui", "--read-only",
+                              "--recent-repo-fallback"])
+        with patch.object(keys.shutil, "which", return_value=None):
+            fallback = keys.shlex.split(keys.binding_command())
+            self.assertTrue(fallback[1].endswith("handoff_tui.py"))
+            self.assertNotIn("--root", fallback)
+            self.assertIn("--recent-repo-fallback", fallback)
+
+    def test_stale_viewer_profiles_ignores_files_this_skill_did_not_write(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            profiles = Path(directory)
+            (profiles / "handoff-viewer-a.json").write_text(
+                json.dumps({"Profiles": [{"Guid": "a"}]}), encoding="utf-8")
+            (profiles / "handoff-viewer-keep.json").write_text(
+                json.dumps({"Profiles": [{"Guid": "keep"}]}), encoding="utf-8")
+            (profiles / "someone-elses.json").write_text(
+                json.dumps({"Profiles": [{"Guid": "other"}]}), encoding="utf-8")
+            (profiles / "handoff-viewer-broken.json").write_text("{not json", encoding="utf-8")
+            found = keys.stale_viewer_profiles(profiles, "keep")
+            self.assertEqual(found, {profiles / "handoff-viewer-a.json": "a"})
+
+    def test_stale_viewer_profiles_tolerates_a_missing_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertEqual(keys.stale_viewer_profiles(Path(directory) / "gone", "keep"), {})
+
+    def test_wezterm_binding_carries_no_repository(self) -> None:
+        """wezterm infers an unset cwd from the active pane, so --root must go."""
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "wezterm.lua"
+            with patch.object(keys, "_config_candidates", return_value=[config]), \
+                    patch.object(keys.shutil, "which", return_value=None):
+                keys.install_terminal_binding("wezterm", "C-g", Path("/tmp/repo"))
+            text = config.read_text(encoding="utf-8")
+            self.assertIn("SpawnCommandInNewWindow", text)
+            self.assertNotIn("--root", text)
+            self.assertNotIn("/tmp/repo", text)
+            self.assertNotIn("cwd", text)
 
     def test_wezterm_install_is_idempotent(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -104,11 +171,80 @@ class HandoffKeysTests(unittest.TestCase):
             self.assertEqual(action, {"Action": 26, "Text": profile["Guid"]})
             self.assertEqual(profile["Custom Command"], "Yes")
             self.assertEqual(keys.shlex.split(profile["Command"]), [
-                sys.executable, "/tmp/bin with space/handoff-tui", "--root",
-                str((Path(directory) / "repo space").resolve()),
+                sys.executable, "/tmp/bin with space/handoff-tui",
+                "--recent-repo-fallback",
             ])
             backup = Path(directory) / ".config/handoff/iterm2-before-viewer-key.plist"
             self.assertEqual(plistlib.loads(backup.read_bytes()), settings)
+
+    def test_iterm2_profile_is_not_pinned_to_the_install_directory(self) -> None:
+        """The reported bug: the key opened the install repository everywhere.
+
+        The profile froze `--root` and a Working Directory, so pressing the key
+        in another checkout showed the first repository's ledger and agents.
+        """
+        with tempfile.TemporaryDirectory() as directory:
+            message, _run = self.iterm_install(directory, {"GlobalKeyMap": {}})
+            profile_path = next((Path(directory) / "Library/Application Support/iTerm2/DynamicProfiles").glob("*.json"))
+            profile = json.loads(profile_path.read_text())["Profiles"][0]
+            self.assertNotIn("--root", profile["Command"])
+            self.assertNotIn("repo space", profile["Command"])
+            self.assertNotIn("Working Directory", profile)
+            # iTerm2's "Reuse previous session's directory".
+            self.assertEqual(profile["Custom Directory"], "Recycle")
+            self.assertNotIn("repo space", message)
+
+    def test_iterm2_install_from_a_second_repository_takes_the_key_back(self) -> None:
+        """A per-directory profile from an earlier release must not keep the key.
+
+        The old GUID was derived from the install directory, so a later install
+        saw a different action on the key, refused, and left the shortcut
+        pointing at the first repository with no way to move it.
+        """
+        with tempfile.TemporaryDirectory() as directory:
+            profiles = Path(directory) / "Library/Application Support/iTerm2/DynamicProfiles"
+            profiles.mkdir(parents=True)
+            stale = profiles / "handoff-viewer-old-guid.json"
+            stale.write_text(json.dumps({"Profiles": [{
+                "Guid": "old-guid", "Name": "Handoff — first-repo",
+                "Command": "handoff-tui --root /first/repo",
+            }]}), encoding="utf-8")
+            settings = {"GlobalKeyMap": {"0x76-0x40000": {"Action": 26, "Text": "old-guid"}}}
+            message, run = self.iterm_install(directory, settings)
+            self.assertIn("Installed ^V", message)
+            self.assertIn("pinned to one repository", message)
+            self.assertFalse(stale.exists())
+            profile = json.loads(next(profiles.glob("*.json")).read_text())["Profiles"][0]
+            self.assertNotEqual(profile["Guid"], "old-guid")
+            arguments = run.call_args.args[0]
+            action = plistlib.loads(arguments[arguments.index("0x76-0x40000") + 1].encode())
+            self.assertEqual(action, {"Action": 26, "Text": profile["Guid"]})
+
+    def test_iterm2_install_releases_a_stale_profile_on_another_key(self) -> None:
+        """An earlier install bound to a different key must not survive either."""
+        with tempfile.TemporaryDirectory() as directory:
+            profiles = Path(directory) / "Library/Application Support/iTerm2/DynamicProfiles"
+            profiles.mkdir(parents=True)
+            (profiles / "handoff-viewer-old-guid.json").write_text(json.dumps({
+                "Profiles": [{"Guid": "old-guid", "Name": "Handoff — first-repo"}]}),
+                encoding="utf-8")
+            settings = {"GlobalKeyMap": {
+                "0x68-0xc0000": {"Action": 26, "Text": "old-guid"},
+                "0xd-0x20000": {"Action": 12, "Text": "\\n"},
+            }}
+            _message, run = self.iterm_install(directory, settings)
+            arguments = run.call_args.args[0]
+            self.assertEqual(arguments[4], "-dict")
+            self.assertNotIn("0x68-0xc0000", arguments)
+            # An unrelated shortcut is not collateral damage.
+            self.assertIn("0xd-0x20000", arguments)
+
+    def test_iterm2_leaves_another_application_shortcut_alone(self) -> None:
+        """Only this skill's own profiles are treated as replaceable."""
+        with tempfile.TemporaryDirectory() as directory:
+            settings = {"GlobalKeyMap": {"0x76-0x40000": {"Action": 26, "Text": "someone-elses"}}}
+            message, _run = self.iterm_install(directory, settings)
+            self.assertIn("already binds", message)
 
     def test_iterm2_reinstall_preserves_the_original_backup(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

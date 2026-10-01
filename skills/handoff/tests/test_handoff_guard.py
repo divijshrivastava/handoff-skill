@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import os
@@ -1720,3 +1721,60 @@ class AssignmentsTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertEqual(result["errors"], ["HANDOFF.md not found"])
         self.assertFalse(self.ledger.exists())
+
+
+class LatestClaimedLedgerTests(unittest.TestCase):
+    """A viewer key handed the wrong directory has to name some repository.
+
+    The emulator is not always able to report the directory the key was pressed
+    in - iTerm2 without Shell Integration hands over the home directory - so the
+    name cache answers instead.
+    """
+
+    def setUp(self) -> None:
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.root = Path(self.directory.name)
+        self.cache = self.root / "names"
+        self.cache.mkdir()
+
+    def claim(self, name: str, ledger: Path, age: float = 0.0) -> None:
+        record = self.cache / hashlib.sha256(name.encode()).hexdigest()[:16]
+        record.write_text(f"{name}\nCodex\n{ledger}\n", encoding="utf-8")
+        stamp = time.time() - age
+        os.utime(record, (stamp, stamp))
+
+    def ledger_at(self, name: str) -> Path:
+        repo = self.root / name
+        repo.mkdir()
+        ledger = repo / "HANDOFF.md"
+        ledger.write_text(MINIMAL_LEDGER, encoding="utf-8")
+        return ledger
+
+    def test_the_newest_claim_wins(self) -> None:
+        older, newer = self.ledger_at("older"), self.ledger_at("newer")
+        self.claim("Alpha", older, age=600)
+        self.claim("Beta", newer, age=5)
+        self.assertEqual(handoff_guard.latest_claimed_ledger(self.cache), newer.resolve())
+
+    def test_a_ledger_that_no_longer_exists_is_skipped(self) -> None:
+        """Test fixtures in temporary directories leave exactly such records."""
+        surviving = self.ledger_at("surviving")
+        self.claim("Alpha", surviving, age=600)
+        self.claim("Ghost", self.root / "gone" / "HANDOFF.md", age=5)
+        self.assertEqual(handoff_guard.latest_claimed_ledger(self.cache), surviving.resolve())
+
+    def test_a_claim_older_than_liveness_still_answers(self) -> None:
+        """15 minutes decides whether a session is live, not where it worked."""
+        ledger = self.ledger_at("yesterday")
+        self.claim("Alpha", ledger, age=handoff_guard.RECENT_CLAIM_SECONDS + 3600)
+        self.assertEqual(handoff_guard.latest_claimed_ledger(self.cache), ledger.resolve())
+
+    def test_nothing_claimed_reports_nothing(self) -> None:
+        self.assertIsNone(handoff_guard.latest_claimed_ledger(self.cache))
+        self.assertIsNone(handoff_guard.latest_claimed_ledger(self.root / "absent"))
+
+    def test_a_record_naming_no_ledger_is_not_a_repository(self) -> None:
+        record = self.cache / "legacy"
+        record.write_text("Alpha\nCodex\n", encoding="utf-8")
+        self.assertIsNone(handoff_guard.latest_claimed_ledger(self.cache))
