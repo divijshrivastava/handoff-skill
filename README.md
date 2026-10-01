@@ -8,6 +8,8 @@
 
 > **Ctrl+Alt+H is your friend.** Bind it once and use it every session to open the live Handoff dashboard from iTerm2, Cursor's integrated terminal, or a tmux-wrapped agent bar — without typing a command into the agent.
 
+**Website:** [handoffskill.com](https://handoffskill.com/) — product overview and demo.
+
 **Interactive setup:** [divijshrivastava.github.io/handoff-skill](https://divijshrivastava.github.io/handoff-skill/) walks through install and practice in the browser.
 
 Install the shortcut and run through a thirty-second practice prompt:
