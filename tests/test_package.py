@@ -98,6 +98,10 @@ class PackageTests(unittest.TestCase):
             self.assertIn(hashlib.sha256(first[0].read_bytes()).hexdigest(), first[2].read_text())
             with ZipFile(first[0]) as archive:
                 self.assertIn("handoff/scripts/handoff_tui.py", archive.namelist())
+                self.assertIn("handoff/scripts/handoff_managed.py", archive.namelist())
+                self.assertIn("handoff/scripts/handoff_orchestrate.py", archive.namelist())
+                self.assertIn("handoff/references/orchestration.md", archive.namelist())
+                self.assertIn("handoff/references/managed-teams.md", archive.namelist())
                 self.assertIn("handoff/scripts/handoff_codex.py", archive.namelist())
                 self.assertIn("handoff/scripts/handoff_publish.py", archive.namelist())
                 self.assertIn("handoff/references/vps-publish.md", archive.namelist())

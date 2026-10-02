@@ -3,7 +3,7 @@ name: handoff
 description: "Coordinate work recorded in HANDOFF.md. Use when a ledger exists or handoff is requested. Run handoff_guard.py name --root <repo>, then handoff_guard.py read --root <repo>; audit later evidence. Write via handoff_guard.py apply --root <repo> --expect-version V. Record tasks before research; complete viewer assignments."
 license: MIT
 metadata:
-  version: "1.27.2"
+  version: "1.28.0"
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
 ---
 
@@ -279,6 +279,19 @@ preflight, at checkpoints, and before stopping; finish and verify your current
 task, then work eligible assignments oldest first. Missing a second user prompt
 is never a blocker. Before acting on one, read `references/ownership.md` for
 the audit, attribution, and blocker rules.
+
+### Managed leadership and objectives
+
+The user may select a managed lead and workers for a repository. Direct mode
+remains the default. Read `references/managed-teams.md` when the ledger has a
+`Coordination:` record or a managed runner gives you a turn. The managed
+runner uses bounded turns and the user's configured CLI permissions.
+
+When a lead owns a user objective, read `references/orchestration.md`.
+Record completion criteria, link child task IDs, review evidence, and close
+the objective only when its linked work is complete. Use its message, capacity,
+and recovery commands for those transitions. A runner record or worker report
+alone does not prove task completion or safe recovery.
 
 ### Optional leadership
 

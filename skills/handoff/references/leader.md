@@ -1,5 +1,9 @@
 # Optional leadership: one agent coordinates the others
 
+This reference describes the assignment authority shared by manual and managed
+leadership. For the opt-in repository configuration, automatic worker enrollment,
+and recurring lead/worker execution, also read `managed-teams.md`.
+
 Read this when a user asks one agent to lead, when you receive assigned work
 from a leader, or before writing anything through `scripts/handoff_lead.py`.
 
@@ -10,9 +14,10 @@ refuses to act without a recorded mandate.
 ## What a leader may and may not do
 
 A leader divides work and records it against agents. It does not run them.
-Nothing in this skill starts, supervises, restarts, or wakes an agent, and no
-universal wake-up mechanism exists: an assignment reaches an idle CLI when that
-agent next takes a turn, not when the leader writes it.
+Manual leadership does not start, supervise, restart, or wake an agent. An
+assignment reaches an ordinary idle CLI on its next turn. Managed mode supplies
+dedicated runners for supported CLIs, as documented in `managed-teams.md`;
+it does not inject input into existing interactive terminals.
 
 | A leader may | A leader may not |
 | --- | --- |
@@ -37,6 +42,15 @@ The consequence worth relying on: a leader that dies, a message that never
 arrives, and an agent that was idle all degrade to *slower*, never to *wrong*.
 
 ## Designating and holding the mandate
+
+When the user makes you lead, check in with every other registered agent on
+this repository's channel. Ask what each is working on, what progress they have
+made, and whether they are blocked or stuck. The viewer and `claim` send these
+questions immediately if your channel session already exists. If it does not,
+join or resume your session and run `check-in` on your first lead turn. Read
+their replies and the ledger before assigning more work; silence means unknown
+availability, not permission to take a task. A new managed worker receives the
+same question after joining the channel.
 
 ```sh
 python3 "$SKILL_DIR/scripts/handoff_guard.py" read --root /path/to/repo

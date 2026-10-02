@@ -394,6 +394,14 @@ Percentages reflect recorded checkboxes and heading owners. They do not measure 
 
 When several agents share one repository, a user may designate one session as a **leader** that divides work among the others. Leadership is opt-in: a repository with no `Lead:` line behaves exactly as before. The leader assigns by writing the ledger — never by messaging — through `scripts/handoff_lead.py`, using the same locked compare-and-swap as every other writer. Assignments carry acceptance deadlines, path reservations, and stable task IDs for dependencies. See [leader.md](skills/handoff/references/leader.md) for the mandate, acceptance lifecycle, and command surface.
 
+For managed teams, `skills/handoff/scripts/handoff_orchestrate.py` sets up a lead
+and workers, records objectives with completion criteria, links child tasks,
+records user messages and reports, and shows recovery state. It can enroll a
+new worker automatically only after the user selects an `auto` capacity
+policy and a worker limit. See [managed teams](skills/handoff/references/managed-teams.md)
+for setup and [orchestration](skills/handoff/references/orchestration.md) for
+the objective and recovery commands.
+
 ## Slash commands
 
 Installed as a Claude Code plugin, the skill adds six commands:

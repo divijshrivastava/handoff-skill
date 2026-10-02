@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sqlite3
 import sys
 import time
 import uuid
@@ -387,6 +388,35 @@ def repo_agents(ledger: Path, text: str) -> set[str]:
     return agents
 
 
+def check_in_peers(root: Path, owner: str) -> dict:
+    """Ask registered peers about their work when a lead becomes available.
+
+    The stable message ID makes a repeated viewer action or managed scan safe.
+    A lead without a channel session cannot speak as that agent; its next turn
+    can join the channel and call this again.
+    """
+    ledger = root / "HANDOFF.md"
+    mandate = require_lead(ledger.read_text(encoding="utf-8"), owner)
+    from handoff_channel import Channel
+    channel = Channel(root)
+    sender = channel.session_for_owner(owner)
+    if sender is None:
+        return {"sent": 0, "pending": "Lead has no channel session yet"}
+    sent = 0
+    for peer in channel.peers():
+        if peer["id"] == sender:
+            continue
+        message_id = str(uuid.uuid5(uuid.NAMESPACE_URL,
+                                    f"handoff-lead-checkin:{sender}:{mandate.expires}:{peer['id']}"))
+        result = channel.send(
+            sender, peer["id"],
+            "I have been made lead. What are you working on now, what progress "
+            "have you made, and are you blocked or stuck? Please name the task "
+            "and any help you need.", message_id=message_id)
+        sent += not result["duplicate"]
+    return {"sent": sent, "pending": None}
+
+
 def require_lead(text: str, owner: str) -> Lead:
     """Confirm this owner still holds an unexpired mandate, right now.
 
@@ -461,8 +491,19 @@ def claim_command(args: argparse.Namespace) -> int:
         return build_claim(text, args.owner, args.hours,
                            succession=args.succession, renew=args.command == "renew")
 
-    return emit(swap_ledger(ledger_of(args), args.expect_version, build,
-                            dry_run=args.dry_run), args)
+    result = swap_ledger(ledger_of(args), args.expect_version, build,
+                         dry_run=args.dry_run)
+    if result.get("status") == "applied" and args.command == "claim":
+        try:
+            result["check_in"] = check_in_peers(find_repo_root(Path(args.root)), args.owner)
+        except (OSError, sqlite3.Error, ValueError) as error:
+            result["check_in"] = {"sent": 0, "pending": str(error)}
+    return emit(result, args)
+
+
+def check_in_command(args: argparse.Namespace) -> int:
+    print(json.dumps(check_in_peers(find_repo_root(Path(args.root)), args.owner), indent=2))
+    return 0
 
 
 def resign_command(args: argparse.Namespace) -> int:
@@ -494,6 +535,14 @@ def assign_command(args: argparse.Namespace) -> int:
 
     def build(text: str) -> str:
         require_lead(text, args.owner)
+        # Managed mode delegates authority over this team, not every historical
+        # owner in the repository. Direct user assignments remain unrestricted.
+        from handoff_managed import members, settings
+        config = settings(text)
+        if config["mode"] == "managed":
+            allowed = {row["owner"] for row in members(text) if row["lead"] == args.owner}
+            if args.owner != config["owner"] or args.to not in allowed:
+                raise ValueError("Managed leads may assign only to their configured workers")
         if args.to not in repo_agents(ledger, text):
             raise ValueError(
                 f"{args.to} is not recorded in this repository. Assign only to "
@@ -791,6 +840,11 @@ def build_parser() -> argparse.ArgumentParser:
     common(resign)
     resign.add_argument("--owner", required=True)
     resign.set_defaults(handler=resign_command)
+
+    check_in = subparsers.add_parser("check-in", help="Ask channel peers about work and blockers")
+    common(check_in, writes=False)
+    check_in.add_argument("--owner", required=True, help="The designated lead")
+    check_in.set_defaults(handler=check_in_command)
 
     assign = subparsers.add_parser("assign", help="Record one unit of work against one agent")
     common(assign)
