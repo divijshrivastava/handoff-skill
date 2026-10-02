@@ -1153,12 +1153,18 @@ class SessionNameTests(unittest.TestCase):
         self.assertTrue(json.loads(self.run_name("--seed", "session-one", "--json"))["remembered"])
 
     def test_the_host_session_id_names_the_session_when_no_seed_is_given(self) -> None:
-        with unittest.mock.patch.dict(os.environ, {"HANDOFF_SESSION": "from-the-host"}):
+        with unittest.mock.patch.dict(os.environ, {"HANDOFF_SESSION": "from-the-host"}, clear=True):
             self.assertEqual(handoff_guard.session_seed(), "from-the-host")
             self.assertEqual(handoff_guard.session_seed("explicit"), "explicit")
-        with unittest.mock.patch.dict(os.environ, {"CLAUDE_CODE_SESSION_ID": "host-id"}):
-            os.environ.pop("HANDOFF_SESSION", None)
+        with unittest.mock.patch.dict(os.environ, {"CLAUDE_CODE_SESSION_ID": "host-id"}, clear=True):
             self.assertEqual(handoff_guard.session_seed(), "host-id")
+        with unittest.mock.patch.dict(os.environ, {
+            "CODEX_SESSION_ID": "codex-id",
+            "HANDOFF_SESSION": "wrapper-id",
+            "TERM_SESSION_ID": "terminal-id",
+        }, clear=True):
+            self.assertEqual(handoff_guard.session_seed(), "codex-id")
+            self.assertEqual(handoff_guard.session_seed("explicit"), "explicit")
         with unittest.mock.patch.dict(os.environ, {}, clear=True):
             # An unidentified session gets a distinct seed, not a shared one.
             self.assertNotEqual(handoff_guard.session_seed(), handoff_guard.session_seed())

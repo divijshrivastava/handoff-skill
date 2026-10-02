@@ -676,8 +676,9 @@ def session_seed(explicit: str | None = None) -> str:
     host that exposes none, and a random seed keeps unidentified sessions apart
     rather than making them all claim the same first name.
     """
-    for value in (explicit, os.environ.get("HANDOFF_SESSION"),
+    for value in (explicit, os.environ.get("CODEX_SESSION_ID"),
                   os.environ.get("CLAUDE_CODE_SESSION_ID"),
+                  os.environ.get("HANDOFF_SESSION"),
                   os.environ.get("TERM_SESSION_ID")):
         if value and value.strip():
             return value.strip()

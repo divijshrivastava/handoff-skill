@@ -3,7 +3,7 @@ name: handoff
 description: "Coordinate work recorded in HANDOFF.md. Use when a ledger exists or handoff is requested. Run handoff_guard.py name --root <repo>, then handoff_guard.py read --root <repo>; audit later evidence. Write via handoff_guard.py apply --root <repo> --expect-version V. Record tasks before research; complete viewer assignments."
 license: MIT
 metadata:
-  version: "1.27.1"
+  version: "1.27.2"
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
 ---
 
